@@ -1,0 +1,22 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd frontend && npm ci
+    build:
+      commands:
+        - cd frontend && npm run build
+        - cd frontend && npm run build-search-index
+        # Copy data files to dist for serving
+        - mkdir -p frontend/dist/data
+        - cp -r lfucg_output/index.json frontend/dist/data/ 2>/dev/null || echo "No index.json found"
+        - cp -r lfucg_output/clips frontend/dist/data/ 2>/dev/null || echo "No clips found"
+  artifacts:
+    baseDirectory: frontend/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - frontend/node_modules/**/*
+      - .venv/**/*

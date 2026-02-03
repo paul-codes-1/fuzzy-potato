@@ -1,0 +1,11 @@
+pipeline.log
+probe.log
+lfucg_output
+.venv
+__pycache__
+.idea
+
+frontend/dist
+frontend/node_modules
+
+.env
