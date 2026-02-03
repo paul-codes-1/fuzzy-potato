@@ -2,6 +2,15 @@
 
 Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive.
 
+## Documentation
+
+- **[granicus.md](granicus.md)** - Granicus platform documentation including:
+  - Video player URL parameters (`entrytime`, `stoptime` for timestamp linking)
+  - Legistar Web API (REST API for legislative data)
+  - MediaManager SOAP API (video management)
+  - RSS feeds for agendas/minutes
+  - Embed options and JavaScript player API
+
 ## Quick Start
 
 ```bash
@@ -184,6 +193,13 @@ lfucg_output/
 ```
 
 ## Architecture
+
+### Data Source
+
+Videos and documents are hosted on [Granicus](https://granicus.com/), a government media platform. See [granicus.md](granicus.md) for API documentation including:
+- Deep-linking to video timestamps via `entrytime` parameter
+- Legistar API for legislative data (matters, votes, events)
+- RSS feeds for agendas and minutes
 
 ### Pipeline Steps
 
