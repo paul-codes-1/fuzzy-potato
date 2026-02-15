@@ -84,6 +84,10 @@ uv run python main.py 6669 --force
 # Generate search index for frontend
 uv run python main.py --generate-index
 
+# Add timestamps to existing transcripts (for clickable video seeking)
+uv run python main.py --update-transcripts
+uv run python main.py --update-transcripts --max 10  # Limit to 10 clips
+
 # Skip keeping audio files (saves disk space)
 uv run python main.py 6669 --no-audio
 
@@ -182,7 +186,8 @@ lfucg_output/
   clips/
     {clip_id}/
       {date}_{title}_audio.mp3            # Downloaded audio (e.g., 2026-01-08_January_8_WQFB_audio.mp3)
-      transcript_{date}_{title}_audio.txt # Whisper transcription
+      transcript_{date}_{title}_audio.txt # Whisper transcription (plain text)
+      transcript_{date}_{title}_audio_segments.json # Timestamped segments (new transcriptions)
       summary.txt                         # AI-generated summary
       summary.html                        # HTML formatted summary
       {date}_agenda_{title}.pdf           # Meeting agenda (if available)
@@ -194,225 +199,53 @@ lfucg_output/
 
 ## Architecture
 
-### Data Source
+Your frontend already fetches everything from relative /data/ paths. You have two main options:
 
-Videos and documents are hosted on [Granicus](https://granicus.com/), a government media platform. See [granicus.md](granicus.md) for API documentation including:
-- Deep-linking to video timestamps via `entrytime` parameter
-- Legistar API for legislative data (matters, votes, events)
-- RSS feeds for agendas and minutes
+  Option 1: S3 + CloudFront (recommended)
 
-### Pipeline Steps
+  1. Upload lfucg_output/ to S3, mapping it to a /data/ prefix:
 
-1. **Title Extraction** - Gets original clip title via yt-dlp
-2. **Metadata Scraping** - Extracts date and meeting body from title
-3. **Download** - Downloads audio as MP3 (48kbps, 22kHz mono)
-4. **Compression** - Compresses if >24MB (Whisper API limit)
-5. **Transcription** - OpenAI Whisper API
-6. **Agenda Download** - PDF agenda + text extraction (OCR fallback for scanned PDFs)
-7. **Topic Extraction** - GPT-4o-mini extracts 3-8 topics
-8. **Summary Generation** - GPT-4o creates meeting summary
-9. **HTML Generation** - Converts summary to HTML
-10. **Index Generation** - Creates searchable index.json for frontend
+  ***
+`  aws s3 sync lfucg_output/ s3://public-meetings/data/ --exclude "state.json" --exclude "*.mp3"
+`
+***
 
-### Frontend Stack
+  2. Deploy the built frontend (frontend/dist/) to the same bucket root:
+  cd frontend && npm run build
 
-- React 18 + Vite 5
-- React Router v6
-- Fuse.js 7 (full-text search)
-- Components: MeetingList, MeetingDetail, SearchBar, TopicFilter
+  ***
+`  aws s3 sync dist/ s3://public-meetings/ --exclude "data/*"
+`
+***
 
-## AWS Deployment
+  3. Create a CloudFront distribution pointing to the bucket. The structure would be:
+  s3://your-bucket/
+    index.html          ← from frontend/dist/
+    assets/             ← from frontend/dist/
+    data/
+      index.json        ← from lfucg_output/index.json
+      clips/
+        6669/
+          metadata.json
+          summary.html
+          ...
+  4. Enable S3 static website hosting or use CloudFront with an OAC. For SPA routing, set up a custom error response that returns index.html for 403/404 errors (so React Router works).
 
-Deploy the frontend to S3/CloudFront with Lambda for automated syncing.
+  Option 2: Separate S3 origin (CORS)
 
-### Prerequisites
+  If you want the frontend hosted separately (e.g., Vercel/Netlify) and data on S3:
 
-- AWS CLI configured with appropriate credentials
-- S3 bucket for hosting
-- (Optional) CloudFront distribution for CDN
+  1. Upload data to S3 and put CloudFront in front of it
+  2. Add CORS headers on the S3 bucket/CloudFront
+  3. Change the base URL in useMeetings.js to point to your CloudFront domain:
+  const DATA_BASE = import.meta.env.VITE_DATA_URL || '/data'
+  const INDEX_URL = `${DATA_BASE}/index.json`
+  3. Then prefix all fetch calls with DATA_BASE instead of hardcoded /data.
+  4. Set VITE_DATA_URL=https://d1234.cloudfront.net/data at build time.
 
-### 1. Initial Data Upload
+  Option 1 is simpler since everything lives under one domain — no CORS, no env vars, and the code works as-is with zero changes. You just need to get the S3 directory structure to match what the fetches expect
+  (/data/index.json, /data/clips/{id}/...).
 
-Upload your existing processed clips to S3:
-
-```bash
-# Upload pipeline output to S3
-aws s3 sync lfucg_output/ s3://your-bucket/data/ \
-  --exclude ".DS_Store" \
-  --exclude "*.mp3"  # Optional: skip audio files to save storage
-
-# Upload frontend build
-cd frontend && npm run build
-aws s3 sync dist/ s3://your-bucket/ --exclude "data/*"
-```
-
-Your S3 bucket structure should be:
-
-```
-s3://your-bucket/
-  index.html              # Frontend entry point
-  assets/                 # Frontend assets (JS, CSS)
-  data/
-    state.json            # Pipeline state
-    index.json            # Search index
-    available_clips.json  # Probed clip IDs (optional)
-    clips/
-      6669/
-        metadata.json
-        summary.html
-        summary.txt
-        transcript_*.txt
-        agenda_*.pdf
-        agenda_*.txt
-      6670/
-        ...
-```
-
-### 2. S3 Static Website Hosting
-
-Enable static website hosting on your bucket:
-
-```bash
-aws s3 website s3://your-bucket/ --index-document index.html --error-document index.html
-```
-
-Or use CloudFront with S3 origin for HTTPS and better performance.
-
-### 3. Lambda Deployment
-
-The Lambda function automatically processes new clips on a schedule.
-
-#### Create Lambda Function
-
-```bash
-cd lambda
-
-# Install dependencies into package
-pip install -r requirements.txt -t package/
-cp sync_meetings.py package/
-
-# Copy main pipeline (Lambda imports it)
-cp ../main.py package/
-
-# Create deployment package
-cd package && zip -r ../lambda.zip . && cd ..
-
-# Create Lambda function
-aws lambda create-function \
-  --function-name lfucg-meeting-sync \
-  --runtime python3.11 \
-  --handler sync_meetings.handler \
-  --zip-file fileb://lambda.zip \
-  --role arn:aws:iam::YOUR_ACCOUNT:role/your-lambda-role \
-  --timeout 900 \
-  --memory-size 1024 \
-  --environment "Variables={OPENAI_API_KEY=sk-...,S3_BUCKET=your-bucket}"
-```
-
-#### Lambda Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for transcription/summarization |
-| `S3_BUCKET` | Yes | S3 bucket name |
-| `S3_DATA_PREFIX` | No | Prefix for data files (default: `data/`) |
-| `FIRST_CLIP_ID` | No | Starting clip ID (default: 6669) |
-
-#### Lambda IAM Role
-
-The Lambda role needs these permissions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-bucket",
-        "arn:aws:s3:::your-bucket/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:*:*:*"
-    }
-  ]
-}
-```
-
-#### Create EventBridge Schedule
-
-Trigger Lambda at 12pm and 8pm on weekdays:
-
-```bash
-# Create schedule rule
-aws events put-rule \
-  --name lfucg-meeting-sync-schedule \
-  --schedule-expression "cron(0 12,20 ? * MON-FRI *)"
-
-# Add Lambda as target
-aws events put-targets \
-  --rule lfucg-meeting-sync-schedule \
-  --targets "Id"="1","Arn"="arn:aws:lambda:REGION:ACCOUNT:function:lfucg-meeting-sync"
-
-# Grant EventBridge permission to invoke Lambda
-aws lambda add-permission \
-  --function-name lfucg-meeting-sync \
-  --statement-id eventbridge-invoke \
-  --action lambda:InvokeFunction \
-  --principal events.amazonaws.com \
-  --source-arn arn:aws:events:REGION:ACCOUNT:rule/lfucg-meeting-sync-schedule
-```
-
-#### Lambda Event Options
-
-Invoke manually with custom options:
-
-```bash
-# Process up to 10 clips
-aws lambda invoke \
-  --function-name lfucg-meeting-sync \
-  --payload '{"max_clips": 10}' \
-  response.json
-
-# Force reprocess
-aws lambda invoke \
-  --function-name lfucg-meeting-sync \
-  --payload '{"max_clips": 5, "force": true}' \
-  response.json
-
-# Full sync (downloads all existing data first)
-aws lambda invoke \
-  --function-name lfucg-meeting-sync \
-  --payload '{"full_sync": true, "max_clips": 5}' \
-  response.json
-```
-
-### 4. CloudFront (Optional)
-
-For HTTPS and better performance:
-
-```bash
-aws cloudfront create-distribution \
-  --origin-domain-name your-bucket.s3.amazonaws.com \
-  --default-root-object index.html
-```
-
-Configure the distribution to:
-- Forward requests to S3 origin
-- Handle SPA routing (return index.html for 404s)
-- Set appropriate cache behaviors for `/data/` vs static assets
 
 ## API Costs
 

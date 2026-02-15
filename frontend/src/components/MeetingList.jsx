@@ -186,7 +186,16 @@ function MeetingList() {
               key={meeting.clip_id}
               meeting={meeting}
               snippet={searchSnippets.get(meeting.clip_id)}
-              onClick={() => navigate(`/meeting/${meeting.clip_id}`)}
+              onClick={() => {
+                // Pass search term in URL if doing full-text transcript search
+                if (searchMode === 'full' && query.trim()) {
+                  const params = new URLSearchParams()
+                  params.set('highlight', query.trim())
+                  navigate(`/meeting/${meeting.clip_id}?${params.toString()}`)
+                } else {
+                  navigate(`/meeting/${meeting.clip_id}`)
+                }
+              }}
             />
           ))}
         </div>
