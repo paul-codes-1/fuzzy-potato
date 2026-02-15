@@ -34,6 +34,7 @@ export function useMeeting(clipId) {
   const [meeting, setMeeting] = useState(null)
   const [summary, setSummary] = useState(null)
   const [transcript, setTranscript] = useState(null)
+  const [transcriptSegments, setTranscriptSegments] = useState(null)
   const [agenda, setAgenda] = useState(null)
   const [minutes, setMinutes] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -77,6 +78,18 @@ export function useMeeting(clipId) {
           }
         }
 
+        // Fetch transcript segments (timestamped) if available
+        if (metadata.files?.transcript_segments) {
+          try {
+            const segmentsResponse = await fetch(`/data/clips/${clipId}/${metadata.files.transcript_segments}`)
+            if (segmentsResponse.ok) {
+              setTranscriptSegments(await segmentsResponse.json())
+            }
+          } catch (e) {
+            console.warn('Could not load transcript segments:', e)
+          }
+        }
+
         // Fetch agenda text if available
         if (metadata.files?.agenda_txt) {
           try {
@@ -113,5 +126,5 @@ export function useMeeting(clipId) {
     }
   }, [clipId])
 
-  return { meeting, summary, transcript, agenda, minutes, loading, error }
+  return { meeting, summary, transcript, transcriptSegments, agenda, minutes, loading, error }
 }

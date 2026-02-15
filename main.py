@@ -347,12 +347,9 @@ class LFUCGPipeline:
             self.log(f"Compression error: {e}", "ERROR")
             return False
 
-    def split_audio_into_chunks(self, audio_path: Path, max_size_mb: float = 24) -> List[Path]:
-        """Split audio file into chunks that fit within size limit."""
+    def split_audio_into_chunks(self, audio_path: Path, num_chunks: int = 3) -> List[Path]:
+        """Split audio file into a fixed number of chunks."""
         file_size_mb = audio_path.stat().st_size / (1024 * 1024)
-
-        # Calculate number of chunks needed (with some buffer)
-        num_chunks = int(file_size_mb / max_size_mb) + 1
 
         # Get audio duration using ffprobe
         try:
@@ -380,7 +377,7 @@ class LFUCGPipeline:
                 "-i", str(audio_path),
                 "-ss", str(start_time),
                 "-t", str(chunk_duration),
-                "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k",
+                "-vn", "-c:a", "copy",
                 str(chunk_path)
             ]
 
@@ -394,8 +391,14 @@ class LFUCGPipeline:
 
         return chunk_paths
 
-    def transcribe_audio(self, audio_path: Path, transcript_path: Path) -> Optional[str]:
-        """Transcribe audio using OpenAI Whisper API"""
+    def transcribe_audio(self, audio_path: Path, transcript_path: Path) -> Optional[Dict[str, Any]]:
+        """Transcribe audio using OpenAI Whisper API with timestamps.
+
+        Returns dict with 'text' (full transcript) and 'segments' (timestamped segments).
+        For backward compatibility, the plain text is also saved to transcript_path.
+        Segments are saved to a separate JSON file.
+        """
+        segments_path = transcript_path.parent / f"{transcript_path.stem}_segments.json"
 
         # Check if transcript already exists
         if transcript_path.exists() and transcript_path.stat().st_size > 50 and not self.force_reprocess:
@@ -405,7 +408,16 @@ class LFUCGPipeline:
                 if text:
                     word_count = len(text.split())
                     self.progress(f"Loaded transcript: {len(text)} chars, ~{word_count} words")
-                    return text
+                    # Load segments if available
+                    segments = None
+                    if segments_path.exists():
+                        try:
+                            with open(segments_path, 'r', encoding='utf-8') as sf:
+                                segments = json.load(sf)
+                            self.progress(f"Loaded {len(segments)} transcript segments")
+                        except Exception:
+                            pass
+                    return {"text": text, "segments": segments}
 
         self.log(f"Transcribing audio with {self.transcribe_model}")
 
@@ -414,54 +426,23 @@ class LFUCGPipeline:
 
             # Whisper API has 25MB limit
             MAX_SIZE_MB = 24  # Leave some headroom
-            ABSOLUTE_MAX_MB = 25  # Hard limit - must chunk if over this after compression
+            SPLIT_THRESHOLD_MB = 48  # Split into 3 chunks if over this
 
             transcribe_file = audio_path
             cleanup_files = []
 
-            if file_size_mb > MAX_SIZE_MB:
-                self.progress(f"Audio is {file_size_mb:.2f} MB (limit: 25 MB)")
+            # Determine if we need to split
+            if file_size_mb > SPLIT_THRESHOLD_MB:
+                num_chunks = 3
+                self.progress(f"Audio is {file_size_mb:.2f} MB (>{SPLIT_THRESHOLD_MB} MB) - splitting into {num_chunks} chunks")
+            elif file_size_mb > MAX_SIZE_MB:
+                num_chunks = 2
+                self.progress(f"Audio is {file_size_mb:.2f} MB (>{MAX_SIZE_MB} MB) - splitting into {num_chunks} chunks")
+            else:
+                num_chunks = 0
 
-                # Create compressed version
-                compressed_path = audio_path.parent / f"{audio_path.stem}_compressed.mp3"
-
-                if not self.compress_audio(audio_path, compressed_path):
-                    self.log("Failed to compress audio", "ERROR")
-                    return None
-
-                transcribe_file = compressed_path
-                cleanup_files.append(compressed_path)
-                file_size_mb = compressed_path.stat().st_size / (1024 * 1024)
-
-                # If still too large, try more aggressive compression
-                if file_size_mb > MAX_SIZE_MB:
-                    self.progress(f"Still {file_size_mb:.2f} MB, trying aggressive compression...")
-                    aggressive_path = audio_path.parent / f"{audio_path.stem}_compressed_aggr.mp3"
-
-                    cmd = [
-                        "ffmpeg",
-                        "-i", str(audio_path),
-                        "-vn",
-                        "-ar", "16000",
-                        "-ac", "1",
-                        "-b:a", "24k",  # Very low bitrate
-                        "-y",
-                        str(aggressive_path)
-                    ]
-
-                    subprocess.run(cmd, check=True, capture_output=True)
-
-                    if aggressive_path.exists():
-                        transcribe_file = aggressive_path
-                        cleanup_files.append(aggressive_path)
-                        file_size_mb = aggressive_path.stat().st_size / (1024 * 1024)
-                        self.progress(f"Aggressively compressed to {file_size_mb:.2f} MB")
-
-            # If STILL over the limit after compression, split into chunks
-            if file_size_mb > ABSOLUTE_MAX_MB:
-                self.progress(f"File still {file_size_mb:.2f} MB after compression - splitting into chunks")
-
-                chunk_paths = self.split_audio_into_chunks(transcribe_file, max_size_mb=MAX_SIZE_MB)
+            if num_chunks > 0:
+                chunk_paths = self.split_audio_into_chunks(transcribe_file, num_chunks=num_chunks)
 
                 if not chunk_paths:
                     self.log("Failed to split audio into chunks", "ERROR")
@@ -470,23 +451,73 @@ class LFUCGPipeline:
                             f.unlink()
                     return None
 
-                # Transcribe each chunk
+                # Compress any chunks that exceed the Whisper API size limit
+                for i, chunk_path in enumerate(chunk_paths):
+                    chunk_size_mb = chunk_path.stat().st_size / (1024 * 1024)
+                    if chunk_size_mb > MAX_SIZE_MB:
+                        self.progress(f"Chunk {i+1} is {chunk_size_mb:.2f} MB - compressing...")
+                        compressed_chunk = chunk_path.parent / f"{chunk_path.stem}_compressed.mp3"
+                        if self.compress_audio(chunk_path, compressed_chunk):
+                            chunk_path.unlink()
+                            chunk_paths[i] = compressed_chunk
+                        else:
+                            self.log(f"Failed to compress chunk {i+1}", "WARNING")
+
+                # Transcribe each chunk with timestamps
                 transcripts = []
+                all_segments = []
+                chunk_offset = 0.0  # Track time offset for each chunk
+
                 for i, chunk_path in enumerate(chunk_paths):
                     self.progress(f"Transcribing chunk {i+1}/{len(chunk_paths)}...")
 
+                    # Get chunk duration for offset calculation
+                    try:
+                        result = subprocess.run(
+                            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                             "-of", "default=noprint_wrappers=1:nokey=1", str(chunk_path)],
+                            capture_output=True, text=True, check=True
+                        )
+                        chunk_duration = float(result.stdout.strip())
+                    except Exception:
+                        chunk_duration = 0
+
                     try:
                         with open(chunk_path, "rb") as audio_file:
-                            chunk_transcript = self.client.audio.transcriptions.create(
+                            chunk_result = self.client.audio.transcriptions.create(
                                 model=self.transcribe_model,
                                 file=audio_file,
-                                response_format="text"
+                                response_format="verbose_json",
+                                timestamp_granularities=["segment"]
                             )
-                        if chunk_transcript:
-                            transcripts.append(chunk_transcript.strip() if isinstance(chunk_transcript, str) else chunk_transcript)
+
+                        if chunk_result and chunk_result.text:
+                            transcripts.append(chunk_result.text.strip())
                             self.progress(f"Chunk {i+1} transcribed: {len(transcripts[-1])} chars")
+
+                            # Add segments with adjusted timestamps
+                            if hasattr(chunk_result, 'segments') and chunk_result.segments:
+                                for seg in chunk_result.segments:
+                                    # Handle both dict and object access patterns
+                                    if isinstance(seg, dict):
+                                        all_segments.append({
+                                            "start": seg.get("start", 0) + chunk_offset,
+                                            "end": seg.get("end", 0) + chunk_offset,
+                                            "text": seg.get("text", "").strip()
+                                        })
+                                    else:
+                                        all_segments.append({
+                                            "start": getattr(seg, "start", 0) + chunk_offset,
+                                            "end": getattr(seg, "end", 0) + chunk_offset,
+                                            "text": getattr(seg, "text", "").strip()
+                                        })
+
+                        # Update offset for next chunk
+                        chunk_offset += chunk_duration
+
                     except Exception as e:
                         self.log(f"Error transcribing chunk {i+1}: {e}", "WARNING")
+                        chunk_offset += chunk_duration  # Still advance offset
                     finally:
                         # Clean up chunk file
                         if chunk_path.exists():
@@ -511,19 +542,26 @@ class LFUCGPipeline:
                     f.write(text)
                 self.progress(f"Saved transcript to {transcript_path.name}")
 
-                return text
+                # Save segments
+                if all_segments:
+                    with open(segments_path, 'w', encoding='utf-8') as f:
+                        json.dump(all_segments, f, indent=2)
+                    self.progress(f"Saved {len(all_segments)} segments to {segments_path.name}")
 
-            # Normal single-file transcription
+                return {"text": text, "segments": all_segments if all_segments else None}
+
+            # Normal single-file transcription with timestamps
             self.progress(f"Uploading {file_size_mb:.2f} MB to OpenAI (timeout: {self.transcribe_timeout}s)...")
             self.progress(f"File: {transcribe_file.name}")
             upload_start = datetime.now()
 
             try:
                 with open(transcribe_file, "rb") as audio_file:
-                    transcript = self.client.audio.transcriptions.create(
+                    transcript_result = self.client.audio.transcriptions.create(
                         model=self.transcribe_model,
                         file=audio_file,
-                        response_format="text"
+                        response_format="verbose_json",
+                        timestamp_granularities=["segment"]
                     )
                 upload_elapsed = (datetime.now() - upload_start).total_seconds()
                 self.progress(f"Upload + transcription completed in {upload_elapsed:.1f}s")
@@ -552,7 +590,7 @@ class LFUCGPipeline:
                     f.unlink()
                     self.progress("Removed temporary compressed file")
 
-            text = transcript.strip() if isinstance(transcript, str) else transcript
+            text = transcript_result.text.strip() if transcript_result and transcript_result.text else ""
 
             if text and len(text) > 50:
                 word_count = len(text.split())
@@ -563,7 +601,29 @@ class LFUCGPipeline:
                     f.write(text)
                 self.progress(f"Saved transcript to {transcript_path.name}")
 
-                return text
+                # Extract and save segments
+                segments = None
+                if hasattr(transcript_result, 'segments') and transcript_result.segments:
+                    segments = []
+                    for seg in transcript_result.segments:
+                        # Handle both dict and object access patterns
+                        if isinstance(seg, dict):
+                            segments.append({
+                                "start": seg.get("start", 0),
+                                "end": seg.get("end", 0),
+                                "text": seg.get("text", "").strip()
+                            })
+                        else:
+                            segments.append({
+                                "start": getattr(seg, "start", 0),
+                                "end": getattr(seg, "end", 0),
+                                "text": getattr(seg, "text", "").strip()
+                            })
+                    with open(segments_path, 'w', encoding='utf-8') as f:
+                        json.dump(segments, f, indent=2)
+                    self.progress(f"Saved {len(segments)} segments to {segments_path.name}")
+
+                return {"text": text, "segments": segments}
             else:
                 self.log("Transcription too short or empty", "ERROR")
                 return None
@@ -1469,8 +1529,8 @@ Transcript:
             transcript_path = clip_dir / transcript_filename
 
             # Step 5: Transcribe audio
-            transcript = self.transcribe_audio(audio_path, transcript_path)
-            if not transcript:
+            transcript_result = self.transcribe_audio(audio_path, transcript_path)
+            if not transcript_result:
                 self.state["failed_clips"].append({
                     "clip_id": clip_id,
                     "reason": "transcription_failed",
@@ -1479,7 +1539,18 @@ Transcript:
                 self.state["last_processed_clip_id"] = clip_id
                 self.save_state()
                 return False
+
+            # Handle both old (string) and new (dict) return formats
+            if isinstance(transcript_result, dict):
+                transcript = transcript_result["text"]
+                transcript_segments = transcript_result.get("segments")
+            else:
+                transcript = transcript_result
+                transcript_segments = None
+
             files["transcript"] = transcript_filename
+            if transcript_segments:
+                files["transcript_segments"] = f"transcript_{Path(audio_filename).stem}_segments.json"
 
             # Step 6: Download and extract agenda (optional - don't fail if unavailable)
             agenda_result = self.download_agenda(clip_id, clip_dir, title=title, date=meeting_date)
@@ -1676,6 +1747,116 @@ Transcript:
 
             return self.process_range(start_id, end_id, stop_on_failure=False)
 
+    def update_transcript_timestamps(self, max_clips: int = 0) -> dict:
+        """Re-transcribe clips that have audio but no timestamp segments.
+
+        This allows adding clickable timestamps to older transcripts.
+        Only processes clips that have audio files and are missing transcript_segments.
+
+        Args:
+            max_clips: Maximum clips to process (0 = unlimited)
+
+        Returns:
+            Dict with 'updated', 'skipped', and 'failed' lists
+        """
+        results = {"updated": [], "skipped": [], "failed": []}
+        clips_dir = self.output_dir / "clips"
+
+        if not clips_dir.exists():
+            self.log("No clips directory found", "ERROR")
+            return results
+
+        # Find clips needing transcript updates
+        clips_to_update = []
+        for clip_dir in sorted(clips_dir.iterdir(), key=lambda x: int(x.name) if x.name.isdigit() else 0):
+            if not clip_dir.is_dir() or not clip_dir.name.isdigit():
+                continue
+
+            metadata_path = clip_dir / "metadata.json"
+            if not metadata_path.exists():
+                continue
+
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+
+                files = metadata.get("files", {})
+
+                # Check if has audio and transcript but no segments
+                has_audio = files.get("audio") and (clip_dir / files["audio"]).exists()
+                has_transcript = files.get("transcript")
+                has_segments = files.get("transcript_segments") and (clip_dir / files["transcript_segments"]).exists()
+
+                if has_audio and has_transcript and not has_segments:
+                    clips_to_update.append({
+                        "clip_id": int(clip_dir.name),
+                        "clip_dir": clip_dir,
+                        "metadata": metadata,
+                        "audio_file": files["audio"]
+                    })
+            except Exception as e:
+                self.log(f"Error checking clip {clip_dir.name}: {e}", "WARNING")
+
+        if not clips_to_update:
+            self.log("No clips need transcript timestamp updates")
+            return results
+
+        # Apply max limit
+        if max_clips > 0:
+            clips_to_update = clips_to_update[:max_clips]
+
+        self.log(f"Found {len(clips_to_update)} clips to update with timestamps")
+
+        for idx, clip_info in enumerate(clips_to_update, 1):
+            clip_id = clip_info["clip_id"]
+            clip_dir = clip_info["clip_dir"]
+            metadata = clip_info["metadata"]
+            audio_file = clip_info["audio_file"]
+
+            self.log(f"\n{'=' * 70}")
+            self.log(f"Updating transcript {clip_id} - [{idx}/{len(clips_to_update)}]")
+            self.log(f"{'=' * 70}")
+
+            try:
+                audio_path = clip_dir / audio_file
+                transcript_file = metadata["files"]["transcript"]
+                transcript_path = clip_dir / transcript_file
+
+                # Temporarily enable force_reprocess for this transcription
+                old_force = self.force_reprocess
+                self.force_reprocess = True
+
+                # Re-transcribe to get timestamps
+                result = self.transcribe_audio(audio_path, transcript_path)
+
+                self.force_reprocess = old_force
+
+                if result and result.get("segments"):
+                    # Update metadata with new segments file
+                    segments_filename = f"{transcript_path.stem}_segments.json"
+                    metadata["files"]["transcript_segments"] = segments_filename
+
+                    # Save updated metadata
+                    with open(clip_dir / "metadata.json", 'w') as f:
+                        json.dump(metadata, f, indent=2)
+
+                    self.log(f"Updated clip {clip_id} with {len(result['segments'])} segments")
+                    results["updated"].append(clip_id)
+                else:
+                    self.log(f"Failed to get segments for clip {clip_id}", "WARNING")
+                    results["failed"].append(clip_id)
+
+            except Exception as e:
+                self.log(f"Error updating clip {clip_id}: {e}", "ERROR")
+                results["failed"].append(clip_id)
+
+        # Regenerate search index
+        if results["updated"]:
+            self.generate_search_index()
+
+        self.log(f"\nTranscript update complete: {len(results['updated'])} updated, {len(results['failed'])} failed")
+        return results
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1689,6 +1870,8 @@ Examples:
   %(prog)s --auto --max 5                # Auto-process up to 5 clips
   %(prog)s --scrape                      # Scrape and process all new clips
   %(prog)s --generate-index              # Generate search index from all clips
+  %(prog)s --update-transcripts          # Add timestamps to existing transcripts
+  %(prog)s --update-transcripts --max 5  # Update up to 5 transcripts
   %(prog)s 6669 --no-audio               # Don't keep audio files
   %(prog)s 6669 --force                  # Reprocess even if files exist
         """
@@ -1787,6 +1970,12 @@ Examples:
         help="Only update minutes and regenerate summaries (skip audio/transcription)"
     )
 
+    parser.add_argument(
+        "--update-transcripts",
+        action="store_true",
+        help="Re-transcribe clips to add timestamp segments (for clickable timestamps in UI)"
+    )
+
     args = parser.parse_args()
 
     # Initialize pipeline
@@ -1815,6 +2004,18 @@ Examples:
             print("Failed to generate search index")
             sys.exit(1)
         sys.exit(0)
+
+    # Handle update-transcripts mode
+    if args.update_transcripts:
+        results = pipeline.update_transcript_timestamps(max_clips=args.max)
+        print(f"\nTranscript update results:")
+        print(f"  Updated: {len(results['updated'])} clips")
+        print(f"  Failed: {len(results['failed'])} clips")
+        if results['updated']:
+            print(f"  Updated clip IDs: {results['updated']}")
+        if results['failed']:
+            print(f"  Failed clip IDs: {results['failed']}")
+        sys.exit(0 if not results['failed'] else 1)
 
     # Execute based on mode
     if args.update_summary:

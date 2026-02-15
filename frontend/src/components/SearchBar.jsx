@@ -8,7 +8,7 @@ function SearchBar({
   flexSearchProgress
 }) {
   const placeholder = searchMode === 'full'
-    ? 'Search full transcripts and minutes...'
+    ? 'Search transcripts... (use "quotes" for exact word match)'
     : 'Search meetings by title, topic, or content...'
 
   const { loaded, total } = flexSearchProgress || { loaded: 0, total: 0 }

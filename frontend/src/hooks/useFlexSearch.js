@@ -4,18 +4,67 @@ import FlexSearch from 'flexsearch'
 const MANIFEST_URL = '/data/search_index_manifest.json'
 
 /**
+ * Check if a query is wrapped in quotes (exact word match mode)
+ * Returns { isExact: boolean, term: string }
+ */
+function parseQuery(query) {
+  const trimmed = query.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length > 2) {
+    return { isExact: true, term: trimmed.slice(1, -1) }
+  }
+  return { isExact: false, term: trimmed }
+}
+
+/**
+ * Create a regex for whole-word matching
+ * Matches term surrounded by word boundaries (whitespace, punctuation, or start/end)
+ */
+function wholeWordRegex(term) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // Word boundary: start of string, whitespace, or punctuation
+  return new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])${escaped}(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'i')
+}
+
+/**
+ * Find the index of a whole-word match in content
+ */
+function findWholeWordMatch(content, term) {
+  const lowerContent = content.toLowerCase()
+  const lowerTerm = term.toLowerCase()
+  const regex = new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])(${lowerTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'gi')
+
+  const match = regex.exec(lowerContent)
+  if (match) {
+    // Return the index of the actual term (not the boundary char)
+    const fullMatchStart = match.index
+    const termInMatch = match[1]
+    const termStart = lowerContent.indexOf(termInMatch.toLowerCase(), fullMatchStart)
+    return termStart
+  }
+  return -1
+}
+
+/**
  * Extract a snippet from content around the first match of query.
  * Returns { text, matchStart, matchEnd } for highlighting.
  */
-function extractSnippet(content, query, contextChars = 120) {
+function extractSnippet(content, query, contextChars = 120, exactMatch = false) {
   if (!content || !query) return null
 
   const lowerContent = content.toLowerCase()
   const lowerQuery = query.toLowerCase()
 
   // Find the first occurrence of the query
-  const matchIndex = lowerContent.indexOf(lowerQuery)
+  let matchIndex
+  if (exactMatch) {
+    matchIndex = findWholeWordMatch(content, query)
+  } else {
+    matchIndex = lowerContent.indexOf(lowerQuery)
+  }
+
   if (matchIndex === -1) {
+    if (exactMatch) return null // No partial matches for exact mode
+
     // Try to find partial match (first word of query)
     const firstWord = lowerQuery.split(/\s+/)[0]
     const partialIndex = lowerContent.indexOf(firstWord)
@@ -166,15 +215,25 @@ export function useFlexSearch() {
       return []
     }
 
+    // Check for exact match mode (quoted query)
+    const { isExact, term } = parseQuery(query)
+
     // FlexSearch returns array of matching IDs
-    const resultIds = indexRef.current.search(query, limit)
+    // Search with the term (without quotes)
+    const resultIds = indexRef.current.search(term, isExact ? limit * 3 : limit)
 
     // Map IDs back to document metadata with snippets
-    return resultIds.map(id => {
+    let results = resultIds.map(id => {
       const doc = documentsRef.current[id]
       if (!doc) return null
 
-      const snippet = extractSnippet(doc.content, query)
+      // For exact match mode, verify the content contains a whole-word match
+      if (isExact) {
+        const hasWholeWord = wholeWordRegex(term).test(doc.content)
+        if (!hasWholeWord) return null
+      }
+
+      const snippet = extractSnippet(doc.content, term, 120, isExact)
 
       return {
         clip_id: id,
@@ -182,9 +241,17 @@ export function useFlexSearch() {
         date: doc.date,
         meeting_body: doc.meeting_body,
         topics: doc.topics || [],
-        snippet
+        snippet,
+        isExactMatch: isExact
       }
     }).filter(Boolean)
+
+    // Limit results after filtering
+    if (results.length > limit) {
+      results = results.slice(0, limit)
+    }
+
+    return results
   }, [])
 
   return {

@@ -40,6 +40,10 @@ tail -f pipeline.log                          # Monitor progress
 uv run python main.py 6669 --update-summary              # Single clip
 uv run python main.py 6669 6680 --update-summary         # Range of clips
 
+# Add timestamps to existing transcripts (re-transcribe with Whisper)
+uv run python main.py --update-transcripts               # All clips missing timestamps
+uv run python main.py --update-transcripts --max 10      # Limit to 10 clips
+
 # Advanced options
 uv run python main.py 6669 --output-dir /path/to/output
 uv run python main.py 6669 --summary-model gpt-4o-mini   # Cheaper summaries
@@ -78,7 +82,7 @@ Single-file pipeline with `LFUCGPipeline` class that orchestrates:
 2. **Metadata Scraping** - Extracts date and meeting body from title
 3. **Download** - Uses yt-dlp to download audio as MP3 (48kbps, 22kHz mono)
 4. **Compression** - Compresses audio via ffmpeg if >24MB (Whisper API limit is 25MB)
-5. **Transcription** - Uses OpenAI Whisper API
+5. **Transcription** - Uses OpenAI Whisper API with segment timestamps (new transcriptions get timestamped segments for video seeking)
 6. **Agenda Download** - Downloads PDF agenda and extracts text with pdfplumber (falls back to OCR via pytesseract for scanned PDFs)
 7. **Minutes Download** - Downloads official meeting minutes (PDF or HTML) if available and extracts text
 8. **Topic Extraction** - Uses gpt-4o-mini to extract 3-8 topics
@@ -119,7 +123,8 @@ lfucg_output/
   clips/
     {clip_id}/
       {date}_{title}_audio.mp3            # Downloaded audio (e.g., 2026-01-08_January_8_2026_WQFB_meeting_audio.mp3)
-      transcript_{date}_{title}_audio.txt # Whisper transcription
+      transcript_{date}_{title}_audio.txt # Whisper transcription (plain text)
+      transcript_{date}_{title}_audio_segments.json # Timestamped segments (for new transcriptions)
       summary.txt                         # AI-generated summary (text)
       summary.html                        # AI-generated summary (HTML)
       {date}_agenda_{title}.pdf           # Meeting agenda PDF (if available)
@@ -155,6 +160,7 @@ lambda/
   "files": {
     "audio": "2026-01-08_January_8_2026_WQFB_meeting_audio.mp3",
     "transcript": "transcript_2026-01-08_January_8_2026_WQFB_meeting_audio.txt",
+    "transcript_segments": "transcript_2026-01-08_January_8_2026_WQFB_meeting_audio_segments.json",
     "summary_html": "summary.html",
     "summary_txt": "summary.txt",
     "agenda_pdf": "2026-01-08_agenda_January_8_2026_WQFB_meeting.pdf",
