@@ -1,29 +1,11 @@
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMeetings } from '../hooks/useMeetings'
 import { useSearch } from '../hooks/useSearch'
 import SearchBar from './SearchBar'
 import TopicFilter from './TopicFilter'
 
-// Detect if text contains mostly non-Latin characters (garbage transcription)
-function isGarbageText(text) {
-  if (!text) return true
-  // Count Latin letters vs total letters
-  const latinLetters = (text.match(/[a-zA-Z]/g) || []).length
-  const allLetters = (text.match(/\p{L}/gu) || []).length
-  // If less than 50% are Latin, consider it garbage
-  return allLetters > 0 && latinLetters / allLetters < 0.5
-}
-
-// Clean preview text - remove music notes and other noise at start
-function cleanPreview(text) {
-  if (!text) return null
-  if (isGarbageText(text)) return null
-  // Remove leading music notes, special chars, and find first real sentence
-  return text
-    .replace(/^[\u266a\u266b\u266c\s]+/, '') // Remove music notes at start
-    .replace(/^\s*\[.*?\]\s*/g, '') // Remove [bracketed content] at start
-    .trim()
-}
+const PER_PAGE = 24
 
 // Estimate meeting duration from word count (avg speaking rate ~150 wpm)
 function estimateDuration(wordCount) {
@@ -69,7 +51,6 @@ function MeetingCard({ meeting, snippet, onClick }) {
     })
   }
 
-  const preview = cleanPreview(meeting.transcript_preview)
   const duration = estimateDuration(meeting.transcript_words)
 
   return (
@@ -86,27 +67,80 @@ function MeetingCard({ meeting, snippet, onClick }) {
       {meeting.meeting_body && (
         <span className="meeting-card-body">{meeting.meeting_body}</span>
       )}
-      {meeting.topics && meeting.topics.length > 0 && (
-        <div className="meeting-card-topics">
-          {meeting.topics.slice(0, 4).map((topic, i) => (
-            <span key={i} className="topic-tag">{topic}</span>
-          ))}
-          {meeting.topics.length > 4 && (
-            <span className="topic-tag topic-tag-more">+{meeting.topics.length - 4} more</span>
-          )}
-        </div>
+      {meeting.summary_preview && (
+        <div className="meeting-card-preview">{meeting.summary_preview}</div>
       )}
-      {snippet ? (
+      {snippet && (
         <HighlightedSnippet snippet={snippet} />
-      ) : preview ? (
-        <div className="meeting-card-preview">{preview}...</div>
-      ) : null}
+      )}
+    </div>
+  )
+}
+
+function Pagination({ currentPage, totalPages, onPageChange }) {
+  if (totalPages <= 1) return null
+
+  // Build page numbers to show
+  const pages = []
+  const maxVisible = 7
+
+  if (totalPages <= maxVisible) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    let start = Math.max(2, currentPage - 1)
+    let end = Math.min(totalPages - 1, currentPage + 1)
+
+    if (currentPage <= 3) {
+      end = Math.min(5, totalPages - 1)
+    } else if (currentPage >= totalPages - 2) {
+      start = Math.max(2, totalPages - 4)
+    }
+
+    if (start > 2) pages.push('...')
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (end < totalPages - 1) pages.push('...')
+    pages.push(totalPages)
+  }
+
+  return (
+    <div className="pagination">
+      <button
+        className="pagination-btn"
+        disabled={currentPage === 1}
+        onClick={() => onPageChange(currentPage - 1)}
+      >
+        Previous
+      </button>
+      <div className="pagination-pages">
+        {pages.map((page, i) =>
+          page === '...' ? (
+            <span key={`ellipsis-${i}`} className="pagination-ellipsis">...</span>
+          ) : (
+            <button
+              key={page}
+              className={`pagination-page ${page === currentPage ? 'active' : ''}`}
+              onClick={() => onPageChange(page)}
+            >
+              {page}
+            </button>
+          )
+        )}
+      </div>
+      <button
+        className="pagination-btn"
+        disabled={currentPage === totalPages}
+        onClick={() => onPageChange(currentPage + 1)}
+      >
+        Next
+      </button>
     </div>
   )
 }
 
 function MeetingList() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { meetings, loading, error } = useMeetings()
   const {
     query,
@@ -127,6 +161,42 @@ function MeetingList() {
     flexSearchLoaded,
     flexSearchProgress
   } = useSearch(meetings)
+
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+  const totalPages = Math.max(1, Math.ceil(filteredMeetings.length / PER_PAGE))
+  const safePage = Math.min(currentPage, totalPages)
+
+  const paginatedMeetings = filteredMeetings.slice(
+    (safePage - 1) * PER_PAGE,
+    safePage * PER_PAGE
+  )
+
+  // Reset to page 1 when filters/search change (skip initial mount)
+  const isInitialMount = useRef(true)
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('page')
+      return next
+    })
+  }, [query, selectedBody, selectedTopic, sortBy, searchMode])
+
+  const handlePageChange = (page) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (page <= 1) {
+        next.delete('page')
+      } else {
+        next.set('page', String(page))
+      }
+      return next
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   if (loading) {
     return <div className="loading">Loading meetings...</div>
@@ -171,6 +241,7 @@ function MeetingList() {
         <p>
           {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''}
           {query && ` matching "${query}"`}
+          {totalPages > 1 && ` \u2022 Page ${safePage} of ${totalPages}`}
         </p>
       </div>
 
@@ -180,25 +251,32 @@ function MeetingList() {
           <p>Try adjusting your search or filters</p>
         </div>
       ) : (
-        <div className="meeting-list container">
-          {filteredMeetings.map(meeting => (
-            <MeetingCard
-              key={meeting.clip_id}
-              meeting={meeting}
-              snippet={searchSnippets.get(meeting.clip_id)}
-              onClick={() => {
-                // Pass search term in URL if doing full-text transcript search
-                if (searchMode === 'full' && query.trim()) {
-                  const params = new URLSearchParams()
-                  params.set('highlight', query.trim())
-                  navigate(`/meeting/${meeting.clip_id}?${params.toString()}`)
-                } else {
-                  navigate(`/meeting/${meeting.clip_id}`)
-                }
-              }}
-            />
-          ))}
-        </div>
+        <>
+          <div className="meeting-list container">
+            {paginatedMeetings.map(meeting => (
+              <MeetingCard
+                key={meeting.clip_id}
+                meeting={meeting}
+                snippet={searchSnippets.get(meeting.clip_id)}
+                onClick={() => {
+                  // Pass search term in URL if doing full-text transcript search
+                  if (searchMode === 'full' && query.trim()) {
+                    const params = new URLSearchParams()
+                    params.set('highlight', query.trim())
+                    navigate(`/meeting/${meeting.clip_id}?${params.toString()}`)
+                  } else {
+                    navigate(`/meeting/${meeting.clip_id}`)
+                  }
+                }}
+              />
+            ))}
+          </div>
+          <Pagination
+            currentPage={safePage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        </>
       )}
     </>
   )

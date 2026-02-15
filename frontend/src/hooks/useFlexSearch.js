@@ -218,23 +218,95 @@ export function useFlexSearch() {
     // Check for exact match mode (quoted query)
     const { isExact, term } = parseQuery(query)
 
-    // FlexSearch returns array of matching IDs
-    // Search with the term (without quotes)
-    const resultIds = indexRef.current.search(term, isExact ? limit * 3 : limit)
+    if (isExact) {
+      // Exact mode: search the full phrase, then verify whole-word match
+      const resultIds = indexRef.current.search(term, limit * 3)
 
-    // Map IDs back to document metadata with snippets
-    let results = resultIds.map(id => {
-      const doc = documentsRef.current[id]
-      if (!doc) return null
+      let results = resultIds.map(id => {
+        const doc = documentsRef.current[id]
+        if (!doc) return null
 
-      // For exact match mode, verify the content contains a whole-word match
-      if (isExact) {
         const hasWholeWord = wholeWordRegex(term).test(doc.content)
         if (!hasWholeWord) return null
+
+        const snippet = extractSnippet(doc.content, term, 120, true)
+
+        return {
+          clip_id: id,
+          title: doc.title,
+          date: doc.date,
+          meeting_body: doc.meeting_body,
+          topics: doc.topics || [],
+          snippet,
+          isExactMatch: true
+        }
+      }).filter(Boolean)
+
+      if (results.length > limit) {
+        results = results.slice(0, limit)
       }
 
-      const snippet = extractSnippet(doc.content, term, 120, isExact)
+      return results
+    }
 
+    // Non-exact mode: search each word individually and combine results.
+    // This handles cases like "price rd" matching "price road" because
+    // "price" will match even if "rd" doesn't match "road".
+    const words = term.split(/\s+/).filter(w => w.length > 0)
+
+    if (words.length <= 1) {
+      // Single word: simple search
+      const resultIds = indexRef.current.search(term, limit)
+      return resultIds.map(id => {
+        const doc = documentsRef.current[id]
+        if (!doc) return null
+        const snippet = extractSnippet(doc.content, term, 120, false)
+        return {
+          clip_id: id,
+          title: doc.title,
+          date: doc.date,
+          meeting_body: doc.meeting_body,
+          topics: doc.topics || [],
+          snippet,
+          isExactMatch: false
+        }
+      }).filter(Boolean)
+    }
+
+    // Multi-word: search each word, score by how many words match
+    const idScores = new Map() // id -> { matchCount, firstMatchPos }
+
+    for (const word of words) {
+      const wordResults = indexRef.current.search(word, limit * 2)
+      for (let rank = 0; rank < wordResults.length; rank++) {
+        const id = wordResults[rank]
+        if (!idScores.has(id)) {
+          idScores.set(id, { matchCount: 0, bestRank: rank })
+        }
+        const entry = idScores.get(id)
+        entry.matchCount++
+        entry.bestRank = Math.min(entry.bestRank, rank)
+      }
+    }
+
+    // Sort: most matched words first, then by FlexSearch rank
+    const sortedIds = Array.from(idScores.entries())
+      .sort((a, b) => {
+        // More word matches = better
+        if (b[1].matchCount !== a[1].matchCount) return b[1].matchCount - a[1].matchCount
+        // Same match count: better rank wins
+        return a[1].bestRank - b[1].bestRank
+      })
+      .slice(0, limit)
+      .map(([id]) => id)
+
+    // Use the first word for snippet extraction (most likely the important one)
+    const snippetTerm = words[0]
+
+    return sortedIds.map(id => {
+      const doc = documentsRef.current[id]
+      if (!doc) return null
+      const snippet = extractSnippet(doc.content, snippetTerm, 120, false)
       return {
         clip_id: id,
         title: doc.title,
@@ -242,16 +314,9 @@ export function useFlexSearch() {
         meeting_body: doc.meeting_body,
         topics: doc.topics || [],
         snippet,
-        isExactMatch: isExact
+        isExactMatch: false
       }
     }).filter(Boolean)
-
-    // Limit results after filtering
-    if (results.length > limit) {
-      results = results.slice(0, limit)
-    }
-
-    return results
   }, [])
 
   return {

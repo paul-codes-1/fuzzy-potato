@@ -517,10 +517,6 @@ a:hover {
   margin-top: 10px;
   font-size: 0.8125rem;
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   line-height: 1.5;
 }
 
@@ -727,6 +723,11 @@ a:hover {
 .transcript-segments {
   max-height: 600px;
   overflow-y: auto;
+}
+
+.transcript-segments-expanded {
+  max-height: none;
+  overflow-y: visible;
 }
 
 .transcript-hint {
@@ -941,6 +942,75 @@ a:hover {
   font-size: 1.125rem;
   margin-bottom: 6px;
   color: var(--text-primary);
+}
+
+/* ==================
+   Pagination
+   ================== */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 20px 8px;
+}
+
+.pagination-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: white;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: var(--blue-50);
+  border-color: var(--blue-200);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-page {
+  min-width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.pagination-page:hover {
+  background: var(--blue-50);
+}
+
+.pagination-page.active {
+  background: var(--blue-700);
+  color: white;
+  font-weight: 600;
+}
+
+.pagination-ellipsis {
+  padding: 0 4px;
+  color: var(--text-tertiary);
 }
 
 /* ==================
