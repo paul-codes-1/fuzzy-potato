@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
 
@@ -103,18 +103,25 @@ function MeetingDetail() {
   const videoContainerRef = useRef(null)
   const firstMatchRef = useRef(null)
 
-  // Auto-switch to transcript tab and scroll to first match if highlight term is present
-  useEffect(() => {
-    if (highlightTerm && transcriptSegments) {
-      setActiveTab('transcript')
-      // Small delay to allow tab switch and render
-      setTimeout(() => {
-        if (firstMatchRef.current) {
-          firstMatchRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      }, 100)
+  // Check if a word appears at a word boundary in text (prefix match, like FlexSearch forward tokenizer)
+  const wordStartMatch = (text, word) => {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Match word at start of a word boundary (beginning of string or after non-letter)
+    const regex = new RegExp(`(?:^|[^a-zA-Z])${escaped}`, 'i')
+    return regex.test(text)
+  }
+
+  // Check if a segment matches the search term
+  const segmentMatches = (segText, term, isExact) => {
+    if (isExact) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])${escaped}(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'i')
+      return regex.test(segText)
     }
-  }, [highlightTerm, transcriptSegments])
+    // For multi-word queries, match if ANY word appears at a word boundary
+    const words = term.toLowerCase().split(/\s+/).filter(w => w.length > 0)
+    return words.some(word => wordStartMatch(segText, word))
+  }
 
   // Find index of first matching segment
   const firstMatchIndex = useMemo(() => {
@@ -123,28 +130,52 @@ function MeetingDetail() {
     const { isExact, term } = parseSearchTerm(highlightTerm)
     if (!term) return -1
 
-    const lowerTerm = term.toLowerCase()
-
-    if (isExact) {
-      // Whole word match
-      const regex = new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])${lowerTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'i')
-      return transcriptSegments.findIndex(seg => regex.test(seg.text))
-    } else {
-      return transcriptSegments.findIndex(seg =>
-        seg.text.toLowerCase().includes(lowerTerm)
+    if (!isExact) {
+      const words = term.toLowerCase().split(/\s+/).filter(w => w.length > 0)
+      // First pass: find segment with all words at word boundaries
+      const allWordsIdx = transcriptSegments.findIndex(seg =>
+        words.every(w => wordStartMatch(seg.text, w))
       )
+      if (allWordsIdx !== -1) return allWordsIdx
+      // Second pass: find segment with the longest word (most specific)
+      const sorted = [...words].sort((a, b) => b.length - a.length)
+      return transcriptSegments.findIndex(seg => wordStartMatch(seg.text, sorted[0]))
     }
+
+    return transcriptSegments.findIndex(seg => segmentMatches(seg.text, term, true))
   }, [highlightTerm, transcriptSegments])
 
+  // Auto-switch to transcript tab and scroll to first match if highlight term is present
+  useEffect(() => {
+    if (!highlightTerm || !transcriptSegments || firstMatchIndex === -1) return
+
+    setActiveTab('transcript')
+
+    // Poll for the ref to be attached, then scroll (container is expanded when highlighting)
+    let cancelled = false
+    const tryScroll = (attempts) => {
+      if (cancelled) return
+      if (firstMatchRef.current) {
+        // Use instant scroll first to ensure it lands, then no layout interruption
+        firstMatchRef.current.scrollIntoView({ behavior: 'instant', block: 'center' })
+      } else if (attempts > 0) {
+        setTimeout(() => tryScroll(attempts - 1), 200)
+      }
+    }
+    // Longer initial delay to let the expanded transcript fully render
+    setTimeout(() => tryScroll(20), 300)
+
+    return () => { cancelled = true }
+  }, [highlightTerm, transcriptSegments, firstMatchIndex])
+
   // Jump to a specific time in the embedded video
-  const jumpToTime = (seconds) => {
+  const jumpToTime = useCallback((seconds) => {
     setVideoLoading(true)
     setVideoStartTime(Math.floor(seconds))
-    // Scroll to video player
     if (videoContainerRef.current) {
       videoContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }
+  }, [])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Unknown date'
@@ -168,6 +199,21 @@ function MeetingDetail() {
     return `${hours}h ${remainingMins}m`
   }
 
+  const getFileUrl = useCallback((filename) => {
+    return `/data/clips/${clipId}/${filename}`
+  }, [clipId])
+
+  // Determine available tabs
+  const tabs = useMemo(() => {
+    if (!meeting) return []
+    const result = []
+    if (summary || meeting.files?.summary_html) result.push({ id: 'summary', label: 'Summary' })
+    if (transcript || meeting.files?.transcript) result.push({ id: 'transcript', label: 'Transcript' })
+    if (agenda || meeting.files?.agenda_txt) result.push({ id: 'agenda', label: 'Agenda' })
+    if (minutes || meeting.files?.minutes_txt) result.push({ id: 'minutes', label: 'Official Minutes' })
+    return result
+  }, [summary, transcript, agenda, minutes, meeting])
+
   if (loading) {
     return <div className="loading">Loading meeting details...</div>
   }
@@ -182,18 +228,7 @@ function MeetingDetail() {
     )
   }
 
-  const getFileUrl = (filename) => {
-    return `/data/clips/${clipId}/${filename}`
-  }
-
   const duration = estimateDuration(meeting.transcript_words)
-
-  // Determine available tabs
-  const tabs = []
-  if (summary || meeting.files?.summary_html) tabs.push({ id: 'summary', label: 'Summary' })
-  if (transcript || meeting.files?.transcript) tabs.push({ id: 'transcript', label: 'Transcript' })
-  if (agenda || meeting.files?.agenda_txt) tabs.push({ id: 'agenda', label: 'Agenda' })
-  if (minutes || meeting.files?.minutes_txt) tabs.push({ id: 'minutes', label: 'Official Minutes' })
 
   // Default to first available tab if current is not available
   const currentTab = tabs.find(t => t.id === activeTab) ? activeTab : (tabs[0]?.id || 'summary')
@@ -225,7 +260,7 @@ function MeetingDetail() {
       <div className="meeting-files">
         <h2>Download Files</h2>
         <div className="file-links">
-          {meeting.files?.audio && (
+          {meeting.files?.audio && window.location.protocol !== 'https:' && (
             <a
               href={getFileUrl(meeting.files.audio)}
               className="file-link"
@@ -327,42 +362,36 @@ function MeetingDetail() {
                   </div>
                 )}
                 {transcriptSegments && transcriptSegments.length > 0 ? (
-                  <div className="transcript-segments">
+                  <div className={`transcript-segments${highlightTerm ? ' transcript-segments-expanded' : ''}`}>
                     <p className="transcript-hint">
                       Click a timestamp to jump to that point in the video below
                     </p>
-                    {transcriptSegments.map((segment, idx) => {
-                      const isFirstMatch = idx === firstMatchIndex
+                    {(() => {
                       const { isExact, term } = parseSearchTerm(highlightTerm)
-                      let hasMatch = false
-                      if (term) {
-                        if (isExact) {
-                          const regex = new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'i')
-                          hasMatch = regex.test(segment.text)
-                        } else {
-                          hasMatch = segment.text.toLowerCase().includes(term.toLowerCase())
-                        }
-                      }
+                      return transcriptSegments.map((segment, idx) => {
+                        const isFirstMatch = idx === firstMatchIndex
+                        const hasMatch = term ? segmentMatches(segment.text, term, isExact) : false
 
-                      return (
-                        <div
-                          key={idx}
-                          ref={isFirstMatch ? firstMatchRef : null}
-                          className={`transcript-segment ${hasMatch ? 'has-match' : ''}`}
-                        >
-                          <button
-                            onClick={() => jumpToTime(segment.start)}
-                            className="timestamp-link"
-                            title={`Jump to ${formatTimestamp(segment.start)} in video`}
+                        return (
+                          <div
+                            key={idx}
+                            ref={isFirstMatch ? firstMatchRef : null}
+                            className={`transcript-segment ${hasMatch ? 'has-match' : ''}`}
                           >
-                            {formatTimestamp(segment.start)}
-                          </button>
-                          <span className="segment-text">
-                            <HighlightedText text={segment.text} searchTerm={highlightTerm} />
-                          </span>
-                        </div>
-                      )
-                    })}
+                            <button
+                              onClick={() => jumpToTime(segment.start)}
+                              className="timestamp-link"
+                              title={`Jump to ${formatTimestamp(segment.start)} in video`}
+                            >
+                              {formatTimestamp(segment.start)}
+                            </button>
+                            <span className="segment-text">
+                              <HighlightedText text={segment.text} searchTerm={highlightTerm} />
+                            </span>
+                          </div>
+                        )
+                      })
+                    })()}
                   </div>
                 ) : transcript ? (
                   <pre className="transcript-text">
@@ -459,7 +488,6 @@ function MeetingDetail() {
             </div>
           )}
           <iframe
-            key={videoStartTime}
             width="100%"
             height="100%"
             frameBorder="0"

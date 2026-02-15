@@ -1290,6 +1290,35 @@ Transcript:
                             # First 500 chars for preview
                             transcript_preview = full_text[:500].replace('\n', ' ').strip()
 
+                # Extract high-level summary for card preview
+                summary_preview = ""
+                summary_txt_file = metadata.get("files", {}).get("summary_txt", "summary.txt")
+                summary_path = clip_dir / summary_txt_file
+                if summary_path.exists():
+                    try:
+                        with open(summary_path, 'r', encoding='utf-8') as f:
+                            lines = f.read().split('\n')
+                        for line in lines:
+                            stripped = line.strip()
+                            for key in ('- **High-Level Summary**:', '- **Summary**:'):
+                                if stripped.startswith(key):
+                                    summary_preview = stripped[len(key):].strip()
+                                    break
+                            if summary_preview:
+                                break
+                        if not summary_preview:
+                            for i, line in enumerate(lines):
+                                stripped = line.strip().rstrip(':')
+                                if stripped in ('### High-Level Summary', '## High-Level Summary', 'High-Level Summary'):
+                                    for j in range(i + 1, min(i + 5, len(lines))):
+                                        candidate = lines[j].strip()
+                                        if candidate and not candidate.startswith('#') and not candidate.startswith('- **'):
+                                            summary_preview = candidate
+                                            break
+                                    break
+                    except Exception:
+                        pass
+
                 entry = {
                     "clip_id": metadata.get("clip_id"),
                     "date": metadata.get("date"),
@@ -1298,6 +1327,7 @@ Transcript:
                     "topics": metadata.get("topics", []),
                     "transcript_words": metadata.get("transcript_words", 0),
                     "transcript_preview": transcript_preview,
+                    "summary_preview": summary_preview,
                     "processed_at": metadata.get("processed_at"),
                     "files": metadata.get("files", {})
                 }

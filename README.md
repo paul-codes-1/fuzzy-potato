@@ -159,20 +159,24 @@ npm run preview  # Test production build locally
 
 ### Deploy
 
-Copy `frontend/dist/` and `lfucg_output/` to your hosting:
+```bash
+# Build and deploy to S3 + invalidate CloudFront cache
+CLOUDFRONT_DISTRIBUTION_ID=E1234567890 ./deploy.sh
+```
 
-```
-your-server/
-  index.html
-  assets/
-  data/
-    index.json
-    clips/
-      {clip_id}/
-        summary.html
-        metadata.json
-        ...
-```
+### Basic Auth
+
+The deployed site is protected with basic authentication:
+
+- **Username:** `public`
+- **Password:** `L3tMe1n!`
+
+This is implemented as a CloudFront Function (`cloudfront/basic-auth.js`). To set it up:
+
+1. Go to **CloudFront > Functions** in the AWS Console
+2. Create a new function, paste the contents of `cloudfront/basic-auth.js`
+3. Publish the function
+4. Associate it with your distribution's **Viewer request** event on the default behavior
 
 ## Output Structure
 
@@ -211,11 +215,10 @@ Your frontend already fetches everything from relative /data/ paths. You have tw
 ***
 
   2. Deploy the built frontend (frontend/dist/) to the same bucket root:
-  cd frontend && npm run build
 
-  ***
-`  aws s3 sync dist/ s3://public-meetings/ --exclude "data/*"
-`
+      `cd frontend && npm run build`
+      
+      `aws s3 sync dist/ s3://public-meetings/ --exclude "data/*"`
 ***
 
   3. Create a CloudFront distribution pointing to the bucket. The structure would be:

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Build FlexSearch index from transcript and minutes files.
+ * Build FlexSearch index from transcript, minutes, and agenda files.
  *
- * Reads all transcript_*.txt and minutes_*.txt files from lfucg_output/clips/
+ * Reads all transcript, minutes, and agenda .txt files from lfucg_output/clips/
  * and creates chunked FlexSearch indexes for full-text search.
  *
  * Usage: node scripts/build-search-index.js
@@ -37,9 +37,16 @@ function findTranscriptFile(clipDir) {
   return transcriptFile ? path.join(clipDir, transcriptFile) : null
 }
 
-function findMinutesFile(clipDir, clipId) {
-  const minutesPath = path.join(clipDir, `minutes_${clipId}.txt`)
-  return fs.existsSync(minutesPath) ? minutesPath : null
+function findMinutesFile(clipDir) {
+  const files = fs.readdirSync(clipDir)
+  const minutesFile = files.find(f => f.includes('minutes') && f.endsWith('.txt'))
+  return minutesFile ? path.join(clipDir, minutesFile) : null
+}
+
+function findAgendaFile(clipDir) {
+  const files = fs.readdirSync(clipDir)
+  const agendaFile = files.find(f => f.includes('agenda') && f.endsWith('.txt'))
+  return agendaFile ? path.join(clipDir, agendaFile) : null
 }
 
 function buildIndex() {
@@ -80,19 +87,22 @@ function buildIndex() {
   const documents = []
   let transcriptCount = 0
   let minutesCount = 0
+  let agendaCount = 0
 
   for (const { clipId, path: clipPath } of clipDirs) {
     const transcriptPath = findTranscriptFile(clipPath)
-    const minutesPath = findMinutesFile(clipPath, clipId)
+    const minutesPath = findMinutesFile(clipPath)
+    const agendaPath = findAgendaFile(clipPath)
 
     const transcript = transcriptPath ? readTextFile(transcriptPath) : null
     const minutes = minutesPath ? readTextFile(minutesPath) : null
+    const agenda = agendaPath ? readTextFile(agendaPath) : null
 
     // Skip clips with no searchable content
-    if (!transcript && !minutes) continue
+    if (!transcript && !minutes && !agenda) continue
 
     const meta = metadata[clipId] || {}
-    const content = [transcript, minutes].filter(Boolean).join('\n\n---\n\n')
+    const content = [transcript, minutes, agenda].filter(Boolean).join('\n\n---\n\n')
 
     documents.push({
       id: clipId,
@@ -105,9 +115,10 @@ function buildIndex() {
 
     if (transcript) transcriptCount++
     if (minutes) minutesCount++
+    if (agenda) agendaCount++
   }
 
-  console.log(`Indexed ${documents.length} clips (${transcriptCount} transcripts, ${minutesCount} minutes)`)
+  console.log(`Indexed ${documents.length} clips (${transcriptCount} transcripts, ${minutesCount} minutes, ${agendaCount} agendas)`)
 
   // Ensure output directory exists
   if (!fs.existsSync(OUTPUT_DIR)) {
