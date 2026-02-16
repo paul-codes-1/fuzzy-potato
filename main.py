@@ -52,7 +52,6 @@ class LFUCGPipeline:
             openai_api_key: Optional[str] = None,
             transcribe_model: str = "whisper-1",
             summary_model: str = "gpt-4o",
-            topic_model: str = "gpt-4o-mini",
             keep_audio: bool = True,
             verbose: bool = True,
             force_reprocess: bool = False,
@@ -68,7 +67,6 @@ class LFUCGPipeline:
         # Models
         self.transcribe_model = transcribe_model
         self.summary_model = summary_model
-        self.topic_model = topic_model
 
         # First clip ID for auto-processing (from environment)
         self.first_clip_id = int(os.getenv("FIRST_CLIP_ID", "6669"))
@@ -957,7 +955,10 @@ class LFUCGPipeline:
         for pattern in body_patterns:
             match = re.search(pattern, search_text, re.IGNORECASE)
             if match:
-                metadata["meeting_body"] = match.group(1)
+                # Normalize casing: keep acronyms uppercase, title-case regular words
+                body = match.group(1)
+                acronyms = {"WQFB", "CAC", "LFUCG"}
+                metadata["meeting_body"] = body.upper() if body.upper() in acronyms else body.title()
                 break
 
         return metadata
@@ -1101,64 +1102,6 @@ Guidelines:
             self.log(f"Summary generation error: {e}", "ERROR")
             return None
 
-    def extract_topics(self, transcript: str) -> List[str]:
-        """Extract 3-8 high-level topics from the transcript using AI."""
-        self.log(f"Extracting topics with {self.topic_model}")
-
-        # Use a sample of the transcript if it's very long
-        sample = transcript[:15000] if len(transcript) > 15000 else transcript
-
-        prompt = """Analyze this government meeting transcript and extract 3-8 high-level topics discussed.
-
-Return ONLY a JSON array of topic strings. Topics should be:
-- Concise (2-4 words each)
-- Descriptive of the actual content discussed
-- Capitalized properly
-
-Example output: ["Budget Approval", "Zoning Amendment", "Public Safety", "Infrastructure Updates"]
-
-Transcript:
-"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.topic_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You extract topics from meeting transcripts. Return only valid JSON arrays."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"{prompt}\n{sample}"
-                    }
-                ],
-                temperature=0.2,
-                max_tokens=200
-            )
-
-            result = response.choices[0].message.content.strip()
-
-            # Parse JSON array
-            # Handle potential markdown code blocks
-            if result.startswith("```"):
-                result = re.sub(r'```\w*\n?', '', result).strip()
-
-            topics = json.loads(result)
-
-            if isinstance(topics, list) and all(isinstance(t, str) for t in topics):
-                self.progress(f"Extracted topics: {topics}")
-                return topics[:8]  # Limit to 8 topics
-            else:
-                self.log("Invalid topics format returned", "WARNING")
-                return []
-
-        except json.JSONDecodeError as e:
-            self.log(f"Failed to parse topics JSON: {e}", "WARNING")
-            return []
-        except Exception as e:
-            self.log(f"Topic extraction error: {e}", "WARNING")
-            return []
 
     def _convert_inline_markdown(self, text: str) -> str:
         """Convert inline markdown (bold, italic) to HTML tags."""
@@ -1319,12 +1262,17 @@ Transcript:
                     except Exception:
                         pass
 
+                # Normalize meeting body casing
+                body = metadata.get("meeting_body")
+                if body:
+                    acronyms = {"WQFB", "CAC", "LFUCG"}
+                    body = body.upper() if body.upper() in acronyms else body.title()
+
                 entry = {
                     "clip_id": metadata.get("clip_id"),
                     "date": metadata.get("date"),
-                    "meeting_body": metadata.get("meeting_body"),
+                    "meeting_body": body,
                     "title": metadata.get("title"),
-                    "topics": metadata.get("topics", []),
                     "transcript_words": metadata.get("transcript_words", 0),
                     "transcript_preview": transcript_preview,
                     "summary_preview": summary_preview,
@@ -1603,10 +1551,7 @@ Transcript:
                 # Re-extract metadata now that we have agenda text
                 clip_metadata = self.scrape_clip_metadata(clip_id, title, agenda_result.get("text"))
 
-            # Step 8: Extract topics from transcript
-            topics = self.extract_topics(transcript)
-
-            # Step 9: Generate summary (with agenda and minutes context)
+            # Step 8: Generate summary (with agenda and minutes context)
             summary_txt_path = clip_dir / "summary.txt"
             summary = self.generate_summary(
                 clip_id,
@@ -1645,7 +1590,6 @@ Transcript:
                 "date": clip_metadata.get("date"),
                 "meeting_body": clip_metadata.get("meeting_body"),
                 "title": title,
-                "topics": topics,
                 "files": files,
                 "processed_at": end_time.isoformat(),
                 "processing_time_seconds": (end_time - start_time).total_seconds(),
@@ -1654,7 +1598,6 @@ Transcript:
                 "models": {
                     "transcribe": self.transcribe_model,
                     "summary": self.summary_model,
-                    "topics": self.topic_model
                 }
             }
 
@@ -1982,11 +1925,6 @@ Examples:
         help="OpenAI summary generation model (default: gpt-4o)"
     )
 
-    parser.add_argument(
-        "--topic-model",
-        default="gpt-4o-mini",
-        help="OpenAI topic extraction model (default: gpt-4o-mini)"
-    )
 
     parser.add_argument(
         "--quiet",
@@ -2015,7 +1953,6 @@ Examples:
             view_id=args.view_id,
             transcribe_model=args.transcribe_model,
             summary_model=args.summary_model,
-            topic_model=args.topic_model,
             keep_audio=not args.no_audio,
             verbose=not args.quiet,
             force_reprocess=args.force,
