@@ -1,25 +1,46 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useCallback } from 'react'
 import Fuse from 'fuse.js'
 import { useFlexSearch } from './useFlexSearch'
 
 const fuseOptions = {
   keys: [
-    { name: 'title', weight: 0.3 },
-    { name: 'topics', weight: 0.3 },
-    { name: 'meeting_body', weight: 0.2 },
-    { name: 'transcript_preview', weight: 0.2 }
+    { name: 'title', weight: 0.4 },
+    { name: 'meeting_body', weight: 0.3 },
+    { name: 'transcript_preview', weight: 0.3 }
   ],
   threshold: 0.4,
   ignoreLocation: true,
   includeScore: true
 }
 
-export function useSearch(meetings) {
-  const [query, setQuery] = useState('')
-  const [selectedBody, setSelectedBody] = useState(null)
-  const [selectedTopic, setSelectedTopic] = useState(null)
-  const [sortBy, setSortBy] = useState('date-desc') // 'date-desc', 'date-asc', 'title'
-  const [searchMode, setSearchMode] = useState('quick') // 'quick' or 'full'
+export function useSearch(meetings, searchParams, setSearchParams) {
+  // Read state from URL params (single source of truth)
+  const query = searchParams.get('q') || ''
+  const selectedBody = searchParams.get('body') || null
+  const sortBy = searchParams.get('sort') || 'date-desc'
+  const searchMode = searchParams.get('mode') || 'quick'
+
+  // Setters that update URL params
+  const updateParam = useCallback((key, value, defaultValue) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (!value || value === defaultValue) {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
+      // Reset page when filters change
+      if (key !== 'page') {
+        next.delete('page')
+      }
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+
+  const setQuery = useCallback((v) => updateParam('q', v, ''), [updateParam])
+  const setSelectedBody = useCallback((v) => updateParam('body', v, null), [updateParam])
+  const setSortBy = useCallback((v) => updateParam('sort', v, 'date-desc'), [updateParam])
+  const setSearchMode = useCallback((v) => updateParam('mode', v, 'quick'), [updateParam])
 
   // FlexSearch for full-text search
   const {
@@ -43,26 +64,13 @@ export function useSearch(meetings) {
     return new Fuse(meetings, fuseOptions)
   }, [meetings])
 
-  // Get unique meeting bodies and topics
+  // Get unique meeting bodies
   const meetingBodies = useMemo(() => {
     const bodies = new Set()
     meetings.forEach(m => {
       if (m.meeting_body) bodies.add(m.meeting_body)
     })
     return Array.from(bodies).sort()
-  }, [meetings])
-
-  // Get ALL topics with counts (not limited to 20)
-  const allTopics = useMemo(() => {
-    const topics = new Map()
-    meetings.forEach(m => {
-      (m.topics || []).forEach(t => {
-        topics.set(t, (topics.get(t) || 0) + 1)
-      })
-    })
-    return Array.from(topics.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([topic, count]) => ({ topic, count }))
   }, [meetings])
 
   // Create a lookup map for meetings by clip_id
@@ -120,32 +128,24 @@ export function useSearch(meetings) {
       results = results.filter(m => m.meeting_body === selectedBody)
     }
 
-    // Apply topic filter
-    if (selectedTopic) {
-      results = results.filter(m => (m.topics || []).includes(selectedTopic))
-    }
-
     // Apply sorting (only if not searching - search results preserve relevance order)
     if (!query.trim()) {
       results = sortMeetings(results)
     }
 
     return { filteredMeetings: results, searchSnippets: snippets }
-  }, [meetings, query, selectedBody, selectedTopic, sortBy, fuse, searchMode, flexSearchLoaded, flexSearch, meetingsById])
+  }, [meetings, query, selectedBody, sortBy, fuse, searchMode, flexSearchLoaded, flexSearch, meetingsById])
 
   return {
     query,
     setQuery,
     selectedBody,
     setSelectedBody,
-    selectedTopic,
-    setSelectedTopic,
     sortBy,
     setSortBy,
     searchMode,
     setSearchMode,
     meetingBodies,
-    allTopics,
     filteredMeetings,
     searchSnippets,
     flexSearchLoading,

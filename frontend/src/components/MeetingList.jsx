@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMeetings } from '../hooks/useMeetings'
 import { useSearch } from '../hooks/useSearch'
@@ -39,7 +38,7 @@ function HighlightedSnippet({ snippet }) {
   )
 }
 
-function MeetingCard({ meeting, snippet, onClick }) {
+function MeetingCard({ meeting, snippet, href, onClick }) {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Unknown date'
     const date = new Date(dateStr + 'T00:00:00')
@@ -54,7 +53,7 @@ function MeetingCard({ meeting, snippet, onClick }) {
   const duration = estimateDuration(meeting.transcript_words)
 
   return (
-    <div className="meeting-card" onClick={onClick} role="article">
+    <a className="meeting-card" href={href} onClick={onClick} role="article">
       <div className="meeting-card-header">
         <div className="meeting-card-date">{formatDate(meeting.date)}</div>
         {duration && (
@@ -73,7 +72,7 @@ function MeetingCard({ meeting, snippet, onClick }) {
       {snippet && (
         <HighlightedSnippet snippet={snippet} />
       )}
-    </div>
+    </a>
   )
 }
 
@@ -147,20 +146,17 @@ function MeetingList() {
     setQuery,
     selectedBody,
     setSelectedBody,
-    selectedTopic,
-    setSelectedTopic,
     sortBy,
     setSortBy,
     searchMode,
     setSearchMode,
     meetingBodies,
-    allTopics,
     filteredMeetings,
     searchSnippets,
     flexSearchLoading,
     flexSearchLoaded,
     flexSearchProgress
-  } = useSearch(meetings)
+  } = useSearch(meetings, searchParams, setSearchParams)
 
   const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
   const totalPages = Math.max(1, Math.ceil(filteredMeetings.length / PER_PAGE))
@@ -170,20 +166,6 @@ function MeetingList() {
     (safePage - 1) * PER_PAGE,
     safePage * PER_PAGE
   )
-
-  // Reset to page 1 when filters/search change (skip initial mount)
-  const isInitialMount = useRef(true)
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false
-      return
-    }
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      next.delete('page')
-      return next
-    })
-  }, [query, selectedBody, selectedTopic, sortBy, searchMode])
 
   const handlePageChange = (page) => {
     setSearchParams(prev => {
@@ -226,11 +208,8 @@ function MeetingList() {
           />
           <TopicFilter
             meetingBodies={meetingBodies}
-            allTopics={allTopics}
             selectedBody={selectedBody}
             setSelectedBody={setSelectedBody}
-            selectedTopic={selectedTopic}
-            setSelectedTopic={setSelectedTopic}
             sortBy={sortBy}
             setSortBy={setSortBy}
           />
@@ -258,8 +237,15 @@ function MeetingList() {
                 key={meeting.clip_id}
                 meeting={meeting}
                 snippet={searchSnippets.get(meeting.clip_id)}
-                onClick={() => {
-                  // Pass search term in URL if doing full-text transcript search
+                href={
+                  searchMode === 'full' && query.trim()
+                    ? `/meeting/${meeting.clip_id}?highlight=${encodeURIComponent(query.trim())}`
+                    : `/meeting/${meeting.clip_id}`
+                }
+                onClick={(e) => {
+                  // Let browser handle middle-click, ctrl+click, cmd+click natively
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey) return
+                  e.preventDefault()
                   if (searchMode === 'full' && query.trim()) {
                     const params = new URLSearchParams()
                     params.set('highlight', query.trim())

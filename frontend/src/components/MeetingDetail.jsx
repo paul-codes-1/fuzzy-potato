@@ -92,6 +92,78 @@ function HighlightedText({ text, searchTerm }) {
   }
 }
 
+// Pre-formatted text block with highlighting and scroll-to-first-match
+function HighlightedPre({ text, searchTerm, firstMatchRef, className = 'agenda-text' }) {
+  if (!searchTerm || !text) {
+    return <pre className={className}>{text}</pre>
+  }
+
+  const { isExact, term } = parseSearchTerm(searchTerm)
+  if (!term) {
+    return <pre className={className}>{text}</pre>
+  }
+
+  // Build a regex to find all matches
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let regex
+  if (isExact) {
+    regex = new RegExp(`((?:^|[\\s.,;:!?'"()\\[\\]{}\\-]))(${escaped})((?:[\\s.,;:!?'"()\\[\\]{}\\-]|$))`, 'gi')
+  } else {
+    // Match any word from the query
+    const words = term.split(/\s+/).filter(w => w.length > 0)
+    const wordPattern = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+    regex = new RegExp(`(${wordPattern})`, 'gi')
+  }
+
+  // Split text into parts, wrapping matches in <mark> and attaching ref to first match
+  const parts = []
+  let lastIndex = 0
+  let firstMatchFound = false
+  let match
+
+  if (isExact) {
+    while ((match = regex.exec(text)) !== null) {
+      const beforeEnd = match.index + match[1].length
+      if (beforeEnd > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, beforeEnd) })
+      }
+      parts.push({ type: 'highlight', content: match[2], isFirst: !firstMatchFound })
+      firstMatchFound = true
+      lastIndex = beforeEnd + match[2].length
+    }
+  } else {
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) })
+      }
+      parts.push({ type: 'highlight', content: match[0], isFirst: !firstMatchFound })
+      firstMatchFound = true
+      lastIndex = match.index + match[0].length
+    }
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', content: text.slice(lastIndex) })
+  }
+
+  return (
+    <pre className={className}>
+      {parts.map((part, i) =>
+        part.type === 'highlight' ? (
+          <mark
+            key={i}
+            ref={part.isFirst && firstMatchRef ? firstMatchRef : null}
+            className="search-highlight"
+          >
+            {part.content}
+          </mark>
+        ) : (
+          <span key={i}>{part.content}</span>
+        )
+      )}
+    </pre>
+  )
+}
+
 function MeetingDetail() {
   const { clipId } = useParams()
   const [searchParams] = useSearchParams()
@@ -145,28 +217,50 @@ function MeetingDetail() {
     return transcriptSegments.findIndex(seg => segmentMatches(seg.text, term, true))
   }, [highlightTerm, transcriptSegments])
 
-  // Auto-switch to transcript tab and scroll to first match if highlight term is present
+  // Check if plain text contains the search term
+  const textContainsTerm = useCallback((text, searchTerm) => {
+    if (!text || !searchTerm) return false
+    const { isExact, term } = parseSearchTerm(searchTerm)
+    if (!term) return false
+    if (isExact) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return new RegExp(`(?:^|[\\s.,;:!?'"()\\[\\]{}\\-])${escaped}(?:[\\s.,;:!?'"()\\[\\]{}\\-]|$)`, 'i').test(text)
+    }
+    const words = term.toLowerCase().split(/\s+/).filter(w => w.length > 0)
+    return words.some(word => wordStartMatch(text, word))
+  }, [])
+
+  // Determine which tab to auto-switch to based on where the match is found
+  const bestMatchTab = useMemo(() => {
+    if (!highlightTerm) return null
+    // Prefer transcript (has timestamps), then minutes, then agenda
+    if (firstMatchIndex !== -1) return 'transcript'
+    if (transcript && textContainsTerm(transcript, highlightTerm)) return 'transcript'
+    if (minutes && textContainsTerm(minutes, highlightTerm)) return 'minutes'
+    if (agenda && textContainsTerm(agenda, highlightTerm)) return 'agenda'
+    return null
+  }, [highlightTerm, firstMatchIndex, transcript, minutes, agenda, textContainsTerm])
+
+  // Auto-switch to best tab and scroll to first match if highlight term is present
   useEffect(() => {
-    if (!highlightTerm || !transcriptSegments || firstMatchIndex === -1) return
+    if (!highlightTerm || !bestMatchTab) return
 
-    setActiveTab('transcript')
+    setActiveTab(bestMatchTab)
 
-    // Poll for the ref to be attached, then scroll (container is expanded when highlighting)
+    // Poll for the ref to be attached, then scroll
     let cancelled = false
     const tryScroll = (attempts) => {
       if (cancelled) return
       if (firstMatchRef.current) {
-        // Use instant scroll first to ensure it lands, then no layout interruption
         firstMatchRef.current.scrollIntoView({ behavior: 'instant', block: 'center' })
       } else if (attempts > 0) {
         setTimeout(() => tryScroll(attempts - 1), 200)
       }
     }
-    // Longer initial delay to let the expanded transcript fully render
     setTimeout(() => tryScroll(20), 300)
 
     return () => { cancelled = true }
-  }, [highlightTerm, transcriptSegments, firstMatchIndex])
+  }, [highlightTerm, bestMatchTab])
 
   // Jump to a specific time in the embedded video
   const jumpToTime = useCallback((seconds) => {
@@ -248,13 +342,6 @@ function MeetingDetail() {
             <span>• {meeting.transcript_words.toLocaleString()} words</span>
           )}
         </div>
-        {meeting.topics && meeting.topics.length > 0 && (
-          <div className="meeting-card-topics" style={{ marginTop: '16px' }}>
-            {meeting.topics.map((topic, i) => (
-              <span key={i} className="topic-tag">{topic}</span>
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="meeting-files">
@@ -333,6 +420,15 @@ function MeetingDetail() {
             ))}
           </div>
 
+          {highlightTerm && (
+            <div className="search-highlight-banner">
+              Highlighting: "<strong>{highlightTerm}</strong>"
+              <Link to={`/meeting/${clipId}`} className="clear-highlight">
+                Clear
+              </Link>
+            </div>
+          )}
+
           <div className="content-panel" role="tabpanel">
             {currentTab === 'summary' && (
               <div className="meeting-summary">
@@ -353,14 +449,6 @@ function MeetingDetail() {
 
             {currentTab === 'transcript' && (
               <div className="meeting-transcript">
-                {highlightTerm && (
-                  <div className="search-highlight-banner">
-                    Highlighting: "<strong>{highlightTerm}</strong>"
-                    <Link to={`/meeting/${clipId}`} className="clear-highlight">
-                      Clear
-                    </Link>
-                  </div>
-                )}
                 {transcriptSegments && transcriptSegments.length > 0 ? (
                   <div className={`transcript-segments${highlightTerm ? ' transcript-segments-expanded' : ''}`}>
                     <p className="transcript-hint">
@@ -413,7 +501,11 @@ function MeetingDetail() {
             {currentTab === 'agenda' && (
               <div className="meeting-agenda">
                 {agenda ? (
-                  <pre className="agenda-text">{agenda}</pre>
+                  <HighlightedPre
+                    text={agenda}
+                    searchTerm={highlightTerm}
+                    firstMatchRef={bestMatchTab === 'agenda' ? firstMatchRef : null}
+                  />
                 ) : (
                   <p className="content-unavailable">
                     Agenda text not available.{' '}
@@ -430,7 +522,12 @@ function MeetingDetail() {
             {currentTab === 'minutes' && (
               <div className="meeting-minutes">
                 {minutes ? (
-                  <pre className="minutes-text">{minutes}</pre>
+                  <HighlightedPre
+                    text={minutes}
+                    searchTerm={highlightTerm}
+                    firstMatchRef={bestMatchTab === 'minutes' ? firstMatchRef : null}
+                    className="minutes-text"
+                  />
                 ) : (
                   <p className="content-unavailable">
                     Minutes text not available inline.{' '}

@@ -9,7 +9,7 @@ function SearchBar({
 }) {
   const placeholder = searchMode === 'full'
     ? 'Search transcripts... (use "quotes" for exact match)'
-    : 'Search by title, topic, or content...'
+    : 'Search by title or content...'
 
   const { loaded, total } = flexSearchProgress || { loaded: 0, total: 0 }
   const showProgress = searchMode === 'full' && flexSearchLoading && total > 1

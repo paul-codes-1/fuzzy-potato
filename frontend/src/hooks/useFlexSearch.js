@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import FlexSearch from 'flexsearch'
 
 const MANIFEST_URL = '/data/search_index_manifest.json'
@@ -131,29 +131,50 @@ function extractSnippet(content, query, contextChars = 120, exactMatch = false) 
   }
 }
 
+// Module-level singleton so the index survives component unmount/remount
+let _index = null
+let _documents = {}
+let _loaded = false
+let _loading = false
+let _loadPromise = null
+
 /**
  * Hook for lazy-loading and searching the full-text FlexSearch index.
  *
  * The index is split into chunks and only loaded when loadIndex() is called,
  * keeping initial page load fast. Once loaded, searches are nearly instant (<10ms).
+ * The index persists at module level so navigating away and back doesn't reload it.
  */
 export function useFlexSearch() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const [isLoading, setIsLoading] = useState(_loading)
+  const [isLoaded, setIsLoaded] = useState(_loaded)
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 })
   const [error, setError] = useState(null)
 
-  // Store index and documents in refs to avoid re-renders
-  const indexRef = useRef(null)
-  const documentsRef = useRef({})
-
   const loadIndex = useCallback(async () => {
-    if (isLoaded || isLoading) return
+    if (_loaded) {
+      setIsLoaded(true)
+      return
+    }
+    if (_loading) {
+      // Another mount already started loading; wait for it
+      setIsLoading(true)
+      try {
+        await _loadPromise
+        setIsLoaded(true)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
 
+    _loading = true
     setIsLoading(true)
     setError(null)
 
-    try {
+    _loadPromise = (async () => {
       // First, load the manifest to know how many chunks there are
       const manifestResponse = await fetch(MANIFEST_URL)
       if (!manifestResponse.ok) {
@@ -177,15 +198,16 @@ export function useFlexSearch() {
       })
 
       // Load all chunks in parallel
-      const chunkPromises = chunks.map(async (chunk, i) => {
+      let loadedCount = 0
+      const chunkPromises = chunks.map(async (chunk) => {
         const response = await fetch(`/data/${chunk.filename}`)
         if (!response.ok) {
           throw new Error(`Failed to load chunk ${chunk.filename}: ${response.status}`)
         }
         const data = await response.json()
 
-        // Update progress
-        setLoadProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }))
+        loadedCount++
+        setLoadProgress({ loaded: loadedCount, total: chunks.length })
 
         return data.documents
       })
@@ -193,25 +215,37 @@ export function useFlexSearch() {
       const chunkResults = await Promise.all(chunkPromises)
 
       // Index all documents from all chunks
+      const docs = {}
       for (const documents of chunkResults) {
         for (const doc of documents) {
           index.add(doc.id, doc.content)
-          documentsRef.current[doc.id] = doc
+          docs[doc.id] = doc
         }
       }
 
-      indexRef.current = index
+      _index = index
+      _documents = docs
+      _loaded = true
+
+      return index
+    })()
+
+    try {
+      await _loadPromise
       setIsLoaded(true)
     } catch (err) {
+      _loading = false
+      _loadPromise = null
       setError(err.message)
       console.error('Failed to load FlexSearch index:', err)
     } finally {
+      _loading = false
       setIsLoading(false)
     }
-  }, [isLoaded, isLoading])
+  }, [])
 
   const search = useCallback((query, limit = 100) => {
-    if (!indexRef.current || !query.trim()) {
+    if (!_index || !query.trim()) {
       return []
     }
 
@@ -220,10 +254,10 @@ export function useFlexSearch() {
 
     if (isExact) {
       // Exact mode: search the full phrase, then verify whole-word match
-      const resultIds = indexRef.current.search(term, limit * 3)
+      const resultIds = _index.search(term, limit * 3)
 
       let results = resultIds.map(id => {
-        const doc = documentsRef.current[id]
+        const doc = _documents[id]
         if (!doc) return null
 
         const hasWholeWord = wholeWordRegex(term).test(doc.content)
@@ -236,7 +270,6 @@ export function useFlexSearch() {
           title: doc.title,
           date: doc.date,
           meeting_body: doc.meeting_body,
-          topics: doc.topics || [],
           snippet,
           isExactMatch: true
         }
@@ -256,9 +289,9 @@ export function useFlexSearch() {
 
     if (words.length <= 1) {
       // Single word: simple search
-      const resultIds = indexRef.current.search(term, limit)
+      const resultIds = _index.search(term, limit)
       return resultIds.map(id => {
-        const doc = documentsRef.current[id]
+        const doc = _documents[id]
         if (!doc) return null
         const snippet = extractSnippet(doc.content, term, 120, false)
         return {
@@ -266,7 +299,6 @@ export function useFlexSearch() {
           title: doc.title,
           date: doc.date,
           meeting_body: doc.meeting_body,
-          topics: doc.topics || [],
           snippet,
           isExactMatch: false
         }
@@ -277,7 +309,7 @@ export function useFlexSearch() {
     const idScores = new Map() // id -> { matchCount, firstMatchPos }
 
     for (const word of words) {
-      const wordResults = indexRef.current.search(word, limit * 2)
+      const wordResults = _index.search(word, limit * 2)
       for (let rank = 0; rank < wordResults.length; rank++) {
         const id = wordResults[rank]
         if (!idScores.has(id)) {
@@ -304,7 +336,7 @@ export function useFlexSearch() {
     const snippetTerm = words[0]
 
     return sortedIds.map(id => {
-      const doc = documentsRef.current[id]
+      const doc = _documents[id]
       if (!doc) return null
       const snippet = extractSnippet(doc.content, snippetTerm, 120, false)
       return {
@@ -312,7 +344,6 @@ export function useFlexSearch() {
         title: doc.title,
         date: doc.date,
         meeting_body: doc.meeting_body,
-        topics: doc.topics || [],
         snippet,
         isExactMatch: false
       }

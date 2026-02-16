@@ -301,12 +301,6 @@ a:hover {
   border-top: 1px solid var(--border-light);
 }
 
-.filter-divider {
-  border-left: 1px solid var(--border);
-  height: 24px;
-  margin: 0 4px;
-}
-
 .filter-btn {
   padding: 6px 14px;
   border: 1.5px solid var(--border);
@@ -336,12 +330,6 @@ a:hover {
   background: var(--surface-secondary);
   color: var(--text-secondary);
   border-color: transparent;
-}
-
-.topic-count {
-  margin-left: 4px;
-  opacity: 0.7;
-  font-size: 0.75rem;
 }
 
 /* Active Filters */
@@ -425,6 +413,9 @@ a:hover {
    Meeting Card
    ================== */
 .meeting-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
   background: var(--surface);
   border-radius: var(--radius-lg);
   padding: 18px;
@@ -491,26 +482,6 @@ a:hover {
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-}
-
-.meeting-card-topics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.topic-tag {
-  background: var(--surface-secondary);
-  color: var(--text-secondary);
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  font-size: 0.6875rem;
-  font-weight: 500;
-}
-
-.topic-tag-more {
-  background: var(--border);
-  color: var(--text-tertiary);
 }
 
 .meeting-card-preview {
