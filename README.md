@@ -178,6 +178,81 @@ This is implemented as a CloudFront Function (`cloudfront/basic-auth.js`). To se
 3. Publish the function
 4. Associate it with your distribution's **Viewer request** event on the default behavior
 
+## RAG Q&A System
+
+Ask natural-language questions across the entire meeting archive and get AI-generated answers with citations and video timestamps.
+
+### Setup
+
+```bash
+# Install RAG dependencies
+uv sync --extra rag
+
+# Build the vector index (one-time, embeds all clips into ChromaDB)
+uv run python -m rag.ingest --all
+
+# Check stats
+uv run python -m rag.ingest --stats
+```
+
+### Running Locally
+
+You need two processes running — the API server and the frontend dev server:
+
+```bash
+# Terminal 1: Start the RAG API server
+uv run uvicorn rag.server:app --reload --port 8000
+
+# Terminal 2: Start the frontend dev server
+cd frontend && npm run dev
+```
+
+Then open **http://localhost:5173/ask** in your browser.
+
+The Vite dev server proxies `/api/*` requests to the FastAPI backend on port 8000.
+
+### CLI Query (no server needed)
+
+```bash
+uv run python -m rag.query "What has the city done about short-term rentals?"
+uv run python -m rag.query "budget for parks" --body Council --after 2023-01-01
+uv run python -m rag.query "zoning changes" --model gpt-4o-mini  # cheaper
+```
+
+### Keeping the Index Updated
+
+```bash
+# Process new clips and auto-ingest into RAG
+uv run python main.py --scrape --max 10 --rag
+
+# Or ingest newly processed clips after the fact
+uv run python -m rag.ingest --new
+
+# Rebuild the entire index from scratch
+uv run python main.py --rebuild-rag
+```
+
+### RAG Costs
+
+| Item | Cost |
+|------|------|
+| Embedding full corpus (~54K chunks) | ~$1-3 one-time |
+| Embedding per new clip (~20 chunks) | ~$0.001 |
+| Query with GPT-4o synthesis | ~$0.03 per query |
+| Query with GPT-4o-mini | ~$0.005 per query |
+| ChromaDB storage | Free (local) |
+
+## Tests
+
+```bash
+# Python tests (ingestion, query, server, integration)
+uv sync --extra dev
+uv run pytest tests/ -x -v
+
+# Frontend tests (React component tests)
+cd frontend && npm test
+```
+
 ## Output Structure
 
 Files are named with date prefix for easy sorting and identification:

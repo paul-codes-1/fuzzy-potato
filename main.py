@@ -1616,6 +1616,24 @@ Guidelines:
 
             self.log(f"Successfully processed clip {clip_id} in {metadata['processing_time_seconds']:.1f}s")
 
+            # RAG ingestion (if enabled)
+            if getattr(self, 'rag_enabled', False):
+                try:
+                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+                    from openai import OpenAI
+                    collection = get_chroma_collection(str(self.output_dir))
+                    openai_client = OpenAI()
+                    rag_ingest_clip(clip_id, self.output_dir, collection, openai_client, verbose=self.verbose)
+                    state = load_rag_state(self.output_dir)
+                    if clip_id not in state["ingested_clips"]:
+                        state["ingested_clips"].append(clip_id)
+                        save_rag_state(state, self.output_dir)
+                    self.log(f"RAG: Ingested clip {clip_id}")
+                except ImportError:
+                    self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
+                except Exception as e:
+                    self.log(f"RAG ingestion failed for clip {clip_id}: {e}", "WARNING")
+
             # Regenerate search index after each successful clip
             self.generate_search_index()
 
@@ -1948,6 +1966,18 @@ Examples:
         help="Re-transcribe clips to add timestamp segments (for clickable timestamps in UI)"
     )
 
+    parser.add_argument(
+        "--rag",
+        action="store_true",
+        help="Enable RAG ingestion after processing each clip"
+    )
+
+    parser.add_argument(
+        "--rebuild-rag",
+        action="store_true",
+        help="Re-embed all clips into the RAG vector store"
+    )
+
     args = parser.parse_args()
 
     # Initialize pipeline
@@ -1965,6 +1995,49 @@ Examples:
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
+
+    # Set RAG enabled flag
+    pipeline.rag_enabled = args.rag
+
+    # Handle rebuild-rag mode
+    if args.rebuild_rag:
+        try:
+            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+            from openai import OpenAI
+            import os
+
+            openai_client = OpenAI()
+            collection = get_chroma_collection(str(pipeline.output_dir))
+
+            # Clear existing state
+            state = {"ingested_clips": []}
+            save_rag_state(state, pipeline.output_dir)
+
+            # Find all clips with metadata
+            clips_dir = pipeline.output_dir / "clips"
+            clip_ids = []
+            for name in sorted(os.listdir(clips_dir)):
+                meta_path = clips_dir / name / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        clip_ids.append(int(name))
+                    except ValueError:
+                        continue
+
+            print(f"Rebuilding RAG index for {len(clip_ids)} clips...")
+            for i, clip_id in enumerate(clip_ids):
+                print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
+                rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client, verbose=True)
+                state["ingested_clips"].append(clip_id)
+                save_rag_state(state, pipeline.output_dir)
+
+            from rag.ingest import get_stats
+            stats = get_stats(collection)
+            print(f"\nRAG rebuild complete: {stats['total_chunks']} chunks from {stats['unique_clips']} clips")
+        except ImportError:
+            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            sys.exit(1)
+        sys.exit(0)
 
     # Handle generate-index mode
     if args.generate_index:

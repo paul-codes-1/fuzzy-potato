@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LFUCG Meeting Pipeline - Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive.
+LFUCG Meeting Pipeline - Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive, plus a RAG-powered Q&A system for natural-language queries across the entire meeting archive.
 
 ## Reference Documentation
 
@@ -49,18 +49,40 @@ uv run python main.py 6669 --output-dir /path/to/output
 uv run python main.py 6669 --summary-model gpt-4o-mini   # Cheaper summaries
 uv run python main.py 6669 --quiet                       # Reduce output
 
+# RAG Q&A system
+uv sync --extra rag --extra dev                          # Install RAG + test dependencies
+uv run python -m rag.ingest --all                        # Ingest all clips into vector store
+uv run python -m rag.ingest --new                        # Ingest only new clips
+uv run python -m rag.ingest --clip 6669                  # Ingest a specific clip
+uv run python -m rag.ingest --stats                      # Show collection stats
+uv run python main.py --rebuild-rag                      # Re-embed all clips from scratch
+uv run python main.py 6669 --rag                         # Process clip + auto-ingest into RAG
+
+# RAG query (CLI)
+uv run python -m rag.query "What has the city done about short-term rentals?"
+uv run python -m rag.query "budget for parks" --body Council --after 2023-01-01
+uv run python -m rag.query "zoning changes" --model gpt-4o-mini
+
+# RAG API server
+uv run uvicorn rag.server:app --reload --port 8000
+
 # Frontend development
 cd frontend && npm install && npm run dev
 
 # Build frontend for production
 cd frontend && npm run build
+
+# Run tests
+uv run pytest tests/ -x -v                               # All Python tests
+cd frontend && npm test                                   # Frontend tests
 ```
 
 ## Environment Variables
 
 Set in `.env` file:
-- `OPENAI_API_KEY` - OpenAI API key for transcription/summarization
+- `OPENAI_API_KEY` - OpenAI API key for transcription/summarization/embeddings
 - `FIRST_CLIP_ID` - Starting clip ID for auto-processing (default: 6669)
+- `LFUCG_OUTPUT_DIR` - Output directory for RAG server (default: ./lfucg_output)
 
 ## System Requirements
 
@@ -90,13 +112,26 @@ Single-file pipeline with `LFUCGPipeline` class that orchestrates:
 10. **HTML Generation** - Converts summary to HTML format
 11. **Index Generation** - Creates searchable index.json for frontend
 
+### RAG Q&A System (`rag/`)
+
+Natural-language Q&A over the meeting archive using retrieval-augmented generation:
+- **`rag/ingest.py`** - Chunks clip outputs (summaries by ## sections, transcripts into ~500-word overlapping passages, agenda/minutes by sections), embeds via OpenAI `text-embedding-3-small`, stores in ChromaDB
+- **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 2 chunks/clip), synthesizes answer via gpt-4o with citations
+- **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints
+- **`rag/prompts.py`** - System prompts for LLM synthesis
+- Vector store: ChromaDB (local, persisted to `lfucg_output/chroma_db/`)
+- Embedding model: `text-embedding-3-small` (1536 dims)
+- Supports metadata filters: meeting_body, date_after, date_before
+- Incremental ingestion tracked via `lfucg_output/rag_state.json`
+
 ### Frontend (`frontend/`)
 
 React 18 SPA with:
 - Vite build system
 - React Router for navigation
 - Fuse.js for client-side full-text search
-- Component-based architecture (MeetingList, MeetingDetail, SearchBar, TopicFilter)
+- Component-based architecture (MeetingList, MeetingDetail, SearchBar, TopicFilter, AskQuestion)
+- RAG Q&A interface at `/ask` route with filter dropdowns, source cards, and Granicus video timestamp links
 
 ### AWS Lambda (`lambda/`)
 
@@ -109,9 +144,10 @@ Lambda handler for scheduled meeting sync:
 
 ## State Management
 
-- State persisted to `lfucg_output/state.json`
+- Pipeline state persisted to `lfucg_output/state.json`
 - Tracks last processed clip ID, processed clips list, and failed clips
 - Supports resumption and incremental processing
+- RAG ingestion state persisted to `lfucg_output/rag_state.json` (tracks which clips have been embedded)
 
 ## Output Structure
 
@@ -134,10 +170,27 @@ lfucg_output/
       {date}_minutes_{title}.txt          # Extracted minutes text
       metadata.json                       # Enhanced processing metadata
 
+rag/
+  __init__.py
+  ingest.py                               # Chunking + embedding + ChromaDB storage
+  query.py                                # Retrieval + LLM synthesis logic
+  server.py                               # FastAPI endpoints
+  prompts.py                              # System prompts for synthesis
+
+tests/
+  conftest.py                             # Shared fixtures: sample data, mocks, temp dirs
+  test_ingest.py                          # Tests for chunking, embedding, ChromaDB storage
+  test_query.py                           # Tests for retrieval, filtering, synthesis
+  test_server.py                          # Tests for FastAPI endpoints (TestClient)
+  test_integration.py                     # Tests for main.py pipeline hooks
+
 frontend/
   dist/                                   # Built React SPA
   src/
     components/                           # React components
+      AskQuestion.jsx                     # RAG Q&A interface
+      __tests__/
+        AskQuestion.test.jsx              # Component tests (Vitest + React Testing Library)
     hooks/                                # Custom React hooks
   package.json
   vite.config.js
