@@ -1,6 +1,8 @@
 """FastAPI server for RAG Q&A."""
 
+import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -14,9 +16,28 @@ from rag.query import ask, load_clip_metadata
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
-app = FastAPI(title="LFUCG Meeting RAG API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Log collection stats on startup."""
+    try:
+        collection = get_chroma_collection(OUTPUT_DIR)
+        clip_metadata = load_clip_metadata(OUTPUT_DIR)
+        logger.info(
+            "RAG API ready: %d chunks indexed, %d clips loaded",
+            collection.count(),
+            len(clip_metadata),
+        )
+    except Exception as e:
+        logger.warning("Could not load collection stats on startup: %s", e)
+    yield
+
+
+app = FastAPI(title="LFUCG Meeting RAG API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
