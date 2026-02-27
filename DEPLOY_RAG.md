@@ -48,50 +48,79 @@ docker tag lfucg-rag-api:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/lfu
 docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest
 ```
 
-## Step 3: Create IAM Roles
-
-### 3a. Instance Role (S3 read access)
-
-Create role `AppRunnerS3ReadRole` with trust policy for `tasks.apprunner.amazonaws.com`:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:GetObject", "s3:ListBucket"],
-    "Resource": [
-      "arn:aws:s3:::public-meetings",
-      "arn:aws:s3:::public-meetings/data/*"
-    ]
-  }]
-}
-```
-
-### 3b. ECR Access Role
-
-Create role `AppRunnerECRAccess` with trust policy for `build.apprunner.amazonaws.com`:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": [
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage",
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetAuthorizationToken",
-      "ecr:DescribeImages"
-    ],
-    "Resource": "*"
-  }]
-}
-```
-
-## Step 4: Create App Runner Service
+## Step 3: Store OpenAI API Key
 
 ```bash
+# Store API key securely in Secrets Manager
+aws secretsmanager create-secret \
+  --name lfucg-openai-key \
+  --secret-string '{"OPENAI_API_KEY":"sk-..."}'
+```
+
+## Step 4: Create IAM Roles
+
+### 4a. Instance Role (S3 + Secrets Manager access)
+
+```bash
+# Create role with trust policy
+aws iam create-role --role-name AppRunnerS3ReadRole \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"Service": "tasks.apprunner.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach S3 and Secrets Manager permissions
+aws iam put-role-policy --role-name AppRunnerS3ReadRole \
+  --policy-name S3SecretsAccess \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:ListBucket"],
+        "Resource": [
+          "arn:aws:s3:::public-meetings",
+          "arn:aws:s3:::public-meetings/data/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:lfucg-openai-key-*"
+      }
+    ]
+  }'
+```
+
+### 4b. ECR Access Role
+
+```bash
+# Create role with trust policy
+aws iam create-role --role-name AppRunnerECRAccess \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"Service": "build.apprunner.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach ECR permissions
+aws iam attach-role-policy --role-name AppRunnerECRAccess \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+```
+
+## Step 5: Create App Runner Service
+
+```bash
+# Get the secret ARN
+SECRET_ARN=$(aws secretsmanager describe-secret --secret-id lfucg-openai-key --query ARN --output text)
+
 aws apprunner create-service \
   --service-name lfucg-rag-api \
   --source-configuration '{
@@ -104,47 +133,51 @@ aws apprunner create-service \
       "ImageConfiguration": {
         "Port": "8000",
         "RuntimeEnvironmentVariables": {
-          "OPENAI_API_KEY": "<your-key>",
           "S3_BUCKET": "public-meetings",
           "S3_DATA_PREFIX": "data/",
           "LFUCG_OUTPUT_DIR": "/app/lfucg_output"
+        },
+        "RuntimeEnvironmentSecrets": {
+          "OPENAI_API_KEY": "'"$SECRET_ARN"':OPENAI_API_KEY::"
         }
       }
     }
   }' \
   --instance-configuration '{
-    "Cpu": "0.25 vCPU",
-    "Memory": "0.5 GB",
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB",
     "InstanceRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/AppRunnerS3ReadRole"
   }' \
   --health-check-configuration '{
     "Protocol": "HTTP",
-    "Path": "/api/health",
-    "Interval": 10,
-    "Timeout": 5,
+    "Path": "/health",
+    "Interval": 20,
+    "Timeout": 10,
     "HealthyThreshold": 1,
-    "UnhealthyThreshold": 5
+    "UnhealthyThreshold": 3
   }'
 ```
 
+**Note:** Increased memory to 2 GB and health check timeout to 10s to handle ChromaDB loading on cold starts.
+
 Wait ~5 minutes for the service to deploy.
 
-## Step 5: Verify App Runner
+## Step 6: Verify App Runner
 
 ```bash
 # Get the service URL
 aws apprunner list-services --query 'ServiceSummaryList[?ServiceName==`lfucg-rag-api`].ServiceUrl' --output text
 
-# Test health
-curl https://<app-runner-url>/api/health
+# Test health (note: /health not /api/health for direct App Runner access)
+curl https://<app-runner-url>/health
 
 # Test a query
-curl -X POST https://<app-runner-url>/api/ask \
+curl -X POST https://<app-runner-url>/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What has the city discussed about short-term rentals?"}'
 ```
 
-## Step 6: Add CloudFront Origin for App Runner
+## Step 7: Add CloudFront Origin for App Runner
 
 In the CloudFront distribution console:
 
@@ -172,7 +205,7 @@ aws cloudfront create-invalidation \
   --paths "/api/*"
 ```
 
-## Step 7: Test End-to-End
+## Step 8: Test End-to-End
 
 1. Visit your CloudFront URL
 2. Navigate to `/ask`

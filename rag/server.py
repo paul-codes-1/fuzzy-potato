@@ -54,6 +54,11 @@ class AskRequest(BaseModel):
     date_before: Optional[str] = None
 
 
+@app.post("/ask")  # Direct endpoint for App Runner
+def ask_endpoint_direct(request: AskRequest):
+    return ask_endpoint(request)
+
+
 @app.post("/api/ask")
 def ask_endpoint(request: AskRequest):
     collection = get_chroma_collection(OUTPUT_DIR)
@@ -79,7 +84,7 @@ def ask_endpoint(request: AskRequest):
     return result
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health_endpoint():
     collection = get_chroma_collection(OUTPUT_DIR)
     clip_metadata = load_clip_metadata(OUTPUT_DIR)
@@ -89,3 +94,8 @@ def health_endpoint():
         "chunks_indexed": collection.count(),
         "clips_indexed": len(clip_metadata),
     }
+
+
+@app.get("/api/health")  # Keep for CloudFront routing
+def health_endpoint_api():
+    return health_endpoint()

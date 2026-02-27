@@ -202,15 +202,47 @@ def _chunk_id(chunk: dict, index: int) -> str:
     return hashlib.md5(key.encode()).hexdigest()
 
 
-MAX_CHUNK_WORDS = 5000  # ~6K tokens, safely under 8192 token embedding limit
+MAX_CHUNK_CHARS = 20000  # ~6K tokens for normal text; safe even for garbled OCR (~1 token/char)
 
 
-def _truncate_text(text: str, max_words: int = MAX_CHUNK_WORDS) -> str:
-    """Truncate text to max_words to stay within embedding token limits."""
-    words = text.split()
-    if len(words) <= max_words:
+def _truncate_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> str:
+    """Truncate text by character count to stay within embedding token limits.
+
+    Character-based is more reliable than word-based because OCR-garbled text
+    can have very long 'words' (25+ chars each) that tokenize into many tokens.
+    """
+    if len(text) <= max_chars:
         return text
-    return " ".join(words[:max_words])
+    # Truncate at char limit, then trim to last word boundary to avoid partial words
+    truncated = text[:max_chars]
+    last_space = truncated.rfind(" ")
+    if last_space > max_chars // 2:
+        truncated = truncated[:last_space]
+    return truncated
+
+
+def _embed_single(text: str, openai_client) -> list[float]:
+    """Embed a single text, progressively truncating on token limit errors."""
+    limit = MAX_CHUNK_CHARS
+    while limit >= 2000:
+        truncated = _truncate_text(text, max_chars=limit)
+        try:
+            resp = openai_client.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=[truncated],
+            )
+            return resp.data[0].embedding
+        except Exception as e:
+            if "maximum context length" in str(e):
+                limit = limit // 2  # halve the limit and retry
+            else:
+                raise
+    # Last resort: embed just the first 2000 chars
+    resp = openai_client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=[text[:2000]],
+    )
+    return resp.data[0].embedding
 
 
 def _embed_batch(texts: list[str], openai_client) -> list[list[float]]:
@@ -222,25 +254,9 @@ def _embed_batch(texts: list[str], openai_client) -> list[list[float]]:
         )
         return [item.embedding for item in response.data]
     except Exception as e:
-        if "maximum context length" in str(e) and len(texts) > 1:
-            # Batch too large — embed one at a time
-            embeddings = []
-            for text in texts:
-                truncated = _truncate_text(text)
-                resp = openai_client.embeddings.create(
-                    model=EMBEDDING_MODEL,
-                    input=[truncated],
-                )
-                embeddings.append(resp.data[0].embedding)
-            return embeddings
-        elif "maximum context length" in str(e):
-            # Single text too long — truncate
-            truncated = _truncate_text(texts[0])
-            resp = openai_client.embeddings.create(
-                model=EMBEDDING_MODEL,
-                input=[truncated],
-            )
-            return [resp.data[0].embedding]
+        if "maximum context length" in str(e):
+            # Batch too large or single text too long — embed one at a time
+            return [_embed_single(text, openai_client) for text in texts]
         else:
             raise
 
@@ -252,7 +268,7 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
-        texts = [c["text"] for c in batch]
+        texts = [_truncate_text(c["text"]) for c in batch]
 
         # Get embeddings (with automatic fallback for token limits)
         embeddings = _embed_batch(texts, openai_client)
@@ -316,8 +332,8 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
     with open(metadata_path) as f:
         metadata = json.load(f)
 
-    date = metadata.get("date", "")
-    meeting_body = metadata.get("meeting_body", "")
+    date = metadata.get("date") or ""
+    meeting_body = metadata.get("meeting_body") or ""
     files = metadata.get("files", {})
 
     all_chunks = []
@@ -334,7 +350,7 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
     segments_file = files.get("transcript_segments")
     if segments_file:
         segments_path = clip_dir / segments_file
-        if segments_path.exists():
+        if segments_path.exists() and segments_path.stat().st_size > 0:
             with open(segments_path) as f:
                 segments = json.load(f)
             all_chunks.extend(chunk_transcript(segments, clip_id, date, meeting_body))
