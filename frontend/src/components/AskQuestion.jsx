@@ -88,6 +88,16 @@ export default function AskQuestion() {
         <p>Ask questions about Lexington city council meetings and get AI-powered answers with citations.</p>
       </div>
 
+      <div className="ask-coverage-note">
+        <strong>Coverage note:</strong> The archive spans August 2007 to present with no monthly gaps,
+        but only about 10% of meetings have full transcripts so far. Results are strongest for late 2007,
+        late 2019, and August 2025 onward. We're working to transcribe the rest — if you'd like to help
+        cover the cost of AI transcription for the remaining ~2,000 meetings,{' '}
+        <a href="https://github.com/paul-codes-1/fuzzy-potato/" target="_blank" rel="noopener noreferrer">
+          get in touch on GitHub
+        </a>.
+      </div>
+
       <form onSubmit={handleSubmit} className="ask-form">
         <div className="ask-input-row">
           <input

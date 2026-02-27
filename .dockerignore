@@ -4,10 +4,16 @@ __pycache__
 *.pyc
 node_modules
 frontend
-lfucg_output
 .env
 tests
 lambda
 cloudfront
 *.md
 amplify.yml
+
+# lfucg_output: only allow chroma_db/ and clips/*/metadata.json
+lfucg_output/*
+!lfucg_output/chroma_db
+!lfucg_output/clips
+lfucg_output/clips/*/*
+!lfucg_output/clips/*/metadata.json

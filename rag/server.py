@@ -20,20 +20,29 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
+# Pre-load at module level so startup completes before health checks
+_collection = None
+_clip_metadata = None
+
+
+def _get_collection():
+    global _collection
+    if _collection is None:
+        _collection = get_chroma_collection(OUTPUT_DIR)
+    return _collection
+
+
+def _get_clip_metadata():
+    global _clip_metadata
+    if _clip_metadata is None:
+        _clip_metadata = load_clip_metadata(OUTPUT_DIR)
+    return _clip_metadata
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Log collection stats on startup."""
-    try:
-        collection = get_chroma_collection(OUTPUT_DIR)
-        clip_metadata = load_clip_metadata(OUTPUT_DIR)
-        logger.info(
-            "RAG API ready: %d chunks indexed, %d clips loaded",
-            collection.count(),
-            len(clip_metadata),
-        )
-    except Exception as e:
-        logger.warning("Could not load collection stats on startup: %s", e)
+    """Startup — ChromaDB loads lazily on first request."""
+    logger.info("RAG API starting (ChromaDB will load on first request)")
     yield
 
 
@@ -61,9 +70,9 @@ def ask_endpoint_direct(request: AskRequest):
 
 @app.post("/api/ask")
 def ask_endpoint(request: AskRequest):
-    collection = get_chroma_collection(OUTPUT_DIR)
+    collection = _get_collection()
     openai_client = OpenAI()
-    clip_metadata = load_clip_metadata(OUTPUT_DIR)
+    clip_metadata = _get_clip_metadata()
 
     filters = {}
     if request.meeting_body:
@@ -86,14 +95,13 @@ def ask_endpoint(request: AskRequest):
 
 @app.get("/health")
 def health_endpoint():
-    collection = get_chroma_collection(OUTPUT_DIR)
-    clip_metadata = load_clip_metadata(OUTPUT_DIR)
-
-    return {
-        "status": "ok",
-        "chunks_indexed": collection.count(),
-        "clips_indexed": len(clip_metadata),
-    }
+    """Lightweight health check — no ChromaDB loading."""
+    result = {"status": "ok"}
+    if _collection is not None:
+        result["chunks_indexed"] = _collection.count()
+    if _clip_metadata is not None:
+        result["clips_indexed"] = len(_clip_metadata)
+    return result
 
 
 @app.get("/api/health")  # Keep for CloudFront routing

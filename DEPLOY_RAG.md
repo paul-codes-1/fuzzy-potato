@@ -14,9 +14,9 @@ awsr us-east-1
 Browser → CloudFront → /api/* behavior → App Runner (FastAPI)
                      → /* behavior    → S3 (frontend)
 
-App Runner container startup:
-  1. Syncs chroma_db/ and clips/*/metadata.json from S3
-  2. Starts uvicorn rag.server:app on port 8000
+Docker image bakes in chroma_db/ and clips/*/metadata.json (~1.4 GB).
+No S3 sync at startup — uvicorn starts immediately.
+ChromaDB loads lazily on first /ask request.
 ```
 
 CloudFront routes `/api/*` to App Runner, everything else to S3. Same domain means no CORS issues, no frontend code changes needed.
@@ -33,13 +33,15 @@ Save the `repositoryUri` from the output (e.g., `123456789.dkr.ecr.us-east-1.ama
 
 ## Step 2: Build & Push Docker Image
 
+**Important:** Use `--platform linux/amd64` — App Runner runs x86, and building on Apple Silicon without this flag produces ARM images that silently crash.
+
 ```bash
 # Login to ECR
 aws ecr get-login-password --region us-east-1 | \
   docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
 
-# Build
-docker build -t lfucg-rag-api .
+# Build (must specify amd64 on Apple Silicon Macs)
+docker build --platform linux/amd64 --no-cache -t lfucg-rag-api .
 
 # Tag
 docker tag lfucg-rag-api:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest
@@ -59,44 +61,7 @@ aws secretsmanager create-secret \
 
 ## Step 4: Create IAM Roles
 
-### 4a. Instance Role (S3 + Secrets Manager access)
-
-```bash
-# Create role with trust policy
-aws iam create-role --role-name AppRunnerS3ReadRole \
-  --assume-role-policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": {"Service": "tasks.apprunner.amazonaws.com"},
-      "Action": "sts:AssumeRole"
-    }]
-  }'
-
-# Attach S3 and Secrets Manager permissions
-aws iam put-role-policy --role-name AppRunnerS3ReadRole \
-  --policy-name S3SecretsAccess \
-  --policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Action": ["s3:GetObject", "s3:ListBucket"],
-        "Resource": [
-          "arn:aws:s3:::public-meetings",
-          "arn:aws:s3:::public-meetings/data/*"
-        ]
-      },
-      {
-        "Effect": "Allow",
-        "Action": "secretsmanager:GetSecretValue",
-        "Resource": "arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:lfucg-openai-key-*"
-      }
-    ]
-  }'
-```
-
-### 4b. ECR Access Role
+### 4a. ECR Access Role
 
 ```bash
 # Create role with trust policy
@@ -113,6 +78,33 @@ aws iam create-role --role-name AppRunnerECRAccess \
 # Attach ECR permissions
 aws iam attach-role-policy --role-name AppRunnerECRAccess \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+```
+
+### 4b. Instance Role (Secrets Manager access)
+
+```bash
+# Create role with trust policy
+aws iam create-role --role-name AppRunnerInstanceRole \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"Service": "tasks.apprunner.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach Secrets Manager permissions
+aws iam put-role-policy --role-name AppRunnerInstanceRole \
+  --policy-name SecretsAccess \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:lfucg-openai-key-*"
+    }]
+  }'
 ```
 
 ## Step 5: Create App Runner Service
@@ -133,8 +125,6 @@ aws apprunner create-service \
       "ImageConfiguration": {
         "Port": "8000",
         "RuntimeEnvironmentVariables": {
-          "S3_BUCKET": "public-meetings",
-          "S3_DATA_PREFIX": "data/",
           "LFUCG_OUTPUT_DIR": "/app/lfucg_output"
         },
         "RuntimeEnvironmentSecrets": {
@@ -145,8 +135,8 @@ aws apprunner create-service \
   }' \
   --instance-configuration '{
     "Cpu": "1 vCPU",
-    "Memory": "2 GB",
-    "InstanceRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/AppRunnerS3ReadRole"
+    "Memory": "4 GB",
+    "InstanceRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/AppRunnerInstanceRole"
   }' \
   --health-check-configuration '{
     "Protocol": "HTTP",
@@ -154,13 +144,16 @@ aws apprunner create-service \
     "Interval": 20,
     "Timeout": 10,
     "HealthyThreshold": 1,
-    "UnhealthyThreshold": 3
+    "UnhealthyThreshold": 5
   }'
 ```
 
-**Note:** Increased memory to 2 GB and health check timeout to 10s to handle ChromaDB loading on cold starts.
+**Notes:**
+- Memory set to 4 GB for ChromaDB (1.4 GB store + runtime overhead)
+- Health check is lightweight (doesn't load ChromaDB) — passes immediately on startup
+- ChromaDB loads lazily on first `/ask` request
 
-Wait ~5 minutes for the service to deploy.
+Wait ~2-5 minutes for the service to deploy.
 
 ## Step 6: Verify App Runner
 
@@ -181,13 +174,13 @@ curl -X POST https://<app-runner-url>/ask \
 
 In the CloudFront distribution console:
 
-### 6a. Add Origin
+### 7a. Add Origin
 
-- **Origin domain:** `<random>.us-east-1.awsapprunner.com` (from Step 5)
+- **Origin domain:** `<random>.us-east-1.awsapprunner.com` (from Step 6)
 - **Protocol:** HTTPS only
 - **Name:** `rag-api`
 
-### 6b. Add Behavior
+### 7b. Add Behavior
 
 - **Path pattern:** `/api/*`
 - **Origin:** `rag-api`
@@ -197,7 +190,7 @@ In the CloudFront distribution console:
 - **Origin request policy:** `AllViewerExceptHostHeader`
 - **Function associations:** None (don't attach the basic auth function — browser sends the header automatically from the initial page auth)
 
-### 6c. Invalidate Cache
+### 7c. Invalidate Cache
 
 ```bash
 aws cloudfront create-invalidation \
@@ -218,14 +211,14 @@ aws cloudfront create-invalidation \
 When you process new clips and re-ingest into ChromaDB:
 
 ```bash
-# 1. Sync chroma_db to S3
-aws s3 sync lfucg_output/chroma_db/ s3://public-meetings/data/chroma_db/
+# 1. Rebuild image with latest data baked in
+docker build --platform linux/amd64 --no-cache -t lfucg-rag-api .
 
-# 2. Sync new clip metadata
-aws s3 sync lfucg_output/clips/ s3://public-meetings/data/clips/ \
-  --exclude "*" --include "*/metadata.json"
+# 2. Tag and push
+docker tag lfucg-rag-api:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest
 
-# 3. Restart App Runner to pick up new data
+# 3. Trigger redeployment
 aws apprunner start-deployment --service-arn <SERVICE_ARN>
 ```
 

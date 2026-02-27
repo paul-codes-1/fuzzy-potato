@@ -1222,6 +1222,26 @@ a:hover {
   font-size: 0.9375rem;
 }
 
+.ask-coverage-note {
+  background: var(--blue-50);
+  border: 1px solid var(--blue-200);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.ask-coverage-note strong {
+  color: var(--text-primary);
+}
+
+.ask-coverage-note a {
+  color: var(--blue-700);
+  text-decoration: underline;
+}
+
 .ask-form {
   background: var(--surface);
   padding: 20px;
