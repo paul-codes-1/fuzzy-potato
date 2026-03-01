@@ -292,10 +292,13 @@ class LFUCGPipeline:
                     last_output_time[0] = time.time()
                     line = raw_line.decode('utf-8', errors='replace').strip()
                     if line:
-                        if '[download]' in line or '[ExtractAudio]' in line:
-                            clean_line = line.replace('[download]', '').replace('[ExtractAudio]', '').strip()
-                            if clean_line:
-                                print(f"  {clean_line}", end='\r', flush=True)
+                        # Progress lines: overwrite in place
+                        if '[download]' in line and '%' in line:
+                            clean_line = line.replace('[download]', '').strip()
+                            print(f"  {clean_line}", end='\r', flush=True)
+                        else:
+                            # Status lines (extracting URL, postprocessing, etc.)
+                            print(f"  {line}", flush=True)
                 eof_reached.set()
 
             reader = threading.Thread(target=read_output, daemon=True)
