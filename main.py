@@ -268,7 +268,10 @@ class LFUCGPipeline:
                 url
             ]
 
-            # Run with real-time output
+            # Run with real-time output and 30s stall timeout
+            import select
+            DOWNLOAD_STALL_TIMEOUT = 30
+
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -277,18 +280,35 @@ class LFUCGPipeline:
                 bufsize=1
             )
 
-            # Display progress
-            for line in process.stdout:
+            # Display progress, kill if no output for 30s
+            timed_out = False
+            while True:
+                ready, _, _ = select.select([process.stdout], [], [], DOWNLOAD_STALL_TIMEOUT)
+                if not ready:
+                    # No output for 30 seconds — stalled
+                    self.log(f"Download stalled (no output for {DOWNLOAD_STALL_TIMEOUT}s) - skipping clip", "WARNING")
+                    process.kill()
+                    process.wait()
+                    timed_out = True
+                    break
+                line = process.stdout.readline()
+                if not line:
+                    break  # EOF
                 line = line.strip()
                 if line:
-                    # Show download progress lines
                     if '[download]' in line or '[ExtractAudio]' in line:
-                        # Clean up progress line for display
                         clean_line = line.replace('[download]', '').replace('[ExtractAudio]', '').strip()
                         if clean_line:
                             print(f"  {clean_line}", end='\r', flush=True)
 
             print()  # New line after progress
+
+            if timed_out:
+                # Clean up partial download
+                if output_path.exists():
+                    output_path.unlink()
+                return None
+
             process.wait()
 
             if process.returncode != 0:
