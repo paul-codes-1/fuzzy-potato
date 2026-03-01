@@ -1285,7 +1285,7 @@ Guidelines:
                 }
 
                 index_entries.append(entry)
-                self.progress(f"Indexed clip {metadata.get('clip_id')}")
+                pass
 
             except Exception as e:
                 self.log(f"Error indexing {clip_dir.name}: {e}", "WARNING")
