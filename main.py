@@ -20,6 +20,7 @@ import sys
 import json
 import argparse
 import subprocess
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -269,38 +270,46 @@ class LFUCGPipeline:
             ]
 
             # Run with real-time output and 30s stall timeout
-            import select
+            import threading
             DOWNLOAD_STALL_TIMEOUT = 30
 
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
+                bufsize=0  # unbuffered bytes
             )
 
-            # Display progress, kill if no output for 30s
+            # Read lines in a thread so the main thread can check for stalls
+            last_output_time = [time.time()]
+            eof_reached = threading.Event()
+
+            def read_output():
+                for raw_line in process.stdout:
+                    last_output_time[0] = time.time()
+                    line = raw_line.decode('utf-8', errors='replace').strip()
+                    if line:
+                        if '[download]' in line or '[ExtractAudio]' in line:
+                            clean_line = line.replace('[download]', '').replace('[ExtractAudio]', '').strip()
+                            if clean_line:
+                                print(f"  {clean_line}", end='\r', flush=True)
+                eof_reached.set()
+
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+
+            # Poll for stall: if no output for 30s, kill
             timed_out = False
-            while True:
-                ready, _, _ = select.select([process.stdout], [], [], DOWNLOAD_STALL_TIMEOUT)
-                if not ready:
-                    # No output for 30 seconds — stalled
+            while not eof_reached.is_set():
+                eof_reached.wait(timeout=5)
+                if not eof_reached.is_set() and time.time() - last_output_time[0] > DOWNLOAD_STALL_TIMEOUT:
                     self.log(f"Download stalled (no output for {DOWNLOAD_STALL_TIMEOUT}s) - skipping clip", "WARNING")
                     process.kill()
-                    process.wait()
                     timed_out = True
                     break
-                line = process.stdout.readline()
-                if not line:
-                    break  # EOF
-                line = line.strip()
-                if line:
-                    if '[download]' in line or '[ExtractAudio]' in line:
-                        clean_line = line.replace('[download]', '').replace('[ExtractAudio]', '').strip()
-                        if clean_line:
-                            print(f"  {clean_line}", end='\r', flush=True)
 
+            process.wait()
+            reader.join(timeout=5)
             print()  # New line after progress
 
             if timed_out:
@@ -308,8 +317,6 @@ class LFUCGPipeline:
                 if output_path.exists():
                     output_path.unlink()
                 return None
-
-            process.wait()
 
             if process.returncode != 0:
                 self.log("Download failed", "ERROR")
