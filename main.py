@@ -424,21 +424,14 @@ class LFUCGPipeline:
 
             # Whisper API has 25MB limit
             MAX_SIZE_MB = 24  # Leave some headroom
-            SPLIT_3_THRESHOLD_MB = 48  # Split into 3 chunks if over this
-            SPLIT_4_THRESHOLD_MB = 72  # Split into 4 chunks if over this
 
             transcribe_file = audio_path
             cleanup_files = []
 
-            # Determine if we need to split
-            if file_size_mb > SPLIT_4_THRESHOLD_MB:
-                num_chunks = 4
-                self.progress(f"Audio is {file_size_mb:.2f} MB (>{SPLIT_4_THRESHOLD_MB} MB) - splitting into {num_chunks} chunks")
-            elif file_size_mb > SPLIT_3_THRESHOLD_MB:
-                num_chunks = 3
-                self.progress(f"Audio is {file_size_mb:.2f} MB (>{SPLIT_3_THRESHOLD_MB} MB) - splitting into {num_chunks} chunks")
-            elif file_size_mb > MAX_SIZE_MB:
-                num_chunks = 2
+            # Determine if we need to split — calculate chunks so each is under MAX_SIZE_MB
+            import math
+            if file_size_mb > MAX_SIZE_MB:
+                num_chunks = math.ceil(file_size_mb / MAX_SIZE_MB)
                 self.progress(f"Audio is {file_size_mb:.2f} MB (>{MAX_SIZE_MB} MB) - splitting into {num_chunks} chunks")
             else:
                 num_chunks = 0
