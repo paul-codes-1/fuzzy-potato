@@ -1,24 +1,11 @@
-import { useMemo, useEffect, useCallback } from 'react'
-import Fuse from 'fuse.js'
-import { useFlexSearch } from './useFlexSearch'
-
-const fuseOptions = {
-  keys: [
-    { name: 'title', weight: 0.4 },
-    { name: 'meeting_body', weight: 0.3 },
-    { name: 'transcript_preview', weight: 0.3 }
-  ],
-  threshold: 0.4,
-  ignoreLocation: true,
-  includeScore: true
-}
+import { useMemo, useCallback } from 'react'
+import { useSearchIndex } from '../contexts/SearchContext'
 
 export function useSearch(meetings, searchParams, setSearchParams) {
   // Read state from URL params (single source of truth)
   const query = searchParams.get('q') || ''
   const selectedBody = searchParams.get('body') || null
   const sortBy = searchParams.get('sort') || 'date-desc'
-  const searchMode = searchParams.get('mode') || 'quick'
 
   // Setters that update URL params
   const updateParam = useCallback((key, value, defaultValue) => {
@@ -40,29 +27,15 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   const setQuery = useCallback((v) => updateParam('q', v, ''), [updateParam])
   const setSelectedBody = useCallback((v) => updateParam('body', v, null), [updateParam])
   const setSortBy = useCallback((v) => updateParam('sort', v, 'date-desc'), [updateParam])
-  const setSearchMode = useCallback((v) => updateParam('mode', v, 'quick'), [updateParam])
 
-  // FlexSearch for full-text search
+  // FlexSearch from context (already loading on app mount)
   const {
-    loadIndex: loadFlexSearchIndex,
     search: flexSearch,
     isLoading: flexSearchLoading,
     isLoaded: flexSearchLoaded,
     loadProgress: flexSearchProgress,
     error: flexSearchError
-  } = useFlexSearch()
-
-  // Load FlexSearch index when mode switches to 'full'
-  useEffect(() => {
-    if (searchMode === 'full' && !flexSearchLoaded && !flexSearchLoading) {
-      loadFlexSearchIndex()
-    }
-  }, [searchMode, flexSearchLoaded, flexSearchLoading, loadFlexSearchIndex])
-
-  // Create Fuse instance
-  const fuse = useMemo(() => {
-    return new Fuse(meetings, fuseOptions)
-  }, [meetings])
+  } = useSearchIndex()
 
   // Get unique meeting bodies
   const meetingBodies = useMemo(() => {
@@ -95,17 +68,14 @@ export function useSearch(meetings, searchParams, setSearchParams) {
     }
   }
 
-  // Filter and search meetings, track snippets for full-text results
+  // Filter and search meetings
   const { filteredMeetings, searchSnippets } = useMemo(() => {
     let results = meetings
     let snippets = new Map()
 
-    // Apply search query
     if (query.trim()) {
-      if (searchMode === 'full' && flexSearchLoaded) {
-        // Full-text search using FlexSearch
+      if (flexSearchLoaded) {
         const flexResults = flexSearch(query)
-        // Map FlexSearch results back to full meeting objects, preserving snippets
         results = flexResults
           .map(r => {
             const meeting = meetingsById.get(r.clip_id)
@@ -115,12 +85,10 @@ export function useSearch(meetings, searchParams, setSearchParams) {
             return meeting
           })
           .filter(Boolean)
-      } else if (searchMode === 'quick') {
-        // Quick search using Fuse.js
-        const searchResults = fuse.search(query)
-        results = searchResults.map(r => r.item)
+      } else {
+        // Index still loading — show all meetings while we wait
+        results = meetings
       }
-      // If searchMode is 'full' but not loaded yet, show all meetings (loading state)
     }
 
     // Apply meeting body filter
@@ -134,7 +102,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
     }
 
     return { filteredMeetings: results, searchSnippets: snippets }
-  }, [meetings, query, selectedBody, sortBy, fuse, searchMode, flexSearchLoaded, flexSearch, meetingsById])
+  }, [meetings, query, selectedBody, sortBy, flexSearchLoaded, flexSearch, meetingsById])
 
   return {
     query,
@@ -143,8 +111,6 @@ export function useSearch(meetings, searchParams, setSearchParams) {
     setSelectedBody,
     sortBy,
     setSortBy,
-    searchMode,
-    setSearchMode,
     meetingBodies,
     filteredMeetings,
     searchSnippets,

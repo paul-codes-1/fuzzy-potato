@@ -1,13 +1,20 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import MeetingList from './components/MeetingList'
 import MeetingDetail from './components/MeetingDetail'
+import AskQuestion from './components/AskQuestion'
 
 function App() {
   return (
     <div className="app">
       <header className="header">
         <div className="container">
-          <h1>LFUCG Meeting Archive</h1>
+          <div className="header-top">
+            <h1>LFUCG Meeting Archive</h1>
+            <nav className="header-nav">
+              <Link to="/" className="header-link">Browse</Link>
+              <Link to="/ask" className="header-link">Ask a Question</Link>
+            </nav>
+          </div>
           <p>Lexington-Fayette Urban County Government Meeting Transcripts & Summaries</p>
         </div>
       </header>
@@ -16,6 +23,7 @@ function App() {
         <Routes>
           <Route path="/" element={<MeetingList />} />
           <Route path="/meeting/:clipId" element={<MeetingDetail />} />
+          <Route path="/ask" element={<AskQuestion />} />
         </Routes>
       </main>
 

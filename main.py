@@ -20,6 +20,7 @@ import sys
 import json
 import argparse
 import subprocess
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -268,28 +269,62 @@ class LFUCGPipeline:
                 url
             ]
 
-            # Run with real-time output
+            # Run with real-time output and 30s stall timeout
+            import threading
+            DOWNLOAD_STALL_TIMEOUT = 30
+
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
+                bufsize=0  # unbuffered bytes
             )
 
-            # Display progress
-            for line in process.stdout:
-                line = line.strip()
-                if line:
-                    # Show download progress lines
-                    if '[download]' in line or '[ExtractAudio]' in line:
-                        # Clean up progress line for display
-                        clean_line = line.replace('[download]', '').replace('[ExtractAudio]', '').strip()
-                        if clean_line:
-                            print(f"  {clean_line}", end='\r', flush=True)
+            # Read lines in a thread so the main thread can check for stalls
+            last_output_time = [time.time()]
+            eof_reached = threading.Event()
 
-            print()  # New line after progress
+            def read_output():
+                while True:
+                    raw_line = process.stdout.readline()
+                    if not raw_line:
+                        break
+                    last_output_time[0] = time.time()
+                    line = raw_line.decode('utf-8', errors='replace').strip()
+                    if not line:
+                        continue
+                    # Percentage progress: overwrite in place
+                    if '%' in line and ('[download]' in line or 'ETA' in line):
+                        clean_line = line.replace('[download]', '').strip()
+                        # Pad to overwrite previous longer lines
+                        print(f"\r  {clean_line:<80}", end='', flush=True)
+                    else:
+                        # Everything else: print on its own line
+                        print(f"\n  {line}", end='', flush=True)
+                eof_reached.set()
+
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+
+            # Poll for stall: if no output for 30s, kill
+            timed_out = False
+            while not eof_reached.is_set():
+                eof_reached.wait(timeout=5)
+                if not eof_reached.is_set() and time.time() - last_output_time[0] > DOWNLOAD_STALL_TIMEOUT:
+                    self.log(f"Download stalled (no output for {DOWNLOAD_STALL_TIMEOUT}s) - skipping clip", "WARNING")
+                    process.kill()
+                    timed_out = True
+                    break
+
             process.wait()
+            reader.join(timeout=5)
+            print()  # New line after progress
+
+            if timed_out:
+                # Clean up partial download
+                if output_path.exists():
+                    output_path.unlink()
+                return None
 
             if process.returncode != 0:
                 self.log("Download failed", "ERROR")
@@ -424,21 +459,14 @@ class LFUCGPipeline:
 
             # Whisper API has 25MB limit
             MAX_SIZE_MB = 24  # Leave some headroom
-            SPLIT_3_THRESHOLD_MB = 48  # Split into 3 chunks if over this
-            SPLIT_4_THRESHOLD_MB = 72  # Split into 4 chunks if over this
 
             transcribe_file = audio_path
             cleanup_files = []
 
-            # Determine if we need to split
-            if file_size_mb > SPLIT_4_THRESHOLD_MB:
-                num_chunks = 4
-                self.progress(f"Audio is {file_size_mb:.2f} MB (>{SPLIT_4_THRESHOLD_MB} MB) - splitting into {num_chunks} chunks")
-            elif file_size_mb > SPLIT_3_THRESHOLD_MB:
-                num_chunks = 3
-                self.progress(f"Audio is {file_size_mb:.2f} MB (>{SPLIT_3_THRESHOLD_MB} MB) - splitting into {num_chunks} chunks")
-            elif file_size_mb > MAX_SIZE_MB:
-                num_chunks = 2
+            # Determine if we need to split — calculate chunks so each is under MAX_SIZE_MB
+            import math
+            if file_size_mb > MAX_SIZE_MB:
+                num_chunks = math.ceil(file_size_mb / MAX_SIZE_MB)
                 self.progress(f"Audio is {file_size_mb:.2f} MB (>{MAX_SIZE_MB} MB) - splitting into {num_chunks} chunks")
             else:
                 num_chunks = 0
@@ -1237,34 +1265,8 @@ Guidelines:
                             # First 500 chars for preview
                             transcript_preview = full_text[:500].replace('\n', ' ').strip()
 
-                # Extract high-level summary for card preview
+                # Summary preview extraction (temporarily disabled)
                 summary_preview = ""
-                summary_txt_file = metadata.get("files", {}).get("summary_txt", "summary.txt")
-                summary_path = clip_dir / summary_txt_file
-                if summary_path.exists():
-                    try:
-                        with open(summary_path, 'r', encoding='utf-8') as f:
-                            lines = f.read().split('\n')
-                        for line in lines:
-                            stripped = line.strip()
-                            for key in ('- **High-Level Summary**:', '- **Summary**:'):
-                                if stripped.startswith(key):
-                                    summary_preview = stripped[len(key):].strip()
-                                    break
-                            if summary_preview:
-                                break
-                        if not summary_preview:
-                            for i, line in enumerate(lines):
-                                stripped = line.strip().rstrip(':')
-                                if stripped in ('### High-Level Summary', '## High-Level Summary', 'High-Level Summary'):
-                                    for j in range(i + 1, min(i + 5, len(lines))):
-                                        candidate = lines[j].strip()
-                                        if candidate and not candidate.startswith('#') and not candidate.startswith('- **'):
-                                            summary_preview = candidate
-                                            break
-                                    break
-                    except Exception:
-                        pass
 
                 # Normalize meeting body casing
                 body = metadata.get("meeting_body")
@@ -1285,7 +1287,7 @@ Guidelines:
                 }
 
                 index_entries.append(entry)
-                self.progress(f"Indexed clip {metadata.get('clip_id')}")
+                pass
 
             except Exception as e:
                 self.log(f"Error indexing {clip_dir.name}: {e}", "WARNING")
@@ -1461,13 +1463,16 @@ Guidelines:
         clip_dir = self.output_dir / "clips" / str(clip_id)
         metadata_path = clip_dir / "metadata.json"
 
-        # Check if fully processed
+        # Check if fully processed (metadata exists with a transcript file)
         if skip_if_exists and not self.force_reprocess and metadata_path.exists():
-            # Check if summary exists (our new completion marker)
-            summary_html = clip_dir / "summary.html"
-            if summary_html.exists():
-                self.log(f"Clip {clip_id} fully processed - skipping (use --force to reprocess)")
-                return True
+            try:
+                with open(metadata_path) as f:
+                    existing_meta = json.load(f)
+                if existing_meta.get("files", {}).get("transcript"):
+                    self.log(f"Clip {clip_id} fully processed - skipping (use --force to reprocess)")
+                    return True
+            except (json.JSONDecodeError, OSError):
+                pass  # Corrupted metadata, reprocess
 
         clip_dir.mkdir(parents=True, exist_ok=True)
         start_time = datetime.now()
@@ -1488,7 +1493,21 @@ Guidelines:
             # Step 2: Extract date from title for filename prefixes
             clip_metadata = self.scrape_clip_metadata(clip_id, title)
             meeting_date = clip_metadata.get("date")  # ISO format: YYYY-MM-DD
+
+            # Fall back to date from existing metadata.json on disk
+            if not meeting_date:
+                existing_meta_path = clip_dir / "metadata.json"
+                if existing_meta_path.exists():
+                    try:
+                        existing_meta = json.loads(existing_meta_path.read_text())
+                        meeting_date = existing_meta.get("date")
+                        if meeting_date:
+                            clip_metadata["date"] = meeting_date
+                    except (json.JSONDecodeError, OSError):
+                        pass
+
             if meeting_date:
+                self.log(f"Meeting date: {meeting_date}")
                 self.progress(f"Extracted date: {meeting_date}")
 
             # Step 3: Download audio with date prefix
@@ -1555,30 +1574,30 @@ Guidelines:
                 # Re-extract metadata now that we have agenda text
                 clip_metadata = self.scrape_clip_metadata(clip_id, title, agenda_result.get("text"))
 
-            # Step 8: Generate summary (with agenda and minutes context)
-            summary_txt_path = clip_dir / "summary.txt"
-            summary = self.generate_summary(
-                clip_id,
-                transcript,
-                agenda_result.get("text"),
-                summary_txt_path,
-                minutes_text=minutes_result.get("text")
-            )
-            if not summary:
-                self.state["failed_clips"].append({
-                    "clip_id": clip_id,
-                    "reason": "summary_generation_failed",
-                    "timestamp": datetime.now().isoformat()
-                })
-                self.state["last_processed_clip_id"] = clip_id
-                self.save_state()
-                return False
-            files["summary_txt"] = "summary.txt"
+            # Step 8: Generate summary (temporarily disabled — using metadata only)
+            # summary_txt_path = clip_dir / "summary.txt"
+            # summary = self.generate_summary(
+            #     clip_id,
+            #     transcript,
+            #     agenda_result.get("text"),
+            #     summary_txt_path,
+            #     minutes_text=minutes_result.get("text")
+            # )
+            # if not summary:
+            #     self.state["failed_clips"].append({
+            #         "clip_id": clip_id,
+            #         "reason": "summary_generation_failed",
+            #         "timestamp": datetime.now().isoformat()
+            #     })
+            #     self.state["last_processed_clip_id"] = clip_id
+            #     self.save_state()
+            #     return False
+            # files["summary_txt"] = "summary.txt"
 
-            # Step 9: Convert summary to HTML
-            summary_html_path = clip_dir / "summary.html"
-            if self.summary_to_html(summary, title, summary_html_path):
-                files["summary_html"] = "summary.html"
+            # Step 9: Convert summary to HTML (temporarily disabled)
+            # summary_html_path = clip_dir / "summary.html"
+            # if self.summary_to_html(summary, title, summary_html_path):
+            #     files["summary_html"] = "summary.html"
 
             # Remove audio if not keeping
             if not self.keep_audio and audio_path.exists():
@@ -1601,7 +1620,6 @@ Guidelines:
                 "audio_kept": self.keep_audio,
                 "models": {
                     "transcribe": self.transcribe_model,
-                    "summary": self.summary_model,
                 }
             }
 
@@ -1615,6 +1633,24 @@ Guidelines:
             self.save_state()
 
             self.log(f"Successfully processed clip {clip_id} in {metadata['processing_time_seconds']:.1f}s")
+
+            # RAG ingestion (if enabled)
+            if getattr(self, 'rag_enabled', False):
+                try:
+                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+                    from openai import OpenAI
+                    collection = get_chroma_collection(str(self.output_dir))
+                    openai_client = OpenAI()
+                    rag_ingest_clip(clip_id, self.output_dir, collection, openai_client, verbose=self.verbose)
+                    state = load_rag_state(self.output_dir)
+                    if clip_id not in state["ingested_clips"]:
+                        state["ingested_clips"].append(clip_id)
+                        save_rag_state(state, self.output_dir)
+                    self.log(f"RAG: Ingested clip {clip_id}")
+                except ImportError:
+                    self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
+                except Exception as e:
+                    self.log(f"RAG ingestion failed for clip {clip_id}: {e}", "WARNING")
 
             # Regenerate search index after each successful clip
             self.generate_search_index()
@@ -1676,26 +1712,41 @@ Guidelines:
                 self.log(f"Error loading available_clips.json: {e}", "WARNING")
         return []
 
-    def auto_process(self, max_clips: int = 10) -> dict:
+    def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None) -> dict:
         """Auto-process clips starting from last processed + 1 or FIRST_CLIP_ID.
 
         If available_clips.json exists, only processes clips from that list.
+
+        Args:
+            max_clips: Maximum number of clips to process.
+            reverse: If True, process all unprocessed clips from most recent
+                     backwards (useful for filling gaps in the middle).
+            start: If set, override last_processed_clip_id and begin from this clip ID.
         """
         available_clips = self.load_available_clips()
         processed_set = set(self.state.get("processed_clips", []))
-        last_id = self.state["last_processed_clip_id"]
+        last_id = start - 1 if start else self.state["last_processed_clip_id"]
 
         if available_clips:
-            # Filter to unprocessed clips after last_processed_clip_id
-            candidates = [c for c in available_clips if c > last_id and c not in processed_set]
+            if reverse:
+                # Unprocessed clips, newest-first; if --start given, only clips <= start
+                candidates = [c for c in available_clips if c not in processed_set]
+                if start:
+                    candidates = [c for c in candidates if c <= start]
+                candidates = list(reversed(candidates))
+            else:
+                # Default: unprocessed clips after last_id, oldest first
+                candidates = [c for c in available_clips if c > last_id and c not in processed_set]
+
             clips_to_process = candidates[:max_clips]
 
             if not clips_to_process:
                 self.log("No more clips to process from available_clips.json")
                 return {"processed": [], "failed": [], "skipped": []}
 
-            self.log(f"Auto-processing {len(clips_to_process)} clips from available_clips.json")
-            self.log(f"Clips: {clips_to_process[0]} to {clips_to_process[-1]}")
+            order = "newest first" if reverse else "oldest first"
+            self.log(f"Auto-processing {len(clips_to_process)} clips from available_clips.json ({order})")
+            self.log(f"Clips: {clips_to_process}")
 
             results = {"processed": [], "failed": [], "skipped": []}
             for idx, clip_id in enumerate(clips_to_process, 1):
@@ -1711,8 +1762,15 @@ Guidelines:
 
             return results
         else:
+            if reverse:
+                self.log("Warning: --reverse requires available_clips.json. "
+                         "Run probe_clips.py first.", "WARNING")
+                return {"processed": [], "failed": [], "skipped": []}
+
             # Fallback: sequential processing without available_clips.json
-            if last_id == 0:
+            if start:
+                start_id = start
+            elif last_id == 0:
                 start_id = self.first_clip_id
             else:
                 start_id = last_id + 1
@@ -1845,7 +1903,10 @@ Examples:
   %(prog)s 6669 6675                     # Process range (inclusive)
   %(prog)s --auto                        # Auto-process from FIRST_CLIP_ID or last + 1
   %(prog)s --auto --max 5                # Auto-process up to 5 clips
+  %(prog)s --auto --start 6480            # Start auto-processing from clip 6480
+  %(prog)s --auto --reverse              # Process most recent clips first
   %(prog)s --scrape                      # Scrape and process all new clips
+  %(prog)s --scrape --reverse --max 5    # Scrape, process 5 most recent first
   %(prog)s --generate-index              # Generate search index from all clips
   %(prog)s --update-transcripts          # Add timestamps to existing transcripts
   %(prog)s --update-transcripts --max 5  # Update up to 5 transcripts
@@ -1884,6 +1945,18 @@ Examples:
         type=int,
         default=10,
         help="Maximum clips to process in auto/scrape mode (default: 10)"
+    )
+
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Process clips in reverse chronological order (most recent first)"
+    )
+
+    parser.add_argument(
+        "--start",
+        type=int,
+        help="Start auto-processing from this clip ID (overrides last_processed_clip_id)"
     )
 
     parser.add_argument(
@@ -1948,6 +2021,18 @@ Examples:
         help="Re-transcribe clips to add timestamp segments (for clickable timestamps in UI)"
     )
 
+    parser.add_argument(
+        "--rag",
+        action="store_true",
+        help="Enable RAG ingestion after processing each clip"
+    )
+
+    parser.add_argument(
+        "--rebuild-rag",
+        action="store_true",
+        help="Re-embed all clips into the RAG vector store"
+    )
+
     args = parser.parse_args()
 
     # Initialize pipeline
@@ -1965,6 +2050,49 @@ Examples:
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
+
+    # Set RAG enabled flag
+    pipeline.rag_enabled = args.rag
+
+    # Handle rebuild-rag mode
+    if args.rebuild_rag:
+        try:
+            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+            from openai import OpenAI
+            import os
+
+            openai_client = OpenAI()
+            collection = get_chroma_collection(str(pipeline.output_dir))
+
+            # Clear existing state
+            state = {"ingested_clips": []}
+            save_rag_state(state, pipeline.output_dir)
+
+            # Find all clips with metadata
+            clips_dir = pipeline.output_dir / "clips"
+            clip_ids = []
+            for name in sorted(os.listdir(clips_dir)):
+                meta_path = clips_dir / name / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        clip_ids.append(int(name))
+                    except ValueError:
+                        continue
+
+            print(f"Rebuilding RAG index for {len(clip_ids)} clips...")
+            for i, clip_id in enumerate(clip_ids):
+                print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
+                rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client, verbose=True)
+                state["ingested_clips"].append(clip_id)
+                save_rag_state(state, pipeline.output_dir)
+
+            from rag.ingest import get_stats
+            stats = get_stats(collection)
+            print(f"\nRAG rebuild complete: {stats['total_chunks']} chunks from {stats['unique_clips']} clips")
+        except ImportError:
+            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            sys.exit(1)
+        sys.exit(0)
 
     # Handle generate-index mode
     if args.generate_index:
@@ -2015,22 +2143,40 @@ Examples:
             print("No clips found via scraping")
             sys.exit(1)
 
-        # Process new clips
-        new_clips = [
-            c for c in available_clips
-            if c > pipeline.state["last_processed_clip_id"]
-        ][:args.max]
+        processed_set = set(pipeline.state.get("processed_clips", []))
+
+        if args.reverse:
+            # All unprocessed clips, newest first (fills gaps)
+            new_clips = [c for c in reversed(available_clips) if c not in processed_set]
+        else:
+            # Unprocessed clips after last_processed_clip_id, oldest first
+            new_clips = [
+                c for c in available_clips
+                if c > pipeline.state["last_processed_clip_id"]
+            ]
+
+        new_clips = new_clips[:args.max]
 
         if not new_clips:
             print("No new clips to process")
             sys.exit(0)
 
-        print(f"\nProcessing {len(new_clips)} new clips: {new_clips[0]} to {new_clips[-1]}")
-        results = pipeline.process_range(new_clips[0], new_clips[-1])
+        order = " (newest first)" if args.reverse else ""
+        print(f"\nProcessing {len(new_clips)} clips{order}: {new_clips}")
+        results = {"processed": [], "failed": [], "skipped": []}
+        for idx, clip_id in enumerate(new_clips, 1):
+            pipeline.log(f"\n{'=' * 70}")
+            pipeline.log(f"Clip {clip_id} - [{idx}/{len(new_clips)}]")
+            pipeline.log(f"{'=' * 70}")
+            success = pipeline.process_clip(clip_id)
+            if success:
+                results["processed"].append(clip_id)
+            else:
+                results["failed"].append(clip_id)
 
     elif args.auto:
         # Auto mode
-        results = pipeline.auto_process(args.max)
+        results = pipeline.auto_process(args.max, reverse=args.reverse, start=args.start)
 
     elif len(args.clip_ids) == 1:
         # Single clip

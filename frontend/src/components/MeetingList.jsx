@@ -66,8 +66,8 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
       {meeting.meeting_body && (
         <span className="meeting-card-body">{meeting.meeting_body}</span>
       )}
-      {meeting.summary_preview && (
-        <div className="meeting-card-preview">{meeting.summary_preview}</div>
+      {meeting.transcript_preview && !snippet && (
+        <div className="meeting-card-preview">{meeting.transcript_preview}</div>
       )}
       {snippet && (
         <HighlightedSnippet snippet={snippet} />
@@ -148,8 +148,6 @@ function MeetingList() {
     setSelectedBody,
     sortBy,
     setSortBy,
-    searchMode,
-    setSearchMode,
     meetingBodies,
     filteredMeetings,
     searchSnippets,
@@ -200,8 +198,6 @@ function MeetingList() {
           <SearchBar
             query={query}
             setQuery={setQuery}
-            searchMode={searchMode}
-            setSearchMode={setSearchMode}
             flexSearchLoading={flexSearchLoading}
             flexSearchLoaded={flexSearchLoaded}
             flexSearchProgress={flexSearchProgress}
@@ -238,7 +234,7 @@ function MeetingList() {
                 meeting={meeting}
                 snippet={searchSnippets.get(meeting.clip_id)}
                 href={
-                  searchMode === 'full' && query.trim()
+                  query.trim()
                     ? `/meeting/${meeting.clip_id}?highlight=${encodeURIComponent(query.trim())}`
                     : `/meeting/${meeting.clip_id}`
                 }
@@ -246,10 +242,8 @@ function MeetingList() {
                   // Let browser handle middle-click, ctrl+click, cmd+click natively
                   if (e.button !== 0 || e.metaKey || e.ctrlKey) return
                   e.preventDefault()
-                  if (searchMode === 'full' && query.trim()) {
-                    const params = new URLSearchParams()
-                    params.set('highlight', query.trim())
-                    navigate(`/meeting/${meeting.clip_id}?${params.toString()}`)
+                  if (query.trim()) {
+                    navigate(`/meeting/${meeting.clip_id}?highlight=${encodeURIComponent(query.trim())}`)
                   } else {
                     navigate(`/meeting/${meeting.clip_id}`)
                   }

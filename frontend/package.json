@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "build-search-index": "node scripts/build-search-index.js"
+    "build-search-index": "node scripts/build-search-index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "flexsearch": "^0.7.43",
@@ -16,9 +17,14 @@
     "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
-    "vite": "^5.0.0"
+    "jsdom": "^28.1.0",
+    "vite": "^5.0.0",
+    "vitest": "^4.0.18"
   }
 }
