@@ -1694,26 +1694,38 @@ Guidelines:
                 self.log(f"Error loading available_clips.json: {e}", "WARNING")
         return []
 
-    def auto_process(self, max_clips: int = 10) -> dict:
+    def auto_process(self, max_clips: int = 10, reverse: bool = False) -> dict:
         """Auto-process clips starting from last processed + 1 or FIRST_CLIP_ID.
 
         If available_clips.json exists, only processes clips from that list.
+
+        Args:
+            max_clips: Maximum number of clips to process.
+            reverse: If True, process all unprocessed clips from most recent
+                     backwards (useful for filling gaps in the middle).
         """
         available_clips = self.load_available_clips()
         processed_set = set(self.state.get("processed_clips", []))
         last_id = self.state["last_processed_clip_id"]
 
         if available_clips:
-            # Filter to unprocessed clips after last_processed_clip_id
-            candidates = [c for c in available_clips if c > last_id and c not in processed_set]
+            if reverse:
+                # Find ALL unprocessed clips (not just after last_id) and go newest-first
+                candidates = [c for c in available_clips if c not in processed_set]
+                candidates = list(reversed(candidates))
+            else:
+                # Default: unprocessed clips after last_processed_clip_id, oldest first
+                candidates = [c for c in available_clips if c > last_id and c not in processed_set]
+
             clips_to_process = candidates[:max_clips]
 
             if not clips_to_process:
                 self.log("No more clips to process from available_clips.json")
                 return {"processed": [], "failed": [], "skipped": []}
 
-            self.log(f"Auto-processing {len(clips_to_process)} clips from available_clips.json")
-            self.log(f"Clips: {clips_to_process[0]} to {clips_to_process[-1]}")
+            order = "newest first" if reverse else "oldest first"
+            self.log(f"Auto-processing {len(clips_to_process)} clips from available_clips.json ({order})")
+            self.log(f"Clips: {clips_to_process}")
 
             results = {"processed": [], "failed": [], "skipped": []}
             for idx, clip_id in enumerate(clips_to_process, 1):
@@ -1729,6 +1741,11 @@ Guidelines:
 
             return results
         else:
+            if reverse:
+                self.log("Warning: --reverse requires available_clips.json. "
+                         "Run probe_clips.py first.", "WARNING")
+                return {"processed": [], "failed": [], "skipped": []}
+
             # Fallback: sequential processing without available_clips.json
             if last_id == 0:
                 start_id = self.first_clip_id
@@ -1863,7 +1880,9 @@ Examples:
   %(prog)s 6669 6675                     # Process range (inclusive)
   %(prog)s --auto                        # Auto-process from FIRST_CLIP_ID or last + 1
   %(prog)s --auto --max 5                # Auto-process up to 5 clips
+  %(prog)s --auto --reverse              # Process most recent clips first
   %(prog)s --scrape                      # Scrape and process all new clips
+  %(prog)s --scrape --reverse --max 5    # Scrape, process 5 most recent first
   %(prog)s --generate-index              # Generate search index from all clips
   %(prog)s --update-transcripts          # Add timestamps to existing transcripts
   %(prog)s --update-transcripts --max 5  # Update up to 5 transcripts
@@ -1902,6 +1921,12 @@ Examples:
         type=int,
         default=10,
         help="Maximum clips to process in auto/scrape mode (default: 10)"
+    )
+
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Process clips in reverse chronological order (most recent first)"
     )
 
     parser.add_argument(
@@ -2088,22 +2113,40 @@ Examples:
             print("No clips found via scraping")
             sys.exit(1)
 
-        # Process new clips
-        new_clips = [
-            c for c in available_clips
-            if c > pipeline.state["last_processed_clip_id"]
-        ][:args.max]
+        processed_set = set(pipeline.state.get("processed_clips", []))
+
+        if args.reverse:
+            # All unprocessed clips, newest first (fills gaps)
+            new_clips = [c for c in reversed(available_clips) if c not in processed_set]
+        else:
+            # Unprocessed clips after last_processed_clip_id, oldest first
+            new_clips = [
+                c for c in available_clips
+                if c > pipeline.state["last_processed_clip_id"]
+            ]
+
+        new_clips = new_clips[:args.max]
 
         if not new_clips:
             print("No new clips to process")
             sys.exit(0)
 
-        print(f"\nProcessing {len(new_clips)} new clips: {new_clips[0]} to {new_clips[-1]}")
-        results = pipeline.process_range(new_clips[0], new_clips[-1])
+        order = " (newest first)" if args.reverse else ""
+        print(f"\nProcessing {len(new_clips)} clips{order}: {new_clips}")
+        results = {"processed": [], "failed": [], "skipped": []}
+        for idx, clip_id in enumerate(new_clips, 1):
+            pipeline.log(f"\n{'=' * 70}")
+            pipeline.log(f"Clip {clip_id} - [{idx}/{len(new_clips)}]")
+            pipeline.log(f"{'=' * 70}")
+            success = pipeline.process_clip(clip_id)
+            if success:
+                results["processed"].append(clip_id)
+            else:
+                results["failed"].append(clip_id)
 
     elif args.auto:
         # Auto mode
-        results = pipeline.auto_process(args.max)
+        results = pipeline.auto_process(args.max, reverse=args.reverse)
 
     elif len(args.clip_ids) == 1:
         # Single clip

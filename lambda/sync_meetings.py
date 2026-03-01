@@ -178,6 +178,7 @@ def handler(event, context):
     max_clips = event.get('max_clips', 5)
     force = event.get('force', False)
     full_sync = event.get('full_sync', False)
+    reverse = event.get('reverse', False)
     output_dir = '/tmp/lfucg_output'
     s3_bucket = os.environ.get('S3_BUCKET')
     s3_prefix = os.environ.get('S3_DATA_PREFIX', 'data/')
@@ -219,7 +220,7 @@ def handler(event, context):
 
         # Process new clips
         print(f"Auto-processing up to {max_clips} clips...")
-        results = pipeline.auto_process(max_clips=max_clips)
+        results = pipeline.auto_process(max_clips=max_clips, reverse=reverse)
 
         processed_clips = results.get('processed', [])
         failed_clips = results.get('failed', [])
