@@ -74,44 +74,48 @@ class TestBuildChromaFilter:
 # ============================================================
 
 class TestDeduplicate:
-    """Test deduplication: max 2 chunks per clip, highest-scored first."""
+    """Test deduplication: max 3 chunks per clip (default), highest-scored first."""
 
-    def test_dedup_keeps_max_two_per_clip(self):
+    def test_dedup_keeps_max_three_per_clip(self):
         from rag.query import deduplicate_results
 
         results = {
-            "ids": [["a", "b", "c", "d"]],
-            "documents": [["doc_a", "doc_b", "doc_c", "doc_d"]],
+            "ids": [["a", "b", "c", "d", "e"]],
+            "documents": [["doc_a", "doc_b", "doc_c", "doc_d", "doc_e"]],
             "metadatas": [[
-                {"clip_id": 6669, "source": "summary"},
                 {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "minutes"},
                 {"clip_id": 6669, "source": "agenda"},
-                {"clip_id": 6670, "source": "summary"},
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6670, "source": "minutes"},
             ]],
-            "distances": [[0.1, 0.2, 0.3, 0.15]],
+            "distances": [[0.1, 0.2, 0.3, 0.4, 0.15]],
         }
-        deduped = deduplicate_results(results, max_per_clip=2)
+        deduped = deduplicate_results(results)  # uses default max_per_clip=3
         clip_6669_count = sum(1 for m in deduped["metadatas"] if m["clip_id"] == 6669)
-        assert clip_6669_count <= 2
+        assert clip_6669_count == 3  # keeps 3, drops the 4th
 
     def test_dedup_keeps_highest_scored_first(self):
         from rag.query import deduplicate_results
 
         results = {
-            "ids": [["a", "b", "c"]],
-            "documents": [["worst", "best", "middle"]],
+            "ids": [["a", "b", "c", "d"]],
+            "documents": [["worst", "best", "middle", "okay"]],
             "metadatas": [[
-                {"clip_id": 6669, "source": "summary"},
                 {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "minutes"},
                 {"clip_id": 6669, "source": "agenda"},
+                {"clip_id": 6669, "source": "transcript"},
             ]],
-            "distances": [[0.5, 0.1, 0.3]],  # lower distance = better
+            "distances": [[0.5, 0.1, 0.3, 0.4]],  # lower distance = better
         }
-        deduped = deduplicate_results(results, max_per_clip=2)
-        # Should keep the two with lowest distances (0.1 and 0.3)
-        assert len(deduped["documents"]) == 2
+        deduped = deduplicate_results(results, max_per_clip=3)
+        # Should keep the three with lowest distances (0.1, 0.3, 0.4)
+        assert len(deduped["documents"]) == 3
         assert "best" in deduped["documents"]
         assert "middle" in deduped["documents"]
+        assert "okay" in deduped["documents"]
+        assert "worst" not in deduped["documents"]
 
     def test_dedup_preserves_different_clips(self):
         from rag.query import deduplicate_results
@@ -120,12 +124,12 @@ class TestDeduplicate:
             "ids": [["a", "b"]],
             "documents": [["doc_a", "doc_b"]],
             "metadatas": [[
-                {"clip_id": 6669, "source": "summary"},
-                {"clip_id": 6670, "source": "summary"},
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6670, "source": "minutes"},
             ]],
             "distances": [[0.1, 0.2]],
         }
-        deduped = deduplicate_results(results, max_per_clip=2)
+        deduped = deduplicate_results(results, max_per_clip=3)
         assert len(deduped["documents"]) == 2
 
 

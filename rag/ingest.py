@@ -15,6 +15,16 @@ RAG_STATE_FILE = "rag_state.json"
 CHROMA_DIR = "chroma_db"
 TARGET_WORDS = 500
 OVERLAP_WORDS = 100
+MIN_CHUNK_WORDS = 200
+
+# Procedural phrases that signal topic boundaries in meeting transcripts
+TOPIC_BOUNDARY_PHRASES = [
+    "next item", "moving on", "next order of business", "public comment",
+    "roll call", "ordinance", "resolution",
+]
+
+# Short filler words to remove when they appear as standalone isolated segments
+FILLER_WORDS = {"so", "um", "uh", "oh", "you know", "yeah", "okay", "right", "well"}
 
 
 # ============================================================
@@ -59,58 +69,150 @@ def chunk_summary(summary_text: str, clip_id: int, date: str, meeting_body: str)
     return chunks
 
 
-def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body: str,
-                     target_words: int = TARGET_WORDS, overlap_words: int = OVERLAP_WORDS) -> list[dict]:
-    """Group transcript segments into ~target_words passages with overlap."""
+def clean_segments(segments: list[dict]) -> list[dict]:
+    """Filter out noisy Whisper segments before chunking.
+
+    Removes: dot/symbol-only segments, non-English gibberish, stuck repetition
+    loops, very short filler, and song lyrics at meeting end.
+    """
     if not segments:
         return []
 
-    chunks = []
-    current_segments = []
-    current_word_count = 0
+    cleaned = []
 
+    # --- Pass 1: Remove dot/symbol-only, non-ASCII gibberish, short filler ---
     for seg in segments:
-        seg_words = len(seg["text"].split())
-        current_segments.append(seg)
-        current_word_count += seg_words
+        text = seg["text"].strip()
 
-        if current_word_count >= target_words:
-            # Emit a chunk
-            text = " ".join(s["text"] for s in current_segments)
-            chunks.append({
-                "text": text,
-                "clip_id": clip_id,
-                "date": date,
-                "meeting_body": meeting_body,
-                "source": "transcript",
-                "start_time": current_segments[0]["start"],
-                "end_time": current_segments[-1]["end"],
-            })
+        # Dot/symbol-only segments
+        if re.match(r'^[\s.\u266a\u266b\U0001f3b5\U0001f3b6♪🎵🎶]*$', text):
+            continue
+        if text.lower() in {"music", ".", "...", "♪", "🎵"}:
+            continue
 
-            # Keep overlap: walk backward from end to find ~overlap_words worth of segments
-            overlap_segs = []
-            overlap_count = 0
-            for s in reversed(current_segments):
-                overlap_count += len(s["text"].split())
-                overlap_segs.insert(0, s)
-                if overlap_count >= overlap_words:
-                    break
+        # Non-English gibberish: >50% non-ASCII characters
+        if text:
+            non_ascii = sum(1 for c in text if ord(c) > 127)
+            if non_ascii / len(text) > 0.5:
+                continue
 
-            current_segments = overlap_segs
-            current_word_count = sum(len(s["text"].split()) for s in current_segments)
+        # Very short filler (under 3 words, common filler as standalone)
+        words = text.split()
+        if len(words) < 3 and text.lower().strip(".,!?") in FILLER_WORDS:
+            continue
 
-    # Emit remaining segments as final chunk
-    if current_segments:
-        text = " ".join(s["text"] for s in current_segments)
-        chunks.append({
+        cleaned.append(seg)
+
+    # --- Pass 2: Collapse stuck repetition loops (5+ identical consecutive) ---
+    if cleaned:
+        deduped = [cleaned[0]]
+        run_count = 1
+        for i in range(1, len(cleaned)):
+            if cleaned[i]["text"].strip() == cleaned[i - 1]["text"].strip():
+                run_count += 1
+                if run_count <= 1:  # keep only the first occurrence
+                    deduped.append(cleaned[i])
+            else:
+                run_count = 1
+                deduped.append(cleaned[i])
+        cleaned = deduped
+
+    # --- Pass 3: Strip song lyrics at meeting end ---
+    # Heuristic: if 10+ consecutive segments in the last 10% have short poetic
+    # lines and no procedural language, strip them.
+    if len(cleaned) >= 10:
+        cutoff_idx = int(len(cleaned) * 0.9)
+        tail = cleaned[cutoff_idx:]
+        procedural_found = False
+        short_poetic_count = 0
+        for seg in tail:
+            text_lower = seg["text"].strip().lower()
+            if any(phrase in text_lower for phrase in TOPIC_BOUNDARY_PHRASES):
+                procedural_found = True
+                break
+            words = seg["text"].split()
+            if len(words) <= 12:
+                short_poetic_count += 1
+        if not procedural_found and short_poetic_count >= 10:
+            cleaned = cleaned[:cutoff_idx]
+
+    return cleaned
+
+
+def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body: str,
+                     target_words: int = TARGET_WORDS, overlap_words: int = OVERLAP_WORDS) -> list[dict]:
+    """Group transcript segments into ~target_words passages with overlap.
+
+    Uses topic-aware boundaries: silence gaps (>5s between segments) and
+    procedural transition phrases trigger chunk boundaries when at least
+    MIN_CHUNK_WORDS have been accumulated.
+    """
+    if not segments:
+        return []
+
+    # Clean noisy segments first
+    segments = clean_segments(segments)
+    if not segments:
+        return []
+
+    def _is_topic_boundary(prev_seg: dict, curr_seg: dict) -> bool:
+        """Detect natural topic boundaries between segments."""
+        # Silence gap: >5 seconds between previous end and current start
+        if curr_seg["start"] - prev_seg["end"] > 5.0:
+            return True
+        # Procedural phrases in the current segment text
+        text_lower = curr_seg["text"].strip().lower()
+        if any(phrase in text_lower for phrase in TOPIC_BOUNDARY_PHRASES):
+            return True
+        return False
+
+    def _emit_chunk(segs: list[dict]) -> dict:
+        text = " ".join(s["text"] for s in segs)
+        return {
             "text": text,
             "clip_id": clip_id,
             "date": date,
             "meeting_body": meeting_body,
             "source": "transcript",
-            "start_time": current_segments[0]["start"],
-            "end_time": current_segments[-1]["end"],
-        })
+            "start_time": segs[0]["start"],
+            "end_time": segs[-1]["end"],
+        }
+
+    def _overlap_tail(segs: list[dict]) -> list[dict]:
+        """Return trailing segments worth ~overlap_words."""
+        overlap_segs = []
+        overlap_count = 0
+        for s in reversed(segs):
+            overlap_count += len(s["text"].split())
+            overlap_segs.insert(0, s)
+            if overlap_count >= overlap_words:
+                break
+        return overlap_segs
+
+    chunks = []
+    current_segments = []
+    current_word_count = 0
+
+    for i, seg in enumerate(segments):
+        seg_words = len(seg["text"].split())
+        current_segments.append(seg)
+        current_word_count += seg_words
+
+        # Check for topic boundary (only if we have accumulated enough words)
+        at_boundary = (
+            i > 0
+            and current_word_count >= MIN_CHUNK_WORDS
+            and _is_topic_boundary(segments[i - 1], seg)
+        )
+
+        if at_boundary or current_word_count >= target_words:
+            chunks.append(_emit_chunk(current_segments))
+            current_segments = _overlap_tail(current_segments)
+            current_word_count = sum(len(s["text"].split()) for s in current_segments)
+
+    # Emit remaining segments as final chunk
+    if current_segments:
+        chunks.append(_emit_chunk(current_segments))
 
     return chunks
 
@@ -338,24 +440,15 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
 
     all_chunks = []
 
-    # 1. Summary chunks
-    summary_file = files.get("summary_txt")
-    if summary_file:
-        summary_path = clip_dir / summary_file
-        if summary_path.exists():
-            summary_text = summary_path.read_text()
-            all_chunks.extend(chunk_summary(summary_text, clip_id, date, meeting_body))
+    # 1. Minutes chunks (highest priority — structured ground-truth source)
+    minutes_file = files.get("minutes_txt")
+    if minutes_file:
+        minutes_path = clip_dir / minutes_file
+        if minutes_path.exists():
+            minutes_text = minutes_path.read_text()
+            all_chunks.extend(chunk_document(minutes_text, clip_id, date, meeting_body, source="minutes"))
 
-    # 2. Transcript chunks
-    segments_file = files.get("transcript_segments")
-    if segments_file:
-        segments_path = clip_dir / segments_file
-        if segments_path.exists() and segments_path.stat().st_size > 0:
-            with open(segments_path) as f:
-                segments = json.load(f)
-            all_chunks.extend(chunk_transcript(segments, clip_id, date, meeting_body))
-
-    # 3. Agenda chunks
+    # 2. Agenda chunks
     agenda_file = files.get("agenda_txt")
     if agenda_file:
         agenda_path = clip_dir / agenda_file
@@ -363,13 +456,14 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
             agenda_text = agenda_path.read_text()
             all_chunks.extend(chunk_document(agenda_text, clip_id, date, meeting_body, source="agenda"))
 
-    # 4. Minutes chunks
-    minutes_file = files.get("minutes_txt")
-    if minutes_file:
-        minutes_path = clip_dir / minutes_file
-        if minutes_path.exists():
-            minutes_text = minutes_path.read_text()
-            all_chunks.extend(chunk_document(minutes_text, clip_id, date, meeting_body, source="minutes"))
+    # 3. Transcript chunks (cleaned and topic-aware)
+    segments_file = files.get("transcript_segments")
+    if segments_file:
+        segments_path = clip_dir / segments_file
+        if segments_path.exists() and segments_path.stat().st_size > 0:
+            with open(segments_path) as f:
+                segments = json.load(f)
+            all_chunks.extend(chunk_transcript(segments, clip_id, date, meeting_body))
 
     if all_chunks:
         store_chunks(all_chunks, collection, openai_client)

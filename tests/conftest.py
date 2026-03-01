@@ -77,6 +77,43 @@ Ordinance 0016-26 was passed 8-0.
 Ordinance 0052-26 was passed unanimously.
 """
 
+SAMPLE_SEGMENTS_WITH_GAPS = [
+    {"start": 0.0, "end": 10.0, "text": "Welcome everyone to the meeting today."},
+    {"start": 10.0, "end": 20.0, "text": "We will begin with roll call. Councilmember Beasley."},
+    {"start": 20.0, "end": 30.0, "text": "Yes ma'am. Councilmember Boone. Yes ma'am."},
+    {"start": 30.0, "end": 40.0, "text": "Thank you. We have a quorum present tonight."},
+    # 15-second silence gap here (40.0 -> 55.0)
+    {"start": 55.0, "end": 65.0, "text": "Moving on to the next item on the agenda."},
+    {"start": 65.0, "end": 75.0, "text": "We have ordinance 0016-26 regarding zoning changes."},
+    {"start": 75.0, "end": 85.0, "text": "This ordinance would change the zone from agricultural to residential."},
+    {"start": 85.0, "end": 95.0, "text": "The planning commission has recommended approval of this change."},
+    {"start": 95.0, "end": 105.0, "text": "Are there any questions from council members on this item?"},
+]
+
+SAMPLE_NOISY_SEGMENTS = [
+    {"start": 0.0, "end": 1.0, "text": "♪"},
+    {"start": 1.0, "end": 2.0, "text": "🎵"},
+    {"start": 2.0, "end": 3.0, "text": "."},
+    {"start": 3.0, "end": 4.0, "text": "..."},
+    {"start": 4.0, "end": 5.0, "text": "Music"},
+    {"start": 5.0, "end": 10.0, "text": "Welcome to the council meeting today."},
+    {"start": 10.0, "end": 11.0, "text": "so"},
+    {"start": 11.0, "end": 12.0, "text": "um"},
+    # Non-ASCII gibberish (Cyrillic/Georgian artifacts from Whisper)
+    {"start": 12.0, "end": 13.0, "text": "Ыфвафыв дфыва фдыва фыдва"},
+    {"start": 13.0, "end": 14.0, "text": "კარგი საღამოა"},
+    {"start": 14.0, "end": 20.0, "text": "The first item of business is the roll call."},
+    # Stuck repetition loop (7 identical segments)
+    {"start": 20.0, "end": 21.0, "text": "Of the"},
+    {"start": 21.0, "end": 22.0, "text": "Of the"},
+    {"start": 22.0, "end": 23.0, "text": "Of the"},
+    {"start": 23.0, "end": 24.0, "text": "Of the"},
+    {"start": 24.0, "end": 25.0, "text": "Of the"},
+    {"start": 25.0, "end": 26.0, "text": "Of the"},
+    {"start": 26.0, "end": 27.0, "text": "Of the"},
+    {"start": 27.0, "end": 35.0, "text": "Councilmember Beasley voted yes on the motion."},
+]
+
 SAMPLE_METADATA = {
     "clip_id": 6669,
     "url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true",

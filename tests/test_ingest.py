@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import SAMPLE_SUMMARY, SAMPLE_SEGMENTS, SAMPLE_AGENDA, SAMPLE_MINUTES
+from tests.conftest import (
+    SAMPLE_SUMMARY, SAMPLE_SEGMENTS, SAMPLE_AGENDA, SAMPLE_MINUTES,
+    SAMPLE_NOISY_SEGMENTS, SAMPLE_SEGMENTS_WITH_GAPS,
+)
 
 
 # ============================================================
@@ -68,7 +71,102 @@ class TestChunkSummary:
 
 
 # ============================================================
-# 2. Transcript passage grouping tests
+# 2. Transcript cleaning tests
+# ============================================================
+
+class TestCleanSegments:
+    """Test filtering out noisy Whisper segments."""
+
+    def test_dot_only_segments_removed(self):
+        from rag.ingest import clean_segments
+
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "."},
+            {"start": 1.0, "end": 2.0, "text": "..."},
+            {"start": 2.0, "end": 10.0, "text": "Welcome to the meeting."},
+        ]
+        cleaned = clean_segments(segments)
+        texts = [s["text"] for s in cleaned]
+        assert "." not in texts
+        assert "..." not in texts
+        assert "Welcome to the meeting." in texts
+
+    def test_music_symbol_segments_removed(self):
+        from rag.ingest import clean_segments
+
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "\u266a"},
+            {"start": 1.0, "end": 2.0, "text": "\U0001f3b5"},
+            {"start": 2.0, "end": 3.0, "text": "Music"},
+            {"start": 3.0, "end": 10.0, "text": "Good evening everyone."},
+        ]
+        cleaned = clean_segments(segments)
+        assert len(cleaned) == 1
+        assert cleaned[0]["text"] == "Good evening everyone."
+
+    def test_repeated_phrase_runs_collapsed(self):
+        from rag.ingest import clean_segments
+
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Hello everyone."},
+        ]
+        # Add 7 identical segments
+        for i in range(7):
+            segments.append({"start": 5.0 + i, "end": 6.0 + i, "text": "Of the"})
+        segments.append({"start": 12.0, "end": 20.0, "text": "The meeting continues."})
+
+        cleaned = clean_segments(segments)
+        of_the_count = sum(1 for s in cleaned if s["text"].strip() == "Of the")
+        assert of_the_count == 1
+
+    def test_non_ascii_gibberish_removed(self):
+        from rag.ingest import clean_segments
+
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Normal English text here."},
+            {"start": 5.0, "end": 6.0, "text": "\u042b\u0444\u0432\u0430\u0444\u044b\u0432 \u0434\u0444\u044b\u0432\u0430 \u0444\u0434\u044b\u0432\u0430"},
+            {"start": 6.0, "end": 7.0, "text": "\u10d9\u10d0\u10e0\u10d2\u10d8 \u10e1\u10d0\u10e6\u10d0\u10db\u10dd\u10d0"},
+            {"start": 7.0, "end": 15.0, "text": "Back to normal speech here."},
+        ]
+        cleaned = clean_segments(segments)
+        assert len(cleaned) == 2
+        assert cleaned[0]["text"] == "Normal English text here."
+        assert cleaned[1]["text"] == "Back to normal speech here."
+
+    def test_normal_speech_preserved(self):
+        from rag.ingest import clean_segments
+
+        cleaned = clean_segments(SAMPLE_SEGMENTS)
+        # Most of the sample segments are normal speech — should keep most of them
+        # Only the "so" filler at start might be removed
+        assert len(cleaned) >= len(SAMPLE_SEGMENTS) - 1
+
+    def test_noisy_segments_fixture_cleaned(self):
+        from rag.ingest import clean_segments
+
+        cleaned = clean_segments(SAMPLE_NOISY_SEGMENTS)
+        texts = [s["text"] for s in cleaned]
+        # Should keep the two real speech segments
+        assert "Welcome to the council meeting today." in texts
+        assert "The first item of business is the roll call." in texts
+        assert "Councilmember Beasley voted yes on the motion." in texts
+        # Should remove music, dots, gibberish, filler
+        assert "\u266a" not in texts
+        assert "\U0001f3b5" not in texts
+        assert "." not in texts
+        assert "Music" not in texts
+        # Repetition should be collapsed to 1
+        of_the_count = sum(1 for t in texts if t.strip() == "Of the")
+        assert of_the_count == 1
+
+    def test_empty_segments_returns_empty(self):
+        from rag.ingest import clean_segments
+
+        assert clean_segments([]) == []
+
+
+# ============================================================
+# 3. Transcript passage grouping tests
 # ============================================================
 
 class TestChunkTranscript:
@@ -91,12 +189,14 @@ class TestChunkTranscript:
             assert chunk["start_time"] >= 0
             assert chunk["end_time"] >= chunk["start_time"]
 
-    def test_chunk_transcript_start_matches_first_segment(self):
-        from rag.ingest import chunk_transcript
+    def test_chunk_transcript_start_matches_first_cleaned_segment(self):
+        from rag.ingest import chunk_transcript, clean_segments
 
         chunks = chunk_transcript(SAMPLE_SEGMENTS, clip_id=6669, date="2026-01-22", meeting_body="Council")
-        # First chunk should start at the first segment's start time
-        assert chunks[0]["start_time"] == SAMPLE_SEGMENTS[0]["start"]
+        # First chunk should start at the first *cleaned* segment's start time
+        # (the "so" filler at index 0 is removed by clean_segments)
+        cleaned = clean_segments(SAMPLE_SEGMENTS)
+        assert chunks[0]["start_time"] == cleaned[0]["start"]
 
     def test_chunk_transcript_sets_correct_metadata(self):
         from rag.ingest import chunk_transcript
@@ -146,9 +246,100 @@ class TestChunkTranscript:
             # Check that chunk 1 starts before chunk 0 ends (overlap)
             assert chunks[1]["start_time"] < chunks[0]["end_time"]
 
+    def test_silence_gap_triggers_chunk_boundary(self):
+        """A >5s silence gap should trigger a chunk boundary when enough words accumulated."""
+        from rag.ingest import chunk_transcript, MIN_CHUNK_WORDS
+
+        # Build segments: enough words before the gap, then a gap, then more words
+        segments = []
+        t = 0.0
+        # Add enough segments to exceed MIN_CHUNK_WORDS before the gap
+        for i in range(30):
+            segments.append({
+                "start": t,
+                "end": t + 5.0,
+                "text": f"This is segment number {i} with some words to accumulate towards the minimum."
+            })
+            t += 5.0
+        # Add a silence gap of 10 seconds
+        gap_start = t + 10.0
+        for i in range(20):
+            segments.append({
+                "start": gap_start,
+                "end": gap_start + 5.0,
+                "text": f"After the gap segment {i} with more content to fill another chunk."
+            })
+            gap_start += 5.0
+
+        chunks = chunk_transcript(segments, clip_id=6669, date="2026-01-22", meeting_body="Council")
+        # Should produce multiple chunks, with a boundary at or near the gap
+        assert len(chunks) >= 2
+
+    def test_procedural_phrase_triggers_chunk_boundary(self):
+        """Procedural phrases like 'next item' should trigger a boundary."""
+        from rag.ingest import chunk_transcript
+
+        segments = []
+        t = 0.0
+        # Enough segments to accumulate >200 words
+        for i in range(25):
+            segments.append({
+                "start": t,
+                "end": t + 5.0,
+                "text": f"Discussion about item {i} with several words to build up the chunk size."
+            })
+            t += 5.0
+        # Procedural transition segment
+        segments.append({
+            "start": t,
+            "end": t + 5.0,
+            "text": "Moving on to the next item on the agenda."
+        })
+        t += 5.0
+        for i in range(15):
+            segments.append({
+                "start": t,
+                "end": t + 5.0,
+                "text": f"New topic segment {i} covering a different subject for this chunk."
+            })
+            t += 5.0
+
+        chunks = chunk_transcript(segments, clip_id=6669, date="2026-01-22", meeting_body="Council")
+        assert len(chunks) >= 2
+
+    def test_min_word_threshold_prevents_tiny_chunks(self):
+        """Boundaries should not create chunks smaller than MIN_CHUNK_WORDS."""
+        from rag.ingest import chunk_transcript
+
+        # Only 3 segments — too few words for MIN_CHUNK_WORDS, so boundary shouldn't trigger
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Hello everyone."},
+            # Gap > 5 seconds
+            {"start": 15.0, "end": 20.0, "text": "Moving on to the next item."},
+            {"start": 20.0, "end": 25.0, "text": "Thank you."},
+        ]
+        chunks = chunk_transcript(segments, clip_id=6669, date="2026-01-22", meeting_body="Council")
+        # Should produce just 1 chunk (not enough words to split)
+        assert len(chunks) == 1
+
+    def test_falls_back_to_word_count_splitting(self):
+        """Without boundaries, chunks should split at target_words like before."""
+        from rag.ingest import chunk_transcript
+
+        # Generate many segments with no gaps or procedural phrases
+        segments = []
+        for i in range(100):
+            segments.append({
+                "start": float(i * 2),
+                "end": float(i * 2 + 1.9),
+                "text": f"Segment {i} talking about various topics in the meeting discussion today."
+            })
+        chunks = chunk_transcript(segments, clip_id=6669, date="2026-01-22", meeting_body="Council")
+        assert len(chunks) > 1
+
 
 # ============================================================
-# 3. Agenda/minutes chunking tests
+# 4. Agenda/minutes chunking tests
 # ============================================================
 
 class TestChunkDocument:
@@ -202,7 +393,7 @@ class TestChunkDocument:
 
 
 # ============================================================
-# 4. ChromaDB storage tests
+# 5. ChromaDB storage tests
 # ============================================================
 
 class TestStoreChunks:
@@ -272,7 +463,7 @@ class TestStoreChunks:
 
 
 # ============================================================
-# 5. Full clip ingestion tests
+# 6. Full clip ingestion tests
 # ============================================================
 
 class TestIngestClip:
@@ -282,15 +473,11 @@ class TestIngestClip:
         from rag.ingest import ingest_clip
 
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        # Should have chunks from summary + transcript + agenda + minutes
+        # Should have chunks from transcript + agenda + minutes (no summary)
         assert chroma_collection.count() > 0
-
-    def test_ingest_clip_stores_summary_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import ingest_clip
-
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
+        # Verify NO summary chunks
         results = chroma_collection.get(where={"source": "summary"}, include=["metadatas"])
-        assert len(results["ids"]) >= 1
+        assert len(results["ids"]) == 0
 
     def test_ingest_clip_stores_transcript_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
@@ -299,8 +486,15 @@ class TestIngestClip:
         results = chroma_collection.get(where={"source": "transcript"}, include=["metadatas"])
         assert len(results["ids"]) >= 1
 
+    def test_ingest_clip_stores_minutes_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+        from rag.ingest import ingest_clip
+
+        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
+        results = chroma_collection.get(where={"source": "minutes"}, include=["metadatas"])
+        assert len(results["ids"]) >= 1
+
     def test_ingest_clip_skips_missing_files_gracefully(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
-        """If a clip directory has only metadata and summary, it should still work."""
+        """If a clip directory has only metadata and minutes, it should still work."""
         from rag.ingest import ingest_clip
 
         clip_dir = tmp_path / "clips" / "9999"
@@ -310,17 +504,17 @@ class TestIngestClip:
             "date": "2026-01-01",
             "meeting_body": "Committee",
             "title": "Test Meeting",
-            "files": {"summary_txt": "summary.txt"},
+            "files": {"minutes_txt": "minutes.txt"},
         }
         (clip_dir / "metadata.json").write_text(json.dumps(meta))
-        (clip_dir / "summary.txt").write_text("## Overview\nA short meeting.\n")
+        (clip_dir / "minutes.txt").write_text("COMMITTEE MEETING\nJanuary 1, 2026\n\nRoll Call\nMembers present: Smith, Jones.\n")
 
         ingest_clip(9999, tmp_path, chroma_collection, mock_openai_batch_embeddings)
         assert chroma_collection.count() >= 1
 
 
 # ============================================================
-# 6. Incremental ingestion tests
+# 7. Incremental ingestion tests
 # ============================================================
 
 class TestIncrementalIngestion:
@@ -360,7 +554,7 @@ class TestIncrementalIngestion:
 
 
 # ============================================================
-# 7. Stats output test
+# 8. Stats output test
 # ============================================================
 
 class TestStats:

@@ -37,7 +37,7 @@ def build_chroma_filter(filters: dict | None) -> dict | None:
     return {"$and": conditions}
 
 
-def deduplicate_results(results: dict, max_per_clip: int = 2) -> dict:
+def deduplicate_results(results: dict, max_per_clip: int = 3) -> dict:
     """Deduplicate ChromaDB results: keep max_per_clip chunks per clip, best-scored first."""
     if not results["ids"] or not results["ids"][0]:
         return {"ids": [], "documents": [], "metadatas": [], "distances": []}
