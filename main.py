@@ -1237,34 +1237,8 @@ Guidelines:
                             # First 500 chars for preview
                             transcript_preview = full_text[:500].replace('\n', ' ').strip()
 
-                # Extract high-level summary for card preview
+                # Summary preview extraction (temporarily disabled)
                 summary_preview = ""
-                summary_txt_file = metadata.get("files", {}).get("summary_txt", "summary.txt")
-                summary_path = clip_dir / summary_txt_file
-                if summary_path.exists():
-                    try:
-                        with open(summary_path, 'r', encoding='utf-8') as f:
-                            lines = f.read().split('\n')
-                        for line in lines:
-                            stripped = line.strip()
-                            for key in ('- **High-Level Summary**:', '- **Summary**:'):
-                                if stripped.startswith(key):
-                                    summary_preview = stripped[len(key):].strip()
-                                    break
-                            if summary_preview:
-                                break
-                        if not summary_preview:
-                            for i, line in enumerate(lines):
-                                stripped = line.strip().rstrip(':')
-                                if stripped in ('### High-Level Summary', '## High-Level Summary', 'High-Level Summary'):
-                                    for j in range(i + 1, min(i + 5, len(lines))):
-                                        candidate = lines[j].strip()
-                                        if candidate and not candidate.startswith('#') and not candidate.startswith('- **'):
-                                            summary_preview = candidate
-                                            break
-                                    break
-                    except Exception:
-                        pass
 
                 # Normalize meeting body casing
                 body = metadata.get("meeting_body")
@@ -1555,30 +1529,30 @@ Guidelines:
                 # Re-extract metadata now that we have agenda text
                 clip_metadata = self.scrape_clip_metadata(clip_id, title, agenda_result.get("text"))
 
-            # Step 8: Generate summary (with agenda and minutes context)
-            summary_txt_path = clip_dir / "summary.txt"
-            summary = self.generate_summary(
-                clip_id,
-                transcript,
-                agenda_result.get("text"),
-                summary_txt_path,
-                minutes_text=minutes_result.get("text")
-            )
-            if not summary:
-                self.state["failed_clips"].append({
-                    "clip_id": clip_id,
-                    "reason": "summary_generation_failed",
-                    "timestamp": datetime.now().isoformat()
-                })
-                self.state["last_processed_clip_id"] = clip_id
-                self.save_state()
-                return False
-            files["summary_txt"] = "summary.txt"
+            # Step 8: Generate summary (temporarily disabled — using metadata only)
+            # summary_txt_path = clip_dir / "summary.txt"
+            # summary = self.generate_summary(
+            #     clip_id,
+            #     transcript,
+            #     agenda_result.get("text"),
+            #     summary_txt_path,
+            #     minutes_text=minutes_result.get("text")
+            # )
+            # if not summary:
+            #     self.state["failed_clips"].append({
+            #         "clip_id": clip_id,
+            #         "reason": "summary_generation_failed",
+            #         "timestamp": datetime.now().isoformat()
+            #     })
+            #     self.state["last_processed_clip_id"] = clip_id
+            #     self.save_state()
+            #     return False
+            # files["summary_txt"] = "summary.txt"
 
-            # Step 9: Convert summary to HTML
-            summary_html_path = clip_dir / "summary.html"
-            if self.summary_to_html(summary, title, summary_html_path):
-                files["summary_html"] = "summary.html"
+            # Step 9: Convert summary to HTML (temporarily disabled)
+            # summary_html_path = clip_dir / "summary.html"
+            # if self.summary_to_html(summary, title, summary_html_path):
+            #     files["summary_html"] = "summary.html"
 
             # Remove audio if not keeping
             if not self.keep_audio and audio_path.exists():

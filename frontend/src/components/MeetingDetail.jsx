@@ -169,7 +169,7 @@ function MeetingDetail() {
   const [searchParams] = useSearchParams()
   const highlightTerm = searchParams.get('highlight') || ''
   const { meeting, summary, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
-  const [activeTab, setActiveTab] = useState('summary')
+  const [activeTab, setActiveTab] = useState('transcript')
   const [videoStartTime, setVideoStartTime] = useState(null)
   const [videoLoading, setVideoLoading] = useState(false)
   const videoContainerRef = useRef(null)
@@ -301,12 +301,11 @@ function MeetingDetail() {
   const tabs = useMemo(() => {
     if (!meeting) return []
     const result = []
-    if (summary || meeting.files?.summary_html) result.push({ id: 'summary', label: 'Summary' })
     if (transcript || meeting.files?.transcript) result.push({ id: 'transcript', label: 'Transcript' })
     if (agenda || meeting.files?.agenda_txt) result.push({ id: 'agenda', label: 'Agenda' })
     if (minutes || meeting.files?.minutes_txt) result.push({ id: 'minutes', label: 'Official Minutes' })
     return result
-  }, [summary, transcript, agenda, minutes, meeting])
+  }, [transcript, agenda, minutes, meeting])
 
   if (loading) {
     return <div className="loading">Loading meeting details...</div>
@@ -379,16 +378,6 @@ function MeetingDetail() {
               <span>Agenda (PDF)</span>
             </a>
           )}
-          {meeting.files?.summary_txt && (
-            <a
-              href={getFileUrl(meeting.files.summary_txt)}
-              className="file-link"
-              download
-            >
-              <span aria-hidden="true">📄</span>
-              <span>Summary (.txt)</span>
-            </a>
-          )}
           {meeting.files?.minutes_pdf && (
             <a
               href={getFileUrl(meeting.files.minutes_pdf)}
@@ -430,23 +419,6 @@ function MeetingDetail() {
           )}
 
           <div className="content-panel" role="tabpanel">
-            {currentTab === 'summary' && (
-              <div className="meeting-summary">
-                {summary ? (
-                  <div dangerouslySetInnerHTML={{ __html: summary }} />
-                ) : (
-                  <p className="content-unavailable">
-                    Summary not available.{' '}
-                    {meeting.files?.summary_txt && (
-                      <a href={getFileUrl(meeting.files.summary_txt)} target="_blank" rel="noopener noreferrer">
-                        Download text version →
-                      </a>
-                    )}
-                  </p>
-                )}
-              </div>
-            )}
-
             {currentTab === 'transcript' && (
               <div className="meeting-transcript">
                 {transcriptSegments && transcriptSegments.length > 0 ? (
