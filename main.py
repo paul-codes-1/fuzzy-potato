@@ -1688,7 +1688,7 @@ Guidelines:
                 self.log(f"Error loading available_clips.json: {e}", "WARNING")
         return []
 
-    def auto_process(self, max_clips: int = 10, reverse: bool = False) -> dict:
+    def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None) -> dict:
         """Auto-process clips starting from last processed + 1 or FIRST_CLIP_ID.
 
         If available_clips.json exists, only processes clips from that list.
@@ -1697,10 +1697,11 @@ Guidelines:
             max_clips: Maximum number of clips to process.
             reverse: If True, process all unprocessed clips from most recent
                      backwards (useful for filling gaps in the middle).
+            start: If set, override last_processed_clip_id and begin from this clip ID.
         """
         available_clips = self.load_available_clips()
         processed_set = set(self.state.get("processed_clips", []))
-        last_id = self.state["last_processed_clip_id"]
+        last_id = start - 1 if start else self.state["last_processed_clip_id"]
 
         if available_clips:
             if reverse:
@@ -1708,7 +1709,7 @@ Guidelines:
                 candidates = [c for c in available_clips if c not in processed_set]
                 candidates = list(reversed(candidates))
             else:
-                # Default: unprocessed clips after last_processed_clip_id, oldest first
+                # Default: unprocessed clips after last_id, oldest first
                 candidates = [c for c in available_clips if c > last_id and c not in processed_set]
 
             clips_to_process = candidates[:max_clips]
@@ -1741,7 +1742,9 @@ Guidelines:
                 return {"processed": [], "failed": [], "skipped": []}
 
             # Fallback: sequential processing without available_clips.json
-            if last_id == 0:
+            if start:
+                start_id = start
+            elif last_id == 0:
                 start_id = self.first_clip_id
             else:
                 start_id = last_id + 1
@@ -1874,6 +1877,7 @@ Examples:
   %(prog)s 6669 6675                     # Process range (inclusive)
   %(prog)s --auto                        # Auto-process from FIRST_CLIP_ID or last + 1
   %(prog)s --auto --max 5                # Auto-process up to 5 clips
+  %(prog)s --auto --start 6480            # Start auto-processing from clip 6480
   %(prog)s --auto --reverse              # Process most recent clips first
   %(prog)s --scrape                      # Scrape and process all new clips
   %(prog)s --scrape --reverse --max 5    # Scrape, process 5 most recent first
@@ -1921,6 +1925,12 @@ Examples:
         "--reverse",
         action="store_true",
         help="Process clips in reverse chronological order (most recent first)"
+    )
+
+    parser.add_argument(
+        "--start",
+        type=int,
+        help="Start auto-processing from this clip ID (overrides last_processed_clip_id)"
     )
 
     parser.add_argument(
@@ -2140,7 +2150,7 @@ Examples:
 
     elif args.auto:
         # Auto mode
-        results = pipeline.auto_process(args.max, reverse=args.reverse)
+        results = pipeline.auto_process(args.max, reverse=args.reverse, start=args.start)
 
     elif len(args.clip_ids) == 1:
         # Single clip
