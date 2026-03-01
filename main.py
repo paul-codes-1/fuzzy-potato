@@ -291,14 +291,16 @@ class LFUCGPipeline:
                         break
                     last_output_time[0] = time.time()
                     line = raw_line.decode('utf-8', errors='replace').strip()
-                    if line:
-                        # Progress lines: overwrite in place
-                        if '[download]' in line and '%' in line:
-                            clean_line = line.replace('[download]', '').strip()
-                            print(f"  {clean_line}", end='\r', flush=True)
-                        else:
-                            # Status lines (extracting URL, postprocessing, etc.)
-                            print(f"  {line}", flush=True)
+                    if not line:
+                        continue
+                    # Percentage progress: overwrite in place
+                    if '%' in line and ('[download]' in line or 'ETA' in line):
+                        clean_line = line.replace('[download]', '').strip()
+                        # Pad to overwrite previous longer lines
+                        print(f"\r  {clean_line:<80}", end='', flush=True)
+                    else:
+                        # Everything else: print on its own line
+                        print(f"\n  {line}", end='', flush=True)
                 eof_reached.set()
 
             reader = threading.Thread(target=read_output, daemon=True)
