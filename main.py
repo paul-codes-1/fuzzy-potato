@@ -1458,13 +1458,16 @@ Guidelines:
         clip_dir = self.output_dir / "clips" / str(clip_id)
         metadata_path = clip_dir / "metadata.json"
 
-        # Check if fully processed
+        # Check if fully processed (metadata exists with a transcript file)
         if skip_if_exists and not self.force_reprocess and metadata_path.exists():
-            # Check if summary exists (our new completion marker)
-            summary_html = clip_dir / "summary.html"
-            if summary_html.exists():
-                self.log(f"Clip {clip_id} fully processed - skipping (use --force to reprocess)")
-                return True
+            try:
+                with open(metadata_path) as f:
+                    existing_meta = json.load(f)
+                if existing_meta.get("files", {}).get("transcript"):
+                    self.log(f"Clip {clip_id} fully processed - skipping (use --force to reprocess)")
+                    return True
+            except (json.JSONDecodeError, OSError):
+                pass  # Corrupted metadata, reprocess
 
         clip_dir.mkdir(parents=True, exist_ok=True)
         start_time = datetime.now()
@@ -1598,7 +1601,6 @@ Guidelines:
                 "audio_kept": self.keep_audio,
                 "models": {
                     "transcribe": self.transcribe_model,
-                    "summary": self.summary_model,
                 }
             }
 
