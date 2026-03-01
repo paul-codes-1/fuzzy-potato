@@ -285,7 +285,10 @@ class LFUCGPipeline:
             eof_reached = threading.Event()
 
             def read_output():
-                for raw_line in process.stdout:
+                while True:
+                    raw_line = process.stdout.readline()
+                    if not raw_line:
+                        break
                     last_output_time[0] = time.time()
                     line = raw_line.decode('utf-8', errors='replace').strip()
                     if line:
