@@ -1705,8 +1705,10 @@ Guidelines:
 
         if available_clips:
             if reverse:
-                # Find ALL unprocessed clips (not just after last_id) and go newest-first
+                # Unprocessed clips, newest-first; if --start given, only clips <= start
                 candidates = [c for c in available_clips if c not in processed_set]
+                if start:
+                    candidates = [c for c in candidates if c <= start]
                 candidates = list(reversed(candidates))
             else:
                 # Default: unprocessed clips after last_id, oldest first
