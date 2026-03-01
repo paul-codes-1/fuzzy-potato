@@ -1493,7 +1493,21 @@ Guidelines:
             # Step 2: Extract date from title for filename prefixes
             clip_metadata = self.scrape_clip_metadata(clip_id, title)
             meeting_date = clip_metadata.get("date")  # ISO format: YYYY-MM-DD
+
+            # Fall back to date from existing metadata.json on disk
+            if not meeting_date:
+                existing_meta_path = clip_dir / "metadata.json"
+                if existing_meta_path.exists():
+                    try:
+                        existing_meta = json.loads(existing_meta_path.read_text())
+                        meeting_date = existing_meta.get("date")
+                        if meeting_date:
+                            clip_metadata["date"] = meeting_date
+                    except (json.JSONDecodeError, OSError):
+                        pass
+
             if meeting_date:
+                self.log(f"Meeting date: {meeting_date}")
                 self.progress(f"Extracted date: {meeting_date}")
 
             # Step 3: Download audio with date prefix

@@ -366,3 +366,119 @@ class TestAsk:
         messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
         assert messages[0]["role"] == "system"
         assert any(m["role"] == "user" for m in messages)
+
+
+# ============================================================
+# 5. build_synthesis_messages edge cases
+# ============================================================
+
+class TestBuildSynthesisEdgeCases:
+    """Test edge cases in synthesis message building."""
+
+    def test_empty_chunks_produces_valid_messages(self):
+        from rag.query import build_synthesis_messages
+
+        messages = build_synthesis_messages(question="What happened?", chunks=[])
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+        assert "What happened?" in messages[1]["content"]
+
+
+# ============================================================
+# 6. load_clip_metadata tests
+# ============================================================
+
+class TestLoadClipMetadata:
+    """Test loading clip metadata from disk."""
+
+    def test_missing_directory_returns_empty(self, tmp_path):
+        from rag.query import load_clip_metadata
+
+        result = load_clip_metadata(str(tmp_path / "nonexistent"))
+        assert result == {}
+
+    def test_loads_valid_metadata(self, tmp_path):
+        from rag.query import load_clip_metadata
+
+        clips_dir = tmp_path / "clips" / "6669"
+        clips_dir.mkdir(parents=True)
+        meta = {"clip_id": 6669, "title": "Council Meeting", "date": "2026-01-22"}
+        (clips_dir / "metadata.json").write_text(json.dumps(meta))
+
+        result = load_clip_metadata(str(tmp_path))
+        assert 6669 in result
+        assert result[6669]["title"] == "Council Meeting"
+
+    def test_skips_malformed_json(self, tmp_path):
+        from rag.query import load_clip_metadata
+
+        clips_dir = tmp_path / "clips" / "6669"
+        clips_dir.mkdir(parents=True)
+        (clips_dir / "metadata.json").write_text("{invalid json")
+
+        # Should not raise, just skip
+        result = load_clip_metadata(str(tmp_path))
+        assert result == {}
+
+    def test_skips_metadata_missing_clip_id(self, tmp_path):
+        from rag.query import load_clip_metadata
+
+        clips_dir = tmp_path / "clips" / "6669"
+        clips_dir.mkdir(parents=True)
+        meta = {"title": "No clip_id field"}
+        (clips_dir / "metadata.json").write_text(json.dumps(meta))
+
+        result = load_clip_metadata(str(tmp_path))
+        assert result == {}
+
+    def test_loads_multiple_clips(self, tmp_path):
+        from rag.query import load_clip_metadata
+
+        for clip_id in [6669, 6670, 6671]:
+            clip_dir = tmp_path / "clips" / str(clip_id)
+            clip_dir.mkdir(parents=True)
+            meta = {"clip_id": clip_id, "title": f"Meeting {clip_id}"}
+            (clip_dir / "metadata.json").write_text(json.dumps(meta))
+
+        result = load_clip_metadata(str(tmp_path))
+        assert len(result) == 3
+        assert all(cid in result for cid in [6669, 6670, 6671])
+
+
+# ============================================================
+# 7. Deduplication edge cases
+# ============================================================
+
+class TestDeduplicateEdgeCases:
+    """Test deduplication edge cases."""
+
+    def test_dedup_empty_results(self):
+        from rag.query import deduplicate_results
+
+        results = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
+        deduped = deduplicate_results(results)
+        assert deduped["ids"] == []
+
+    def test_dedup_no_ids_key(self):
+        from rag.query import deduplicate_results
+
+        results = {"ids": [], "documents": [], "metadatas": [], "distances": []}
+        deduped = deduplicate_results(results)
+        assert deduped["ids"] == []
+
+    def test_dedup_with_explicit_max_per_clip_2(self):
+        from rag.query import deduplicate_results
+
+        results = {
+            "ids": [["a", "b", "c"]],
+            "documents": [["doc_a", "doc_b", "doc_c"]],
+            "metadatas": [[
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "minutes"},
+                {"clip_id": 6669, "source": "agenda"},
+            ]],
+            "distances": [[0.1, 0.2, 0.3]],
+        }
+        deduped = deduplicate_results(results, max_per_clip=2)
+        assert len(deduped["ids"]) == 2

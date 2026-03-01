@@ -135,6 +135,8 @@ class TestHealthEndpoint:
             assert response.status_code == 200
 
     def test_health_returns_chunk_and_clip_counts(self):
+        import rag.server as server_module
+
         with patch("rag.server.get_chroma_collection") as mock_coll, \
              patch("rag.server.load_clip_metadata") as mock_meta, \
              patch("rag.server.OpenAI"):
@@ -143,12 +145,83 @@ class TestHealthEndpoint:
             mock_coll.return_value = mock_collection
             mock_meta.return_value = {6669: {}, 6670: {}, 6671: {}}
 
+            # Directly set the cached globals so health endpoint sees them
+            old_coll = server_module._collection
+            old_meta = server_module._clip_metadata
+            server_module._collection = mock_collection
+            server_module._clip_metadata = {6669: {}, 6670: {}, 6671: {}}
+            try:
+                from fastapi.testclient import TestClient
+                client = TestClient(server_module.app)
+                response = client.get("/api/health")
+                data = response.json()
+                assert data["status"] == "ok"
+                assert data["chunks_indexed"] == 5000
+                assert data["clips_indexed"] == 3
+            finally:
+                server_module._collection = old_coll
+                server_module._clip_metadata = old_meta
+
+
+# ============================================================
+# 3. Direct route tests (App Runner compatibility)
+# ============================================================
+
+class TestDirectRoutes:
+    """Test the direct /ask and /health routes (without /api/ prefix)."""
+
+    def test_direct_ask_route_returns_200(self):
+        with patch("rag.server.ask") as mock_ask, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_ask.return_value = {
+                "answer": "Direct route answer",
+                "sources": [],
+                "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+
             from rag.server import app
             from fastapi.testclient import TestClient
 
             client = TestClient(app)
-            response = client.get("/api/health")
-            data = response.json()
-            assert data["status"] == "ok"
-            assert data["chunks_indexed"] == 5000
-            assert data["clips_indexed"] == 3
+            response = client.post("/ask", json={"question": "What about zoning?"})
+            assert response.status_code == 200
+            assert response.json()["answer"] == "Direct route answer"
+
+    def test_direct_health_route_returns_200(self):
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.get("/health")
+            assert response.status_code == 200
+            assert response.json()["status"] == "ok"
+
+    def test_direct_health_before_collection_loaded(self):
+        """Health check before any request loads the collection should still return ok."""
+        import rag.server as server_module
+
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            # Reset the cached globals to simulate pre-load state
+            old_coll = server_module._collection
+            old_meta = server_module._clip_metadata
+            server_module._collection = None
+            server_module._clip_metadata = None
+            try:
+                from fastapi.testclient import TestClient
+                client = TestClient(server_module.app)
+                response = client.get("/health")
+                data = response.json()
+                assert data["status"] == "ok"
+                # Should NOT have chunks_indexed since collection not loaded
+                assert "chunks_indexed" not in data
+            finally:
+                server_module._collection = old_coll
+                server_module._clip_metadata = old_meta

@@ -103,17 +103,11 @@ def clean_segments(segments: list[dict]) -> list[dict]:
 
         cleaned.append(seg)
 
-    # --- Pass 2: Collapse stuck repetition loops (5+ identical consecutive) ---
+    # --- Pass 2: Collapse consecutive identical segments to one ---
     if cleaned:
         deduped = [cleaned[0]]
-        run_count = 1
         for i in range(1, len(cleaned)):
-            if cleaned[i]["text"].strip() == cleaned[i - 1]["text"].strip():
-                run_count += 1
-                if run_count <= 1:  # keep only the first occurrence
-                    deduped.append(cleaned[i])
-            else:
-                run_count = 1
+            if cleaned[i]["text"].strip() != cleaned[i - 1]["text"].strip():
                 deduped.append(cleaned[i])
         cleaned = deduped
 
@@ -192,6 +186,7 @@ def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body
     chunks = []
     current_segments = []
     current_word_count = 0
+    last_emitted = False
 
     for i, seg in enumerate(segments):
         seg_words = len(seg["text"].split())
@@ -205,13 +200,15 @@ def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body
             and _is_topic_boundary(segments[i - 1], seg)
         )
 
+        last_emitted = False
         if at_boundary or current_word_count >= target_words:
             chunks.append(_emit_chunk(current_segments))
             current_segments = _overlap_tail(current_segments)
             current_word_count = sum(len(s["text"].split()) for s in current_segments)
+            last_emitted = True
 
-    # Emit remaining segments as final chunk
-    if current_segments:
+    # Emit remaining segments as final chunk (skip if last loop iteration already emitted)
+    if current_segments and not last_emitted:
         chunks.append(_emit_chunk(current_segments))
 
     return chunks

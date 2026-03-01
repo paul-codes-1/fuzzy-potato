@@ -15,18 +15,11 @@ class TestEntrypoint:
         entrypoint = os.path.join(os.path.dirname(__file__), "..", "entrypoint.sh")
         assert os.access(entrypoint, os.X_OK), "entrypoint.sh must be executable"
 
-    def test_entrypoint_syncs_chroma_db(self):
+    def test_entrypoint_has_set_e(self):
         entrypoint = os.path.join(os.path.dirname(__file__), "..", "entrypoint.sh")
         with open(entrypoint) as f:
             content = f.read()
-        assert "chroma_db" in content, "entrypoint must sync chroma_db from S3"
-        assert "s3://" in content or "$S3_BUCKET" in content, "entrypoint must reference S3"
-
-    def test_entrypoint_syncs_metadata(self):
-        entrypoint = os.path.join(os.path.dirname(__file__), "..", "entrypoint.sh")
-        with open(entrypoint) as f:
-            content = f.read()
-        assert "metadata.json" in content, "entrypoint must sync clip metadata from S3"
+        assert "set -e" in content, "entrypoint must use set -e for fail-fast"
 
     def test_entrypoint_starts_uvicorn(self):
         entrypoint = os.path.join(os.path.dirname(__file__), "..", "entrypoint.sh")
@@ -55,11 +48,12 @@ class TestDockerfile:
             content = f.read()
         assert "rag" in content, "Dockerfile must install RAG dependencies"
 
-    def test_dockerfile_installs_boto3(self):
+    def test_dockerfile_bakes_in_data(self):
         dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")
         with open(dockerfile) as f:
             content = f.read()
-        assert "boto3" in content or "awscli" in content, "Dockerfile must include S3 tools"
+        assert "chroma_db" in content, "Dockerfile must COPY baked-in chroma_db"
+        assert "clips" in content, "Dockerfile must COPY baked-in clips"
 
     def test_dockerfile_uses_entrypoint(self):
         dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")

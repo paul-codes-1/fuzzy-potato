@@ -159,6 +159,20 @@ class TestCleanSegments:
         of_the_count = sum(1 for t in texts if t.strip() == "Of the")
         assert of_the_count == 1
 
+    def test_two_consecutive_duplicates_collapsed(self):
+        """Even 2 consecutive identical segments should be collapsed to 1."""
+        from rag.ingest import clean_segments
+
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Hello everyone."},
+            {"start": 5.0, "end": 6.0, "text": "Thank you."},
+            {"start": 6.0, "end": 7.0, "text": "Thank you."},
+            {"start": 7.0, "end": 15.0, "text": "The meeting continues."},
+        ]
+        cleaned = clean_segments(segments)
+        thank_you_count = sum(1 for s in cleaned if s["text"].strip() == "Thank you.")
+        assert thank_you_count == 1
+
     def test_empty_segments_returns_empty(self):
         from rag.ingest import clean_segments
 
@@ -321,6 +335,46 @@ class TestChunkTranscript:
         chunks = chunk_transcript(segments, clip_id=6669, date="2026-01-22", meeting_body="Council")
         # Should produce just 1 chunk (not enough words to split)
         assert len(chunks) == 1
+
+    def test_no_duplicate_final_chunk_when_last_emit_at_end(self):
+        """When the last segment triggers an emit, no duplicate overlap chunk should follow."""
+        from rag.ingest import chunk_transcript
+
+        # Single huge segment that exceeds target_words
+        segments = [
+            {"start": 0.0, "end": 60.0, "text": "word " * 600}
+        ]
+        chunks = chunk_transcript(segments, clip_id=1, date="2026-01-01", meeting_body="Test")
+        # Should produce exactly 1 chunk, not 2
+        assert len(chunks) == 1
+
+    def test_no_duplicate_when_boundary_fires_at_last_segment(self):
+        """When a topic boundary fires at the very last segment, no duplicate."""
+        from rag.ingest import chunk_transcript
+
+        segments = []
+        t = 0.0
+        # Accumulate enough words, then end on a procedural phrase
+        for i in range(30):
+            segments.append({
+                "start": t,
+                "end": t + 5.0,
+                "text": f"Discussion about item {i} with several words to build up size."
+            })
+            t += 5.0
+        # Last segment is a procedural phrase that triggers boundary
+        segments.append({
+            "start": t,
+            "end": t + 5.0,
+            "text": "Moving on to the next item."
+        })
+
+        chunks = chunk_transcript(segments, clip_id=1, date="2026-01-01", meeting_body="Test")
+        # Verify no two adjacent chunks have identical start_time and end_time
+        for i in range(1, len(chunks)):
+            same_start = chunks[i]["start_time"] == chunks[i-1]["start_time"]
+            same_end = chunks[i]["end_time"] == chunks[i-1]["end_time"]
+            assert not (same_start and same_end), f"Chunks {i-1} and {i} are duplicates"
 
     def test_falls_back_to_word_count_splitting(self):
         """Without boundaries, chunks should split at target_words like before."""
@@ -573,4 +627,287 @@ class TestStats:
         store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
         stats = get_stats(chroma_collection)
         assert stats["total_chunks"] == 2
-        assert stats["unique_clips"] >= 1
+        assert stats["unique_clips"] == 2
+
+    def test_get_stats_with_output_dir_uses_rag_state(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+        from rag.ingest import store_chunks, get_stats, save_rag_state
+
+        chunks = [
+            {"text": "Chunk 1", "clip_id": 6669, "date": "2026-01-22",
+             "meeting_body": "Council", "source": "transcript",
+             "start_time": 0.0, "end_time": 60.0},
+        ]
+        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+
+        # Save rag state with 3 clips (even though collection only has 1)
+        save_rag_state({"ingested_clips": [6669, 6670, 6671]}, tmp_path)
+        stats = get_stats(chroma_collection, output_dir=str(tmp_path))
+        assert stats["total_chunks"] == 1
+        assert stats["unique_clips"] == 3  # from rag_state, not collection
+
+
+# ============================================================
+# 9. Text truncation tests
+# ============================================================
+
+class TestTruncateText:
+    """Test _truncate_text character-based truncation."""
+
+    def test_short_text_returned_unchanged(self):
+        from rag.ingest import _truncate_text
+
+        text = "Hello world"
+        assert _truncate_text(text, max_chars=100) == text
+
+    def test_text_at_exact_limit_returned_unchanged(self):
+        from rag.ingest import _truncate_text
+
+        text = "a" * 100
+        assert _truncate_text(text, max_chars=100) == text
+
+    def test_long_text_truncated_at_word_boundary(self):
+        from rag.ingest import _truncate_text
+
+        text = "word " * 100  # 500 chars
+        result = _truncate_text(text, max_chars=50)
+        assert len(result) <= 50
+        assert not result.endswith(" ")  # should trim trailing space from word boundary
+
+    def test_no_spaces_falls_back_to_char_limit(self):
+        from rag.ingest import _truncate_text
+
+        text = "a" * 200  # no spaces at all
+        result = _truncate_text(text, max_chars=100)
+        assert len(result) == 100
+
+    def test_spaces_only_in_first_half_uses_char_limit(self):
+        from rag.ingest import _truncate_text
+
+        # Space at position 10, then no spaces for the rest
+        text = "short word" + "x" * 190  # space at index 5
+        result = _truncate_text(text, max_chars=100)
+        # last_space = 5, which is <= max_chars//2 (50), so falls back to text[:100]
+        assert len(result) == 100
+
+
+# ============================================================
+# 10. Embedding resilience tests
+# ============================================================
+
+class TestEmbedSingle:
+    """Test _embed_single progressive truncation on token limit errors."""
+
+    def test_happy_path_first_call_succeeds(self):
+        from rag.ingest import _embed_single
+
+        client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.data = [MagicMock(embedding=[0.1] * 10)]
+        client.embeddings.create.return_value = mock_resp
+
+        result = _embed_single("Hello world", client)
+        assert result == [0.1] * 10
+        assert client.embeddings.create.call_count == 1
+
+    def test_retries_on_token_limit_error(self):
+        from rag.ingest import _embed_single
+
+        client = MagicMock()
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("maximum context length exceeded")
+            mock_resp = MagicMock()
+            mock_resp.data = [MagicMock(embedding=[0.2] * 10)]
+            return mock_resp
+
+        client.embeddings.create.side_effect = side_effect
+
+        result = _embed_single("x" * 20000, client)
+        assert result == [0.2] * 10
+        assert call_count[0] == 2
+
+    def test_last_resort_2000_char_truncation(self):
+        from rag.ingest import _embed_single
+
+        client = MagicMock()
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            text_input = kwargs.get("input", [""])[0]
+            # Always fail on token limit except when text is <= 2000 chars
+            if len(text_input) > 2000:
+                raise Exception("maximum context length exceeded")
+            mock_resp = MagicMock()
+            mock_resp.data = [MagicMock(embedding=[0.3] * 10)]
+            return mock_resp
+
+        client.embeddings.create.side_effect = side_effect
+
+        result = _embed_single("x" * 50000, client)
+        assert result == [0.3] * 10
+        # Should have retried multiple times before hitting last resort
+        assert call_count[0] > 2
+
+    def test_non_token_limit_error_raises(self):
+        from rag.ingest import _embed_single
+
+        client = MagicMock()
+        client.embeddings.create.side_effect = Exception("network error")
+
+        with pytest.raises(Exception, match="network error"):
+            _embed_single("Hello", client)
+
+
+class TestEmbedBatch:
+    """Test _embed_batch fallback to one-at-a-time on token limit errors."""
+
+    def test_batch_succeeds_returns_all_embeddings(self):
+        from rag.ingest import _embed_batch
+
+        client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.data = [
+            MagicMock(embedding=[0.1] * 10),
+            MagicMock(embedding=[0.2] * 10),
+        ]
+        client.embeddings.create.return_value = mock_resp
+
+        result = _embed_batch(["text1", "text2"], client)
+        assert len(result) == 2
+
+    def test_batch_fallback_to_single_on_token_limit(self):
+        from rag.ingest import _embed_batch
+
+        client = MagicMock()
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            inputs = kwargs.get("input", [])
+            if isinstance(inputs, list) and len(inputs) > 1:
+                raise Exception("maximum context length exceeded")
+            mock_resp = MagicMock()
+            mock_resp.data = [MagicMock(embedding=[0.1] * 10)]
+            return mock_resp
+
+        client.embeddings.create.side_effect = side_effect
+
+        result = _embed_batch(["text1", "text2"], client)
+        assert len(result) == 2
+        # First call was batch (failed), then 2 individual calls
+        assert call_count[0] == 3
+
+    def test_non_token_limit_error_raises(self):
+        from rag.ingest import _embed_batch
+
+        client = MagicMock()
+        client.embeddings.create.side_effect = RuntimeError("connection refused")
+
+        with pytest.raises(RuntimeError, match="connection refused"):
+            _embed_batch(["text1"], client)
+
+
+# ============================================================
+# 11. Chunk ID tests
+# ============================================================
+
+class TestChunkId:
+    """Test deterministic chunk ID generation."""
+
+    def test_same_chunk_produces_same_id(self):
+        from rag.ingest import _chunk_id
+
+        chunk = {"clip_id": 6669, "source": "transcript", "section_type": ""}
+        id1 = _chunk_id(chunk, 0)
+        id2 = _chunk_id(chunk, 0)
+        assert id1 == id2
+
+    def test_different_index_produces_different_id(self):
+        from rag.ingest import _chunk_id
+
+        chunk = {"clip_id": 6669, "source": "transcript", "section_type": ""}
+        id1 = _chunk_id(chunk, 0)
+        id2 = _chunk_id(chunk, 1)
+        assert id1 != id2
+
+    def test_different_clip_produces_different_id(self):
+        from rag.ingest import _chunk_id
+
+        chunk1 = {"clip_id": 6669, "source": "transcript", "section_type": ""}
+        chunk2 = {"clip_id": 6670, "source": "transcript", "section_type": ""}
+        assert _chunk_id(chunk1, 0) != _chunk_id(chunk2, 0)
+
+
+# ============================================================
+# 12. Clean segments Pass 3 (song lyrics) tests
+# ============================================================
+
+class TestCleanSegmentsPass3:
+    """Test the song lyrics tail-stripping heuristic."""
+
+    def test_strips_short_poetic_tail_without_procedural(self):
+        from rag.ingest import clean_segments
+
+        # Build 100 normal segments, then 12 short poetic lines in last 10%
+        segments = []
+        for i in range(90):
+            segments.append({
+                "start": float(i),
+                "end": float(i + 0.9),
+                "text": f"Normal discussion about item {i} in the meeting today."
+            })
+        for i in range(12):
+            segments.append({
+                "start": float(90 + i),
+                "end": float(91 + i),
+                "text": f"La la la line {i}"  # short, no procedural
+            })
+
+        cleaned = clean_segments(segments)
+        # Tail should be stripped — only ~90 segments remain
+        assert len(cleaned) <= 91
+
+    def test_preserves_tail_with_procedural_phrases(self):
+        from rag.ingest import clean_segments
+
+        segments = []
+        for i in range(90):
+            segments.append({
+                "start": float(i),
+                "end": float(i + 0.9),
+                "text": f"Normal discussion about item {i} in the meeting today."
+            })
+        # Last 10% contains a procedural phrase
+        for i in range(12):
+            text = f"Short line {i}"
+            if i == 5:
+                text = "Next item on the roll call."
+            segments.append({
+                "start": float(90 + i),
+                "end": float(91 + i),
+                "text": text,
+            })
+
+        cleaned = clean_segments(segments)
+        # Tail should NOT be stripped because of procedural phrase
+        assert len(cleaned) == 102
+
+    def test_pass3_requires_minimum_100_segments(self):
+        from rag.ingest import clean_segments
+
+        # Only 50 segments — Pass 3 needs >= 10 to even check,
+        # but tail of 50*0.1=5 segments, needs 10 short poetic, can't trigger
+        segments = []
+        for i in range(50):
+            segments.append({
+                "start": float(i),
+                "end": float(i + 0.9),
+                "text": f"Short {i}"
+            })
+        cleaned = clean_segments(segments)
+        # With 50 segments, tail = 5. Can't have 10 short poetic in 5 segments.
+        assert len(cleaned) == 50
