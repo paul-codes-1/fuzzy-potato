@@ -202,6 +202,31 @@ class TestDirectRoutes:
             assert response.status_code == 200
             assert response.json()["status"] == "ok"
 
+    def test_direct_chat_route_returns_200(self):
+        with patch("rag.server.chat") as mock_chat, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_chat.return_value = {
+                "role": "assistant",
+                "content": "Direct route answer",
+                "sources": [],
+                "model_used": "gpt-4o",
+                "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/chat", json={
+                "messages": [{"role": "user", "content": "test"}],
+                "model_provider": "openai",
+            })
+            assert response.status_code == 200
+            assert response.json()["content"] == "Direct route answer"
+
     def test_direct_health_before_collection_loaded(self):
         """Health check before any request loads the collection should still return ok."""
         import rag.server as server_module
@@ -225,3 +250,181 @@ class TestDirectRoutes:
             finally:
                 server_module._collection = old_coll
                 server_module._clip_metadata = old_meta
+
+
+# ============================================================
+# 4. POST /api/chat tests
+# ============================================================
+
+class TestChatEndpoint:
+    """Test the POST /api/chat endpoint."""
+
+    def test_chat_returns_200_with_valid_messages(self):
+        with patch("rag.server.chat") as mock_chat, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_chat.return_value = {
+                "role": "assistant",
+                "content": "Test answer",
+                "sources": [],
+                "model_used": "gpt-4o",
+                "filters_applied": {},
+                "chunks_retrieved": 5,
+            }
+
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={
+                "messages": [{"role": "user", "content": "test"}],
+                "model_provider": "openai",
+            })
+            assert response.status_code == 200
+            data = response.json()
+            assert data["content"] == "Test answer"
+
+    def test_chat_returns_422_with_empty_messages(self):
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={
+                "messages": [],
+            })
+            assert response.status_code == 422
+
+    def test_chat_returns_422_with_missing_messages(self):
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={})
+            assert response.status_code == 422
+
+    def test_chat_returns_422_with_invalid_model_provider(self):
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={
+                "messages": [{"role": "user", "content": "test"}],
+                "model_provider": "invalid",
+            })
+            assert response.status_code == 422
+
+    def test_chat_returns_422_with_invalid_role(self):
+        with patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={
+                "messages": [{"role": "system", "content": "test"}],
+            })
+            assert response.status_code == 422
+
+    def test_chat_response_matches_schema(self):
+        with patch("rag.server.chat") as mock_chat, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_chat.return_value = {
+                "role": "assistant",
+                "content": "Zoning was discussed.",
+                "sources": [
+                    {
+                        "clip_id": 6669,
+                        "date": "2026-01-22",
+                        "title": "Council Meeting",
+                        "meeting_body": "Council",
+                        "timestamp": 120,
+                        "excerpt": "Zoning ordinance...",
+                        "granicus_url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&entrytime=120",
+                    }
+                ],
+                "model_used": "gpt-4o",
+                "filters_applied": {"meeting_body": "Council"},
+                "chunks_retrieved": 5,
+            }
+
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/api/chat", json={
+                "messages": [{"role": "user", "content": "What about zoning?"}],
+            })
+            data = response.json()
+            assert "role" in data
+            assert "content" in data
+            assert "sources" in data
+            assert "model_used" in data
+            assert "filters_applied" in data
+            assert "chunks_retrieved" in data
+
+    def test_chat_with_filters(self):
+        with patch("rag.server.chat") as mock_chat, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_chat.return_value = {
+                "role": "assistant",
+                "content": "Answer",
+                "sources": [],
+                "model_used": "gpt-4o",
+                "filters_applied": {"meeting_body": "Council"},
+                "chunks_retrieved": 0,
+            }
+
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            client.post("/api/chat", json={
+                "messages": [{"role": "user", "content": "test"}],
+                "meeting_body": "Council",
+                "date_after": "2025-01-01",
+                "date_before": "2026-12-31",
+            })
+
+            call_kwargs = mock_chat.call_args.kwargs
+            filters = call_kwargs.get("filters")
+            assert filters["meeting_body"] == "Council"
+            assert filters["date_after"] == "2025-01-01"
+            assert filters["date_before"] == "2026-12-31"
+
+    def test_direct_chat_route(self):
+        with patch("rag.server.chat") as mock_chat, \
+             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.OpenAI"):
+            mock_chat.return_value = {
+                "role": "assistant",
+                "content": "Direct route answer",
+                "sources": [],
+                "model_used": "gpt-4o",
+                "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.post("/chat", json={
+                "messages": [{"role": "user", "content": "test"}],
+            })
+            assert response.status_code == 200

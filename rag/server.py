@@ -12,7 +12,7 @@ from openai import OpenAI
 from pydantic import BaseModel, field_validator
 
 from rag.ingest import get_chroma_collection
-from rag.query import ask, load_clip_metadata
+from rag.query import ask, chat, load_clip_metadata
 
 load_dotenv()
 
@@ -45,6 +45,17 @@ def _get_openai_client():
     if _openai_client is None:
         _openai_client = OpenAI()
     return _openai_client
+
+
+_anthropic_client = None
+
+
+def _get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        from anthropic import Anthropic
+        _anthropic_client = Anthropic()
+    return _anthropic_client
 
 
 @asynccontextmanager
@@ -81,6 +92,42 @@ class AskRequest(BaseModel):
         return v
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+    @field_validator("role")
+    @classmethod
+    def role_must_be_valid(cls, v: str) -> str:
+        if v not in ("user", "assistant"):
+            raise ValueError("role must be 'user' or 'assistant'")
+        return v
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    meeting_body: Optional[str] = None
+    date_after: Optional[str] = None
+    date_before: Optional[str] = None
+    model_provider: str = "openai"
+
+    @field_validator("messages")
+    @classmethod
+    def messages_not_empty(cls, v):
+        if not v:
+            raise ValueError("messages must not be empty")
+        if v[-1].role != "user":
+            raise ValueError("last message must be from the user")
+        return v
+
+    @field_validator("model_provider")
+    @classmethod
+    def model_provider_must_be_valid(cls, v: str) -> str:
+        if v not in ("openai", "anthropic"):
+            raise ValueError("model_provider must be 'openai' or 'anthropic'")
+        return v
+
+
 @app.post("/ask")  # Direct endpoint for App Runner
 def ask_endpoint_direct(request: AskRequest):
     return ask_endpoint(request)
@@ -113,6 +160,48 @@ def ask_endpoint(request: AskRequest):
     except Exception as e:
         logger.error("ask_endpoint failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred processing your question.")
+
+
+@app.post("/api/chat")
+def chat_endpoint(request: ChatRequest):
+    try:
+        collection = _get_collection()
+        openai_client = _get_openai_client()
+        clip_metadata = _get_clip_metadata()
+
+        filters = {}
+        if request.meeting_body:
+            filters["meeting_body"] = request.meeting_body
+        if request.date_after:
+            filters["date_after"] = request.date_after
+        if request.date_before:
+            filters["date_before"] = request.date_before
+
+        anthropic_client = None
+        if request.model_provider == "anthropic":
+            anthropic_client = _get_anthropic_client()
+
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+        result = chat(
+            messages=messages,
+            collection=collection,
+            openai_client=openai_client,
+            clip_metadata=clip_metadata,
+            anthropic_client=anthropic_client,
+            filters=filters if filters else None,
+            model_provider=request.model_provider,
+        )
+
+        return result
+    except Exception as e:
+        logger.error("chat_endpoint failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred processing your chat.")
+
+
+@app.post("/chat")
+def chat_endpoint_direct(request: ChatRequest):
+    return chat_endpoint(request)
 
 
 @app.get("/health")

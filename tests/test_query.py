@@ -501,3 +501,238 @@ class TestDeduplicateEdgeCases:
         }
         deduped = deduplicate_results(results, max_per_clip=2)
         assert len(deduped["ids"]) == 2
+
+
+# ============================================================
+# 8. build_chat_synthesis_messages tests
+# ============================================================
+
+class TestBuildChatSynthesisMessages:
+    """Test building multi-turn chat synthesis messages."""
+
+    def test_includes_conversation_history(self):
+        from rag.query import build_chat_synthesis_messages
+
+        history = [
+            {"role": "user", "content": "What about zoning?"},
+            {"role": "assistant", "content": "Zoning was discussed in clip 6669."},
+            {"role": "user", "content": "Tell me more about that vote."},
+        ]
+        chunks = [{"text": "Test chunk", "clip_id": 6669, "date": "2026-01-22",
+                    "meeting_body": "Council", "source": "summary", "title": "Test"}]
+
+        result = build_chat_synthesis_messages(history, chunks)
+        # System + 2 history messages + augmented last user message = 4 total
+        assert result[0]["role"] == "system"
+        non_system = result[1:]
+        assert len(non_system) == 3
+        # First two are history (user + assistant), last is augmented user
+        assert non_system[0]["role"] == "user"
+        assert non_system[1]["role"] == "assistant"
+        assert non_system[2]["role"] == "user"
+        assert "Meeting excerpts:" in non_system[2]["content"]
+
+    def test_injects_context_in_last_user_message(self):
+        from rag.query import build_chat_synthesis_messages
+
+        history = [
+            {"role": "user", "content": "What about zoning?"},
+            {"role": "assistant", "content": "Zoning was discussed."},
+            {"role": "user", "content": "Tell me more."},
+        ]
+        chunks = [{"text": "Zoning chunk", "clip_id": 6669, "date": "2026-01-22",
+                    "meeting_body": "Council", "source": "summary", "title": "Test"}]
+
+        result = build_chat_synthesis_messages(history, chunks)
+        # Only the last message should have "Meeting excerpts:"
+        last_msg = result[-1]
+        assert "Meeting excerpts:" in last_msg["content"]
+        # Earlier user messages should NOT have context injected
+        for msg in result[1:-1]:
+            if msg["role"] == "user":
+                assert "Meeting excerpts:" not in msg["content"]
+
+    def test_strips_extra_keys_from_history(self):
+        from rag.query import build_chat_synthesis_messages
+
+        history = [
+            {"role": "user", "content": "test", "sources": [], "model": "gpt-4o", "timestamp": "2026-01-01"},
+        ]
+        chunks = [{"text": "chunk", "clip_id": 1, "date": "d", "meeting_body": "m",
+                    "source": "summary", "title": "t"}]
+
+        result = build_chat_synthesis_messages(history, chunks)
+        for msg in result:
+            assert set(msg.keys()) == {"role", "content"}
+
+    def test_trims_to_max_history(self):
+        from rag.query import MAX_HISTORY_PAIRS, build_chat_synthesis_messages
+
+        # Create 30 messages (15 pairs) + final user message = 31 messages
+        history = []
+        for i in range(15):
+            history.append({"role": "user", "content": f"Question {i}"})
+            history.append({"role": "assistant", "content": f"Answer {i}"})
+        history.append({"role": "user", "content": "Final question"})
+
+        chunks = [{"text": "chunk", "clip_id": 1, "date": "d", "meeting_body": "m",
+                    "source": "summary", "title": "t"}]
+
+        result = build_chat_synthesis_messages(history, chunks)
+        # Should be: system + trimmed history (MAX_HISTORY_PAIRS * 2 - 1) + augmented last
+        # = 1 + MAX_HISTORY_PAIRS * 2
+        assert len(result) <= MAX_HISTORY_PAIRS * 2 + 1 + 1
+
+    def test_single_message_works(self):
+        from rag.query import build_chat_synthesis_messages
+
+        history = [{"role": "user", "content": "What happened?"}]
+        chunks = [{"text": "Meeting content", "clip_id": 6669, "date": "2026-01-22",
+                    "meeting_body": "Council", "source": "summary", "title": "Test"}]
+
+        result = build_chat_synthesis_messages(history, chunks)
+        assert result[0]["role"] == "system"
+        assert result[-1]["role"] == "user"
+        assert "Meeting excerpts:" in result[-1]["content"]
+        assert "What happened?" in result[-1]["content"]
+
+
+# ============================================================
+# 9. synthesize_with_anthropic tests
+# ============================================================
+
+class TestSynthesizeWithAnthropic:
+    """Test Anthropic synthesis routing."""
+
+    def test_calls_anthropic_with_correct_format(self, mock_anthropic_client):
+        from rag.query import synthesize_with_anthropic
+
+        messages = [
+            {"role": "system", "content": "You are a research assistant."},
+            {"role": "user", "content": "What about zoning?"},
+        ]
+
+        synthesize_with_anthropic(messages, mock_anthropic_client)
+
+        call_kwargs = mock_anthropic_client.messages.create.call_args
+        # System should be a top-level param, not in messages
+        assert call_kwargs.kwargs["system"] == "You are a research assistant."
+        # Messages passed should not include the system role
+        for msg in call_kwargs.kwargs["messages"]:
+            assert msg["role"] != "system"
+
+    def test_returns_response_text(self, mock_anthropic_client):
+        from rag.query import synthesize_with_anthropic
+
+        messages = [
+            {"role": "system", "content": "System prompt."},
+            {"role": "user", "content": "Test question."},
+        ]
+
+        result = synthesize_with_anthropic(messages, mock_anthropic_client)
+        assert result == "This is an Anthropic-synthesized answer."
+
+
+# ============================================================
+# 10. chat() function tests
+# ============================================================
+
+class TestChat:
+    """Test the multi-turn chat() function."""
+
+    def _make_mock_collection(self):
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 1
+        mock_collection.query.return_value = {
+            "ids": [["id1"]],
+            "documents": [["Test document about zoning"]],
+            "metadatas": [[{"clip_id": 6669, "date": "2026-01-08",
+                            "meeting_body": "Council", "source": "summary",
+                            "title": "Test Meeting"}]],
+            "distances": [[0.5]],
+        }
+        return mock_collection
+
+    def test_chat_returns_correct_structure(self, mock_openai_client):
+        from rag.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        result = chat(
+            messages=[{"role": "user", "content": "What about zoning?"}],
+            collection=mock_collection,
+            openai_client=mock_openai_client,
+            clip_metadata=clip_metadata,
+        )
+
+        assert "role" in result
+        assert "content" in result
+        assert "sources" in result
+        assert "model_used" in result
+        assert "filters_applied" in result
+        assert "chunks_retrieved" in result
+        assert result["role"] == "assistant"
+
+    def test_chat_with_openai(self, mock_openai_client):
+        from rag.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        result = chat(
+            messages=[{"role": "user", "content": "test"}],
+            collection=mock_collection,
+            openai_client=mock_openai_client,
+            clip_metadata=clip_metadata,
+            model_provider="openai",
+        )
+
+        assert result["model_used"] == "gpt-4o"
+        mock_openai_client.chat.completions.create.assert_called_once()
+
+    def test_chat_with_anthropic(self, mock_openai_client, mock_anthropic_client):
+        from rag.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        result = chat(
+            messages=[{"role": "user", "content": "test"}],
+            collection=mock_collection,
+            openai_client=mock_openai_client,
+            clip_metadata=clip_metadata,
+            anthropic_client=mock_anthropic_client,
+            model_provider="anthropic",
+        )
+
+        assert result["model_used"] == "claude-sonnet"
+        mock_anthropic_client.messages.create.assert_called_once()
+
+    def test_chat_uses_latest_user_message_for_retrieval(self, mock_openai_client):
+        from rag.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        messages = [
+            {"role": "user", "content": "First question about parks"},
+            {"role": "assistant", "content": "Parks were discussed."},
+            {"role": "user", "content": "What about the zoning vote?"},
+        ]
+
+        chat(
+            messages=messages,
+            collection=mock_collection,
+            openai_client=mock_openai_client,
+            clip_metadata=clip_metadata,
+        )
+
+        # The embedding should be created from the LAST user message
+        embed_call = mock_openai_client.embeddings.create.call_args
+        embed_input = embed_call.kwargs.get("input") or embed_call[1].get("input")
+        assert embed_input == ["What about the zoning vote?"]

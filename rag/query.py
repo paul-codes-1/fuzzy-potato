@@ -6,10 +6,11 @@ import os
 from collections import defaultdict
 
 from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
-from rag.prompts import SYNTHESIS_SYSTEM_PROMPT
+from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT
 
 GRANICUS_URL_TEMPLATE = "https://lfucg.granicus.com/player/clip/{clip_id}?view_id=14&entrytime={timestamp}"
 DEFAULT_MODEL = "gpt-4o"
+MAX_HISTORY_PAIRS = 10
 
 
 def build_chroma_filter(filters: dict | None) -> dict | None:
@@ -109,9 +110,13 @@ def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
     ]
 
 
-def ask(question: str, collection, openai_client, clip_metadata: dict = None,
-        filters: dict = None, top_k: int = 15, model: str = DEFAULT_MODEL) -> dict:
-    """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize."""
+def _retrieve_and_prepare(question: str, collection, openai_client,
+                          clip_metadata: dict = None, filters: dict = None,
+                          top_k: int = 15) -> tuple[list[dict], list[dict]] | None:
+    """Embed question, retrieve from ChromaDB, deduplicate, build chunks and sources.
+
+    Returns (synthesis_chunks, sources) or None if collection is empty.
+    """
     clip_metadata = clip_metadata or {}
 
     # 1. Embed the question
@@ -127,12 +132,7 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
     # 3. Query ChromaDB
     total_chunks = collection.count()
     if total_chunks == 0:
-        return {
-            "answer": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
-            "sources": [],
-            "filters_applied": filters or {},
-            "chunks_retrieved": 0,
-        }
+        return None
 
     query_kwargs = {
         "query_embeddings": [q_embedding],
@@ -186,7 +186,25 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
             source_entry["timestamp"] = timestamp
         sources.append(source_entry)
 
-    # 6. Synthesize answer via LLM
+    return synthesis_chunks, sources
+
+
+def ask(question: str, collection, openai_client, clip_metadata: dict = None,
+        filters: dict = None, top_k: int = 15, model: str = DEFAULT_MODEL) -> dict:
+    """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize."""
+    result = _retrieve_and_prepare(question, collection, openai_client,
+                                   clip_metadata, filters, top_k)
+    if result is None:
+        return {
+            "answer": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
+            "sources": [],
+            "filters_applied": filters or {},
+            "chunks_retrieved": 0,
+        }
+
+    synthesis_chunks, sources = result
+
+    # Synthesize answer via LLM
     messages = build_synthesis_messages(question, synthesis_chunks)
     chat_response = openai_client.chat.completions.create(
         model=model,
@@ -198,7 +216,109 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
         "answer": answer,
         "sources": sources,
         "filters_applied": filters or {},
-        "chunks_retrieved": len(deduped["documents"]),
+        "chunks_retrieved": len(sources),
+    }
+
+
+def build_chat_synthesis_messages(messages: list[dict], chunks: list[dict]) -> list[dict]:
+    """Build messages array for multi-turn chat synthesis."""
+    # Build context block (same format as build_synthesis_messages)
+    context_parts = []
+    for chunk in chunks:
+        header = f"--- Meeting: {chunk.get('title', 'Unknown')} | {chunk['date']} | {chunk['meeting_body']} | Clip {chunk['clip_id']} ---"
+        source_info = f"[Source: {chunk['source']}"
+        if "start_time" in chunk and "end_time" in chunk:
+            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}-{_fmt_timestamp(chunk['end_time'])}"
+        elif "start_time" in chunk:
+            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}"
+        source_info += "]"
+        context_parts.append(f"{header}\n{source_info}\n{chunk['text']}")
+
+    context = "\n\n".join(context_parts)
+
+    # Trim history to last MAX_HISTORY_PAIRS * 2 messages
+    trimmed = messages[-(MAX_HISTORY_PAIRS * 2):]
+
+    # Strip to only role and content
+    clean_messages = [{"role": m["role"], "content": m["content"]} for m in trimmed]
+
+    # Extract the last user question (must be from user)
+    if not clean_messages or clean_messages[-1]["role"] != "user":
+        raise ValueError("Last message must be from the user")
+    last_question = clean_messages[-1]["content"]
+
+    # Build final messages: system + history (minus last) + augmented last user message
+    result = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    result.extend(clean_messages[:-1])
+    result.append({
+        "role": "user",
+        "content": f"Meeting excerpts:\n\n{context}\n\nQuestion: {last_question}",
+    })
+
+    return result
+
+
+def synthesize_with_anthropic(messages: list[dict], anthropic_client,
+                              model: str = "claude-sonnet-4-6") -> str:
+    """Synthesize an answer using the Anthropic API."""
+    system_content = messages[0]["content"]
+    remaining = messages[1:]
+
+    response = anthropic_client.messages.create(
+        model=model,
+        max_tokens=2048,
+        system=system_content,
+        messages=remaining,
+    )
+    return response.content[0].text
+
+
+def chat(messages: list[dict], collection, openai_client,
+         clip_metadata: dict = None, anthropic_client=None,
+         filters: dict = None, model_provider: str = "openai",
+         top_k: int = 15) -> dict:
+    """Multi-turn chat: retrieve context for latest question, synthesize with history."""
+    # Extract latest user message
+    question = messages[-1]["content"]
+
+    result = _retrieve_and_prepare(question, collection, openai_client,
+                                   clip_metadata, filters, top_k)
+    if result is None:
+        return {
+            "role": "assistant",
+            "content": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
+            "sources": [],
+            "model_used": "gpt-4o" if model_provider == "openai" else "claude-sonnet",
+            "filters_applied": filters or {},
+            "chunks_retrieved": 0,
+        }
+
+    synthesis_chunks, sources = result
+
+    # Build chat messages with context
+    synth_messages = build_chat_synthesis_messages(messages, synthesis_chunks)
+
+    # Route to appropriate provider
+    if model_provider == "anthropic":
+        if anthropic_client is None:
+            raise ValueError("anthropic_client is required when model_provider='anthropic'")
+        content = synthesize_with_anthropic(synth_messages, anthropic_client)
+        model_used = "claude-sonnet"
+    else:
+        chat_response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=synth_messages,
+        )
+        content = chat_response.choices[0].message.content
+        model_used = "gpt-4o"
+
+    return {
+        "role": "assistant",
+        "content": content,
+        "sources": sources,
+        "model_used": model_used,
+        "filters_applied": filters or {},
+        "chunks_retrieved": len(sources),
     }
 
 

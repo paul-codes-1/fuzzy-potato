@@ -1,7 +1,8 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link } from 'react-router-dom'
 import MeetingList from './components/MeetingList'
 import MeetingDetail from './components/MeetingDetail'
 import AskQuestion from './components/AskQuestion'
+import ChatLFUCG from './components/ChatLFUCG'
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
             <h1>LFUCG Meeting Archive</h1>
             <nav className="header-nav">
               <Link to="/" className="header-link">Browse</Link>
+              <Link to="/chat" className="header-link">Chat</Link>
               <Link to="/ask" className="header-link">Ask a Question</Link>
             </nav>
           </div>
@@ -23,6 +25,7 @@ function App() {
         <Routes>
           <Route path="/" element={<MeetingList />} />
           <Route path="/meeting/:clipId" element={<MeetingDetail />} />
+          <Route path="/chat" element={<ChatLFUCG />} />
           <Route path="/ask" element={<AskQuestion />} />
         </Routes>
       </main>

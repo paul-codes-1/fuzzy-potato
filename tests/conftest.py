@@ -294,6 +294,18 @@ def mock_openai_batch_embeddings(mock_openai_client):
 
 
 @pytest.fixture
+def mock_anthropic_client():
+    """Mock Anthropic client for chat synthesis."""
+    client = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = "This is an Anthropic-synthesized answer."
+    mock_response = MagicMock()
+    mock_response.content = [mock_content]
+    client.messages.create.return_value = mock_response
+    return client
+
+
+@pytest.fixture
 def chroma_collection():
     """Ephemeral ChromaDB collection for testing (no persistence)."""
     import chromadb
