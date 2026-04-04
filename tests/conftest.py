@@ -114,6 +114,78 @@ SAMPLE_NOISY_SEGMENTS = [
     {"start": 27.0, "end": 35.0, "text": "Councilmember Beasley voted yes on the motion."},
 ]
 
+SAMPLE_EXTRACTED_FACTS = {
+    "meeting_info": {
+        "date": "2026-01-22",
+        "time": "6:00 PM",
+        "body": "Urban County Council",
+        "presiding_officer": "Mayor Linda Gorton",
+        "location": "Council Chambers",
+    },
+    "attendance": {
+        "present": ["Beasley", "Boone", "Brown", "Curtis", "Ellinger",
+                     "Elliot Baxter", "Hale", "Lynch", "Morton", "Reynolds",
+                     "Savigny", "Sheehan"],
+        "absent": [],
+        "late": [],
+    },
+    "motions_and_votes": [
+        {
+            "identifier": "Ordinance 0016-26",
+            "description": "Zoning change from Agricultural-Rural to Medium Density Residential",
+            "motion_by": "Brown",
+            "second_by": "Curtis",
+            "outcome": "passed",
+            "vote_type": "roll_call",
+            "ayes": 8,
+            "nays": 0,
+            "abstentions": 0,
+            "votes_for": ["Beasley", "Boone", "Brown", "Curtis"],
+            "votes_against": [],
+            "conditions": None,
+            "transcript_approx_time": "25:15",
+        },
+        {
+            "identifier": "Ordinance 0052-26",
+            "description": "Budget amendments for municipal expenditures",
+            "motion_by": None,
+            "second_by": None,
+            "outcome": "passed",
+            "vote_type": "unanimous",
+            "ayes": 12,
+            "nays": 0,
+            "abstentions": 0,
+            "votes_for": [],
+            "votes_against": [],
+            "conditions": None,
+            "transcript_approx_time": None,
+        },
+    ],
+    "financial_items": [
+        {
+            "description": "General Obligation Bonds authorized for issuance",
+            "amount": "$18,040,000",
+            "type": "appropriation",
+            "identifier": None,
+            "vendor_or_recipient": None,
+        },
+    ],
+    "public_comments": [],
+    "agenda_items": [
+        {
+            "identifier": "Ordinance 0016-26",
+            "title": "Zoning Change - Agricultural to Residential",
+            "type": "ordinance",
+            "summary": "Changed zone from Agricultural-Rural to Medium Density Residential in District 12.",
+            "key_speakers": ["Brown"],
+            "outcome": "approved",
+            "transcript_approx_time": "25:15",
+        },
+    ],
+    "appointments": [],
+    "contentious_items": [],
+}
+
 SAMPLE_METADATA = {
     "clip_id": 6669,
     "url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true",
@@ -128,6 +200,7 @@ SAMPLE_METADATA = {
         "agenda_pdf": "agenda_6669.pdf",
         "agenda_txt": "agenda_6669.txt",
         "summary_txt": "summary.txt",
+        "extracted_facts": "extracted_facts.json",
         "minutes_txt": "2026-01-22_minutes_Urban_County_Council.txt",
     },
     "processed_at": "2026-01-31T22:04:02.617983",
@@ -151,6 +224,9 @@ def sample_clip_dir(tmp_path):
 
     # Write summary
     (clip_dir / "summary.txt").write_text(SAMPLE_SUMMARY)
+
+    # Write extracted facts
+    (clip_dir / "extracted_facts.json").write_text(json.dumps(SAMPLE_EXTRACTED_FACTS, indent=2))
 
     # Write transcript segments
     (clip_dir / "transcript_Urban_County_Council_1_segments.json").write_text(

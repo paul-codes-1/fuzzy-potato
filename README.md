@@ -1,6 +1,6 @@
 # LFUCG Meeting Pipeline
 
-Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive.
+Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive, plus a RAG-powered Q&A system for natural-language queries across the entire meeting archive.
 
 ## Documentation
 
@@ -19,7 +19,7 @@ uv sync
 
 # Set up environment
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and add your OPENAI_API_KEY and ANTHROPIC_API_KEY
 
 # Process a single clip
 uv run python main.py 6669
@@ -40,6 +40,7 @@ cd frontend && npm install && npm run dev
 - poppler (for pdf2image)
 - Node.js 18+ (for frontend)
 - OpenAI API key
+- Anthropic API key (for v2 summary generation with Claude Sonnet)
 
 ### Install System Dependencies
 
@@ -57,6 +58,7 @@ Create a `.env` file:
 
 ```bash
 OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
 FIRST_CLIP_ID=6669  # Optional: starting clip for --auto mode
 ```
 
@@ -96,6 +98,27 @@ uv run python main.py 6669 --output-dir /path/to/output
 uv run python main.py 6669 --summary-model gpt-4o-mini   # Cheaper summaries
 uv run python main.py 6669 --quiet                       # Reduce output
 ```
+
+### Two-Pass Summary Generation (v2)
+
+Summaries use a two-pass approach for higher quality:
+- **Pass 1 (GPT-4o)**: Extracts structured facts (votes, dollar amounts, names, timestamps) into `extracted_facts.json`
+- **Pass 2 (Claude Sonnet)**: Generates section-by-section narrative from extracted facts, with `[timestamp: MM:SS]` markers for video deep-linking
+
+```bash
+# Upgrade all existing clips to v2 summaries (resumable — skips already done)
+uv run python main.py --upgrade-summaries --max 9999
+
+# Test v2 on specific clips before committing (writes to separate test dir)
+uv run python main.py 44 45 --test-summary
+uv run python main.py --test-summary --max 3              # 3 most recent clips
+uv run python main.py --test-summary --test-summary-dir ./my_test
+
+# Clean up old v1 summary artifacts
+uv run python main.py --clean-v1-summaries
+```
+
+The `--upgrade-summaries` command is resumable: if it crashes or runs out of API credits, re-run the same command and it picks up where it left off (skips clips that already have `extracted_facts.json`).
 
 ### Run in Background
 
@@ -138,6 +161,8 @@ Results saved to `lfucg_output/available_clips.json`.
 **Important:** Once `available_clips.json` exists, `--auto` mode will use it to only process valid clips, skipping non-existent clip IDs automatically.
 
 ## Frontend
+
+The frontend renders structured extracted facts directly in an Overview tab (votes with pass/fail badges, financial items, agenda items with clickable timestamps), plus tabs for Transcript, Agenda, and Official Minutes.
 
 ### Development
 
@@ -182,10 +207,17 @@ This is implemented as a CloudFront Function (`cloudfront/basic-auth.js`). To se
 
 Ask natural-language questions across the entire meeting archive and get AI-generated answers with citations and video timestamps.
 
+The RAG system ingests 5 source types per clip for comprehensive retrieval:
+- **Extracted facts** — structured votes, financial items, attendance, agenda items
+- **Summaries** — narrative sections split on `## ` headers with timestamps
+- **Official minutes** — ground-truth record, split by sections with overlap
+- **Agendas** — pre-meeting record, split by sections with overlap
+- **Transcripts** — topic-aware ~500-word chunks with silence gap detection
+
 ### Setup
 
 ```bash
-# Install RAG dependencies
+# Install RAG dependencies (includes anthropic)
 uv sync --extra rag
 
 # Build the vector index (one-time, embeds all clips into ChromaDB)
@@ -245,9 +277,13 @@ uv run python main.py --rebuild-rag
 ## Tests
 
 ```bash
-# Python tests (ingestion, query, server, integration)
-uv sync --extra dev
+# All Python tests (ingestion, query, server, integration, summary v2, RAG e2e)
+uv sync --extra dev --extra rag
 uv run pytest tests/ -x -v
+
+# Run specific test files
+uv run pytest tests/test_rag_e2e.py -v     # End-to-end RAG pipeline
+uv run pytest tests/test_summary_v2.py -v  # Two-pass summary generation
 
 # Frontend tests (React component tests)
 cd frontend && npm test
@@ -262,13 +298,15 @@ lfucg_output/
   state.json                              # Pipeline state (tracks progress)
   index.json                              # Search index for frontend
   available_clips.json                    # Probed clip IDs
+  rag_state.json                          # RAG ingestion state
+  chroma_db/                              # ChromaDB vector store
   clips/
     {clip_id}/
-      {date}_{title}_audio.mp3            # Downloaded audio (e.g., 2026-01-08_January_8_WQFB_audio.mp3)
+      {date}_{title}_audio.mp3            # Downloaded audio
       transcript_{date}_{title}_audio.txt # Whisper transcription (plain text)
-      transcript_{date}_{title}_audio_segments.json # Timestamped segments (new transcriptions)
-      summary.txt                         # AI-generated summary
-      summary.html                        # HTML formatted summary
+      transcript_{date}_{title}_audio_segments.json # Timestamped segments
+      summary.txt                         # AI-generated summary (v2: section-by-section)
+      extracted_facts.json                # Structured extraction (votes, amounts, names)
       {date}_agenda_{title}.pdf           # Meeting agenda (if available)
       {date}_agenda_{title}.txt           # Extracted agenda text
       {date}_minutes_{title}.pdf          # Meeting minutes (if available)
@@ -298,14 +336,15 @@ Your frontend already fetches everything from relative /data/ paths. You have tw
 
   3. Create a CloudFront distribution pointing to the bucket. The structure would be:
   s3://your-bucket/
-    index.html          ← from frontend/dist/
-    assets/             ← from frontend/dist/
+    index.html          <- from frontend/dist/
+    assets/             <- from frontend/dist/
     data/
-      index.json        ← from lfucg_output/index.json
+      index.json        <- from lfucg_output/index.json
       clips/
         6669/
           metadata.json
-          summary.html
+          extracted_facts.json
+          summary.txt
           ...
   4. Enable S3 static website hosting or use CloudFront with an OAC. For SPA routing, set up a custom error response that returns index.html for 403/404 errors (so React Router works).
 
@@ -329,10 +368,11 @@ Your frontend already fetches everything from relative /data/ paths. You have tw
 
 Per clip (approximate):
 - Whisper: ~$0.006/min of audio
-- GPT-4o: ~$0.01-0.05 per summary
+- GPT-4o extraction (v2 Pass 1): ~$0.07
+- Claude Sonnet narration (v2 Pass 2): ~$0.08
 - GPT-4o-mini: ~$0.001 per topic extraction
 
-A typical 1-hour meeting costs ~$0.50-1.00 to process.
+A typical 1-hour meeting costs ~$0.50-1.00 to process end-to-end, or ~$0.15 for summary upgrade only.
 
 ## License
 
