@@ -168,8 +168,8 @@ function MeetingDetail() {
   const { clipId } = useParams()
   const [searchParams] = useSearchParams()
   const highlightTerm = searchParams.get('highlight') || ''
-  const { meeting, summary, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
-  const [activeTab, setActiveTab] = useState('transcript')
+  const { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
+  const [activeTab, setActiveTab] = useState('overview')
   const [videoStartTime, setVideoStartTime] = useState(null)
   const [videoLoading, setVideoLoading] = useState(false)
   const videoContainerRef = useRef(null)
@@ -301,11 +301,12 @@ function MeetingDetail() {
   const tabs = useMemo(() => {
     if (!meeting) return []
     const result = []
+    if (extractedFacts) result.push({ id: 'overview', label: 'Overview' })
     if (transcript || meeting.files?.transcript) result.push({ id: 'transcript', label: 'Transcript' })
     if (agenda || meeting.files?.agenda_txt) result.push({ id: 'agenda', label: 'Agenda' })
     if (minutes || meeting.files?.minutes_txt) result.push({ id: 'minutes', label: 'Official Minutes' })
     return result
-  }, [transcript, agenda, minutes, meeting])
+  }, [extractedFacts, transcript, agenda, minutes, meeting])
 
   if (loading) {
     return <div className="loading">Loading meeting details...</div>
@@ -419,6 +420,177 @@ function MeetingDetail() {
           )}
 
           <div className="content-panel" role="tabpanel">
+            {currentTab === 'overview' && extractedFacts && (
+              <div className="meeting-overview">
+                {/* Meeting Info */}
+                {extractedFacts.meeting_info && (
+                  <section className="facts-section">
+                    <h3>Meeting Information</h3>
+                    <div className="facts-grid">
+                      {extractedFacts.meeting_info.body && <div><strong>Body:</strong> {extractedFacts.meeting_info.body}</div>}
+                      {extractedFacts.meeting_info.date && <div><strong>Date:</strong> {extractedFacts.meeting_info.date}</div>}
+                      {extractedFacts.meeting_info.time && <div><strong>Time:</strong> {extractedFacts.meeting_info.time}</div>}
+                      {extractedFacts.meeting_info.presiding_officer && <div><strong>Presiding:</strong> {extractedFacts.meeting_info.presiding_officer}</div>}
+                      {extractedFacts.meeting_info.location && <div><strong>Location:</strong> {extractedFacts.meeting_info.location}</div>}
+                    </div>
+                  </section>
+                )}
+
+                {/* Attendance */}
+                {extractedFacts.attendance?.present?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Attendance</h3>
+                    <div><strong>Present ({extractedFacts.attendance.present.length}):</strong> {extractedFacts.attendance.present.join(', ')}</div>
+                    {extractedFacts.attendance.absent?.length > 0 && (
+                      <div><strong>Absent:</strong> {extractedFacts.attendance.absent.join(', ')}</div>
+                    )}
+                    {extractedFacts.attendance.late?.length > 0 && (
+                      <div><strong>Late:</strong> {extractedFacts.attendance.late.join(', ')}</div>
+                    )}
+                  </section>
+                )}
+
+                {/* Votes & Decisions */}
+                {extractedFacts.motions_and_votes?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Votes &amp; Decisions</h3>
+                    {extractedFacts.motions_and_votes.map((vote, i) => (
+                      <div key={i} className="facts-card">
+                        <div className="facts-card-header">
+                          {vote.identifier && <strong>{vote.identifier}</strong>}
+                          <span className={`vote-badge vote-${vote.outcome}`}>{vote.outcome}</span>
+                        </div>
+                        <p>{vote.description}</p>
+                        {(vote.ayes != null || vote.nays != null) && (
+                          <div className="vote-tally">
+                            {vote.ayes != null && <span className="vote-for">Ayes: {vote.ayes}</span>}
+                            {vote.nays != null && <span className="vote-against">Nays: {vote.nays}</span>}
+                            {vote.abstentions > 0 && <span>Abstentions: {vote.abstentions}</span>}
+                          </div>
+                        )}
+                        {vote.votes_against?.length > 0 && (
+                          <div><strong>Opposed:</strong> {vote.votes_against.join(', ')}</div>
+                        )}
+                        {vote.transcript_approx_time && (
+                          <button
+                            className="timestamp-link"
+                            onClick={() => {
+                              const [m, s] = vote.transcript_approx_time.split(':').map(Number)
+                              jumpToTime(m * 60 + (s || 0))
+                            }}
+                          >
+                            {vote.transcript_approx_time}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                )}
+
+                {/* Financial Items */}
+                {extractedFacts.financial_items?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Budget &amp; Financial Items</h3>
+                    {extractedFacts.financial_items.map((item, i) => (
+                      <div key={i} className="facts-card">
+                        <div className="facts-card-header">
+                          <strong className="financial-amount">{item.amount}</strong>
+                          {item.type && <span className="facts-tag">{item.type}</span>}
+                        </div>
+                        <p>{item.description}</p>
+                        {item.identifier && <div><strong>Reference:</strong> {item.identifier}</div>}
+                        {item.vendor_or_recipient && <div><strong>Vendor/Recipient:</strong> {item.vendor_or_recipient}</div>}
+                      </div>
+                    ))}
+                  </section>
+                )}
+
+                {/* Agenda Items */}
+                {extractedFacts.agenda_items?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Agenda Items</h3>
+                    {extractedFacts.agenda_items.map((item, i) => (
+                      <div key={i} className="facts-card">
+                        <div className="facts-card-header">
+                          <strong>{item.title}</strong>
+                          {item.outcome && <span className={`vote-badge vote-${item.outcome}`}>{item.outcome}</span>}
+                        </div>
+                        {item.identifier && <div className="facts-tag">{item.identifier} ({item.type})</div>}
+                        <p>{item.summary}</p>
+                        {item.key_speakers?.length > 0 && (
+                          <div><strong>Key speakers:</strong> {item.key_speakers.join(', ')}</div>
+                        )}
+                        {item.transcript_approx_time && (
+                          <button
+                            className="timestamp-link"
+                            onClick={() => {
+                              const [m, s] = item.transcript_approx_time.split(':').map(Number)
+                              jumpToTime(m * 60 + (s || 0))
+                            }}
+                          >
+                            {item.transcript_approx_time}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                )}
+
+                {/* Public Comments */}
+                {extractedFacts.public_comments?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Public Comments</h3>
+                    {extractedFacts.public_comments.map((comment, i) => (
+                      <div key={i} className="facts-card">
+                        {comment.speaker && <strong>{comment.speaker}</strong>}
+                        {comment.topic && <span> — {comment.topic}</span>}
+                        <p>{comment.summary}</p>
+                        {comment.transcript_approx_time && (
+                          <button
+                            className="timestamp-link"
+                            onClick={() => {
+                              const [m, s] = comment.transcript_approx_time.split(':').map(Number)
+                              jumpToTime(m * 60 + (s || 0))
+                            }}
+                          >
+                            {comment.transcript_approx_time}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                )}
+
+                {/* Appointments */}
+                {extractedFacts.appointments?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Appointments</h3>
+                    {extractedFacts.appointments.map((appt, i) => (
+                      <div key={i} className="facts-card">
+                        <strong>{appt.person}</strong> — {appt.action} to {appt.body_or_role}
+                      </div>
+                    ))}
+                  </section>
+                )}
+
+                {/* Contentious Items */}
+                {extractedFacts.contentious_items?.length > 0 && (
+                  <section className="facts-section">
+                    <h3>Contested Items</h3>
+                    {extractedFacts.contentious_items.map((item, i) => (
+                      <div key={i} className="facts-card">
+                        <div className="facts-card-header">
+                          <strong>{item.topic}</strong>
+                          <span className="facts-tag">{item.nature?.replace(/_/g, ' ')}</span>
+                        </div>
+                        <p>{item.details}</p>
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </div>
+            )}
+
             {currentTab === 'transcript' && (
               <div className="meeting-transcript">
                 {transcriptSegments && transcriptSegments.length > 0 ? (

@@ -1081,12 +1081,6 @@ Note any contentious issues, split votes, heated discussions, or areas where cou
 ## Action Items & Follow-ups
 List specific next steps, items deferred, or tasks assigned to staff.
 
-## Notable Quotes
-Include 3-5 significant or memorable quotes that capture key moments (with speaker attribution).
-
-## Implications for Residents
-Brief analysis: How might decisions made in this meeting affect Lexington residents?
-
 ---
 
 Guidelines:
@@ -1135,102 +1129,6 @@ Guidelines:
             return None
 
 
-    def _convert_inline_markdown(self, text: str) -> str:
-        """Convert inline markdown (bold, italic) to HTML tags."""
-        # Convert **bold** to <strong>bold</strong>
-        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-        # Convert *italic* to <em>italic</em> (but not if already processed as bold)
-        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
-        return text
-
-    def summary_to_html(self, summary_text: str, title: str, summary_html_path: Path) -> bool:
-        """Convert summary text to HTML with proper structure."""
-        try:
-            # Basic HTML template
-            html_parts = [
-                '<!DOCTYPE html>',
-                '<html lang="en">',
-                '<head>',
-                '<meta charset="UTF-8">',
-                '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-                f'<title>{title}</title>',
-                '<style>',
-                'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }',
-                'h1 { color: #1a365d; border-bottom: 2px solid #2c5282; padding-bottom: 10px; }',
-                'h2 { color: #2c5282; margin-top: 30px; }',
-                'ul { margin: 10px 0; }',
-                'li { margin: 5px 0; }',
-                'blockquote { border-left: 4px solid #cbd5e0; margin: 15px 0; padding-left: 15px; color: #4a5568; font-style: italic; }',
-                '</style>',
-                '</head>',
-                '<body>',
-                f'<h1>{title}</h1>',
-            ]
-
-            # Convert markdown-style summary to HTML
-            lines = summary_text.split('\n')
-            in_list = False
-
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    if in_list:
-                        html_parts.append('</ul>')
-                        in_list = False
-                    continue
-
-                # Handle headers
-                if line.startswith('## '):
-                    if in_list:
-                        html_parts.append('</ul>')
-                        in_list = False
-                    content = self._convert_inline_markdown(line[3:])
-                    html_parts.append(f'<h2>{content}</h2>')
-                elif line.startswith('# '):
-                    if in_list:
-                        html_parts.append('</ul>')
-                        in_list = False
-                    content = self._convert_inline_markdown(line[2:])
-                    html_parts.append(f'<h2>{content}</h2>')
-                # Handle bullet points
-                elif line.startswith('- ') or line.startswith('* '):
-                    if not in_list:
-                        html_parts.append('<ul>')
-                        in_list = True
-                    content = self._convert_inline_markdown(line[2:])
-                    html_parts.append(f'<li>{content}</li>')
-                # Handle quotes
-                elif line.startswith('>'):
-                    if in_list:
-                        html_parts.append('</ul>')
-                        in_list = False
-                    content = self._convert_inline_markdown(line[1:].strip())
-                    html_parts.append(f'<blockquote>{content}</blockquote>')
-                # Regular paragraph
-                else:
-                    if in_list:
-                        html_parts.append('</ul>')
-                        in_list = False
-                    content = self._convert_inline_markdown(line)
-                    html_parts.append(f'<p>{content}</p>')
-
-            if in_list:
-                html_parts.append('</ul>')
-
-            html_parts.extend(['</body>', '</html>'])
-
-            html_content = '\n'.join(html_parts)
-
-            with open(summary_html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-
-            self.progress(f"Saved HTML summary to {summary_html_path.name}")
-            return True
-
-        except Exception as e:
-            self.log(f"HTML conversion error: {e}", "ERROR")
-            return False
-
     def generate_search_index(self) -> Optional[Path]:
         """Generate index.json with all processed clips for frontend search."""
         self.log("Generating search index...")
@@ -1265,6 +1163,15 @@ Guidelines:
                             # First 500 chars for preview
                             transcript_preview = full_text[:500].replace('\n', ' ').strip()
 
+                # Read agenda text for card preview
+                agenda_preview = ""
+                if "files" in metadata and "agenda_txt" in metadata["files"]:
+                    agenda_path = clip_dir / metadata["files"]["agenda_txt"]
+                    if agenda_path.exists():
+                        with open(agenda_path, 'r', encoding='utf-8') as f:
+                            agenda_text = f.read()
+                            agenda_preview = agenda_text[:500].replace('\n', ' ').strip()
+
                 # Summary preview extraction (temporarily disabled)
                 summary_preview = ""
 
@@ -1281,6 +1188,7 @@ Guidelines:
                     "title": metadata.get("title"),
                     "transcript_words": metadata.get("transcript_words", 0),
                     "transcript_preview": transcript_preview,
+                    "agenda_preview": agenda_preview,
                     "summary_preview": summary_preview,
                     "processed_at": metadata.get("processed_at"),
                     "files": metadata.get("files", {})
@@ -1393,12 +1301,6 @@ Guidelines:
 
             metadata["files"]["summary_txt"] = "summary.txt"
 
-            # Regenerate HTML
-            title = metadata.get("title", f"Clip {clip_id}")
-            summary_html_path = clip_dir / "summary.html"
-            if self.summary_to_html(summary, title, summary_html_path):
-                metadata["files"]["summary_html"] = "summary.html"
-
             # Update metadata
             end_time = datetime.now()
             metadata["summary_updated_at"] = end_time.isoformat()
@@ -1451,6 +1353,110 @@ Guidelines:
         # Regenerate search index
         self.generate_search_index()
 
+        return results
+
+    def backfill_documents(self, max_clips: int = 0, regenerate_summary: bool = False) -> dict:
+        """Check processed clips (highest first) for missing minutes/agenda and download them.
+
+        Args:
+            max_clips: Maximum clips to check (0 = all)
+            regenerate_summary: If True, regenerate summary when new docs are found
+
+        Returns:
+            Dict with 'updated', 'skipped', 'failed' lists
+        """
+        results = {"updated": [], "skipped": [], "failed": []}
+
+        # Find all processed clips with metadata, sorted highest first
+        clips_dir = self.output_dir / "clips"
+        clip_ids = []
+        for name in sorted(os.listdir(clips_dir), key=lambda x: int(x) if x.isdigit() else 0, reverse=True):
+            meta_path = clips_dir / name / "metadata.json"
+            if meta_path.exists():
+                try:
+                    clip_ids.append(int(name))
+                except ValueError:
+                    continue
+
+        if max_clips > 0:
+            clip_ids = clip_ids[:max_clips]
+
+        if not clip_ids:
+            self.log("No processed clips found")
+            return results
+
+        self.log(f"Checking {len(clip_ids)} clips for missing documents (highest first)")
+
+        for idx, clip_id in enumerate(clip_ids, 1):
+            clip_dir = clips_dir / str(clip_id)
+            metadata_path = clip_dir / "metadata.json"
+
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                self.log(f"Clip {clip_id}: bad metadata - {e}", "WARNING")
+                results["failed"].append(clip_id)
+                continue
+
+            title = metadata.get("title")
+            meeting_date = metadata.get("date")
+            files = metadata.get("files", {})
+            found_new = False
+
+            # Check for missing agenda
+            has_agenda = files.get("agenda_txt") or files.get("agenda_pdf")
+            if not has_agenda:
+                self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: checking for agenda...")
+                # Force download by ensuring no existing files match
+                agenda_result = self.download_agenda(clip_id, clip_dir, title=title, date=meeting_date)
+                if agenda_result.get("pdf_file") or agenda_result.get("txt_file"):
+                    if agenda_result["pdf_file"]:
+                        metadata.setdefault("files", {})["agenda_pdf"] = agenda_result["pdf_file"]
+                    if agenda_result["txt_file"]:
+                        metadata.setdefault("files", {})["agenda_txt"] = agenda_result["txt_file"]
+                    found_new = True
+                    self.log(f"Clip {clip_id}: downloaded agenda")
+
+            # Check for missing minutes
+            has_minutes = files.get("minutes_txt") or files.get("minutes_pdf") or files.get("minutes_html")
+            if not has_minutes:
+                self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: checking for minutes...")
+                minutes_result = self.download_minutes(clip_id, clip_dir, title=title, date=meeting_date)
+                if minutes_result.get("pdf_file") or minutes_result.get("html_file") or minutes_result.get("txt_file"):
+                    if minutes_result["pdf_file"]:
+                        metadata.setdefault("files", {})["minutes_pdf"] = minutes_result["pdf_file"]
+                    if minutes_result["html_file"]:
+                        metadata.setdefault("files", {})["minutes_html"] = minutes_result["html_file"]
+                    if minutes_result["txt_file"]:
+                        metadata.setdefault("files", {})["minutes_txt"] = minutes_result["txt_file"]
+                    found_new = True
+                    self.log(f"Clip {clip_id}: downloaded minutes")
+
+            if found_new:
+                # Save updated metadata
+                metadata["docs_backfilled_at"] = datetime.now().isoformat()
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                results["updated"].append(clip_id)
+
+                # Optionally regenerate summary with new context
+                if regenerate_summary:
+                    self.log(f"Clip {clip_id}: regenerating summary with new documents...")
+                    self.update_clip_summary(clip_id)
+            else:
+                if not has_agenda and not has_minutes:
+                    self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: no docs available yet")
+                else:
+                    self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: already has all docs")
+                results["skipped"].append(clip_id)
+
+        # Regenerate index if anything was updated
+        if results["updated"]:
+            self.generate_search_index()
+
+        self.log(f"\nBackfill complete: {len(results['updated'])} updated, "
+                 f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
         return results
 
     def process_clip(
@@ -1594,11 +1600,6 @@ Guidelines:
             #     return False
             # files["summary_txt"] = "summary.txt"
 
-            # Step 9: Convert summary to HTML (temporarily disabled)
-            # summary_html_path = clip_dir / "summary.html"
-            # if self.summary_to_html(summary, title, summary_html_path):
-            #     files["summary_html"] = "summary.html"
-
             # Remove audio if not keeping
             if not self.keep_audio and audio_path.exists():
                 audio_path.unlink()
@@ -1637,15 +1638,11 @@ Guidelines:
             # RAG ingestion (if enabled)
             if getattr(self, 'rag_enabled', False):
                 try:
-                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection
                     from openai import OpenAI
                     collection = get_chroma_collection(str(self.output_dir))
                     openai_client = OpenAI()
                     rag_ingest_clip(clip_id, self.output_dir, collection, openai_client, verbose=self.verbose)
-                    state = load_rag_state(self.output_dir)
-                    if clip_id not in state["ingested_clips"]:
-                        state["ingested_clips"].append(clip_id)
-                        save_rag_state(state, self.output_dir)
                     self.log(f"RAG: Ingested clip {clip_id}")
                 except ImportError:
                     self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
@@ -1908,6 +1905,9 @@ Examples:
   %(prog)s --scrape                      # Scrape and process all new clips
   %(prog)s --scrape --reverse --max 5    # Scrape, process 5 most recent first
   %(prog)s --generate-index              # Generate search index from all clips
+  %(prog)s --backfill-docs               # Check all clips for missing minutes/agenda
+  %(prog)s --backfill-docs --max 50      # Check 50 most recent clips
+  %(prog)s --backfill-docs --regenerate-summary  # Also regenerate summaries
   %(prog)s --update-transcripts          # Add timestamps to existing transcripts
   %(prog)s --update-transcripts --max 5  # Update up to 5 transcripts
   %(prog)s 6669 --no-audio               # Don't keep audio files
@@ -2033,6 +2033,42 @@ Examples:
         help="Re-embed all clips into the RAG vector store"
     )
 
+    parser.add_argument(
+        "--test-summary",
+        action="store_true",
+        help="Test new two-pass summary on a few clips, writing to a test output directory for comparison"
+    )
+
+    parser.add_argument(
+        "--test-summary-dir",
+        default="./lfucg_test_output",
+        help="Output directory for --test-summary (default: ./lfucg_test_output)"
+    )
+
+    parser.add_argument(
+        "--upgrade-summaries",
+        action="store_true",
+        help="Run two-pass summary (GPT-4o extraction + Claude Sonnet narration) on all clips, saving in-place. Skips clips that already have extracted_facts.json."
+    )
+
+    parser.add_argument(
+        "--clean-v1-summaries",
+        action="store_true",
+        help="Remove all summary.html files and summary.txt files from clips that have NOT been upgraded (no extracted_facts.json)"
+    )
+
+    parser.add_argument(
+        "--backfill-docs",
+        action="store_true",
+        help="Check processed clips (highest first) for missing minutes/agenda and download them"
+    )
+
+    parser.add_argument(
+        "--regenerate-summary",
+        action="store_true",
+        help="With --backfill-docs, regenerate summary when new docs are found"
+    )
+
     args = parser.parse_args()
 
     # Initialize pipeline
@@ -2057,9 +2093,8 @@ Examples:
     # Handle rebuild-rag mode
     if args.rebuild_rag:
         try:
-            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, load_rag_state, save_rag_state
+            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, save_rag_state
             from openai import OpenAI
-            import os
 
             openai_client = OpenAI()
             collection = get_chroma_collection(str(pipeline.output_dir))
@@ -2082,9 +2117,8 @@ Examples:
             print(f"Rebuilding RAG index for {len(clip_ids)} clips...")
             for i, clip_id in enumerate(clip_ids):
                 print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
-                rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client, verbose=True)
-                state["ingested_clips"].append(clip_id)
-                save_rag_state(state, pipeline.output_dir)
+                rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client,
+                                rag_state=state, verbose=True)
 
             from rag.ingest import get_stats
             stats = get_stats(collection)
@@ -2093,6 +2127,334 @@ Examples:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
             sys.exit(1)
         sys.exit(0)
+
+    # Handle test-summary mode
+    if args.test_summary:
+        try:
+            from summary_v2 import generate_summary_v2
+            import anthropic
+        except ImportError:
+            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            sys.exit(1)
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_key:
+            print("Error: ANTHROPIC_API_KEY environment variable required for --test-summary")
+            sys.exit(1)
+
+        anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+        test_dir = Path(args.test_summary_dir)
+        test_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find clips to test: use explicit clip IDs, or pick the most recent N
+        if args.clip_ids:
+            test_clip_ids = args.clip_ids
+        else:
+            # Pick the most recent processed clips
+            clips_dir = pipeline.output_dir / "clips"
+            test_clip_ids = []
+            for name in sorted(os.listdir(clips_dir), reverse=True):
+                meta_path = clips_dir / name / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        test_clip_ids.append(int(name))
+                    except ValueError:
+                        continue
+                if len(test_clip_ids) >= args.max:
+                    break
+
+        print(f"\nTesting two-pass summary on {len(test_clip_ids)} clips")
+        print(f"Output directory: {test_dir}")
+        print(f"Extraction model: {args.summary_model}")
+        print(f"Narration model: Claude Sonnet")
+        print()
+
+        for i, clip_id in enumerate(test_clip_ids, 1):
+            clip_dir = pipeline.output_dir / "clips" / str(clip_id)
+            meta_path = clip_dir / "metadata.json"
+            if not meta_path.exists():
+                print(f"[{i}/{len(test_clip_ids)}] Clip {clip_id}: no metadata, skipping")
+                continue
+
+            with open(meta_path) as f:
+                metadata = json.load(f)
+
+            files = metadata.get("files", {})
+            date = metadata.get("date", "Unknown")
+            meeting_body = metadata.get("meeting_body", "Unknown")
+
+            # Load transcript
+            transcript = ""
+            for key in ("transcript", "transcript_segments"):
+                fname = files.get(key)
+                if fname and key == "transcript":
+                    t_path = clip_dir / fname
+                    if t_path.exists():
+                        transcript = t_path.read_text()
+                        break
+                elif fname and key == "transcript_segments":
+                    t_path = clip_dir / fname
+                    if t_path.exists():
+                        segments = json.load(open(t_path))
+                        transcript = " ".join(s["text"] for s in segments)
+                        break
+
+            if not transcript:
+                print(f"[{i}/{len(test_clip_ids)}] Clip {clip_id}: no transcript, skipping")
+                continue
+
+            # Load agenda and minutes
+            agenda_text = None
+            agenda_file = files.get("agenda_txt")
+            if agenda_file:
+                a_path = clip_dir / agenda_file
+                if a_path.exists():
+                    agenda_text = a_path.read_text()
+
+            minutes_text = None
+            minutes_file = files.get("minutes_txt")
+            if minutes_file:
+                m_path = clip_dir / minutes_file
+                if m_path.exists():
+                    minutes_text = m_path.read_text()
+
+            print(f"[{i}/{len(test_clip_ids)}] Clip {clip_id} ({date} {meeting_body})")
+
+            # Copy old summary for comparison
+            out_dir = test_dir / str(clip_id)
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            old_summary_file = files.get("summary_txt")
+            if old_summary_file:
+                old_path = clip_dir / old_summary_file
+                if old_path.exists():
+                    (out_dir / "summary_v1.txt").write_text(old_path.read_text())
+
+            # Generate new summary
+            try:
+                summary, facts = generate_summary_v2(
+                    openai_client=pipeline.client,
+                    anthropic_client=anthropic_client,
+                    transcript=transcript,
+                    agenda_text=agenda_text,
+                    minutes_text=minutes_text,
+                    meeting_body=meeting_body,
+                    date=date,
+                    extraction_model=args.summary_model,
+                    log_fn=lambda msg: print(f"  {msg}"),
+                )
+
+                if facts:
+                    (out_dir / "extracted_facts.json").write_text(
+                        json.dumps(facts, indent=2, ensure_ascii=False)
+                    )
+
+                if summary:
+                    (out_dir / "summary_v2.txt").write_text(summary)
+
+                    old_len = len((out_dir / "summary_v1.txt").read_text()) if (out_dir / "summary_v1.txt").exists() else 0
+                    print(f"  Done: v1={old_len} chars, v2={len(summary)} chars, "
+                          f"facts={len(json.dumps(facts))} chars")
+                else:
+                    print(f"  FAILED: no summary generated")
+
+            except Exception as e:
+                print(f"  ERROR: {e}")
+
+        print(f"\nResults written to {test_dir}/")
+        print(f"Compare with: diff {test_dir}/{{clip_id}}/summary_v1.txt {test_dir}/{{clip_id}}/summary_v2.txt")
+        sys.exit(0)
+
+    # Handle clean-v1-summaries mode
+    if args.clean_v1_summaries:
+        clips_dir = pipeline.output_dir / "clips"
+        html_removed = 0
+        txt_removed = 0
+        metadata_updated = 0
+
+        for name in sorted(os.listdir(clips_dir)):
+            clip_dir = clips_dir / name
+            if not clip_dir.is_dir():
+                continue
+
+            has_facts = (clip_dir / "extracted_facts.json").exists()
+
+            # Always remove summary.html (dead code)
+            html_path = clip_dir / "summary.html"
+            if html_path.exists():
+                html_path.unlink()
+                html_removed += 1
+
+            # Remove summary.txt only if clip has NOT been upgraded
+            if not has_facts:
+                txt_path = clip_dir / "summary.txt"
+                if txt_path.exists():
+                    txt_path.unlink()
+                    txt_removed += 1
+
+            # Clean metadata references
+            meta_path = clip_dir / "metadata.json"
+            if meta_path.exists():
+                try:
+                    with open(meta_path) as f:
+                        metadata = json.load(f)
+                    changed = False
+                    if "summary_html" in metadata.get("files", {}):
+                        del metadata["files"]["summary_html"]
+                        changed = True
+                    if not has_facts and "summary_txt" in metadata.get("files", {}):
+                        del metadata["files"]["summary_txt"]
+                        changed = True
+                    if changed:
+                        with open(meta_path, "w") as f:
+                            json.dump(metadata, f, indent=2, ensure_ascii=False)
+                        metadata_updated += 1
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        print(f"Cleaned v1 summaries:")
+        print(f"  summary.html removed: {html_removed}")
+        print(f"  summary.txt removed (non-upgraded clips): {txt_removed}")
+        print(f"  metadata.json updated: {metadata_updated}")
+        sys.exit(0)
+
+    # Handle upgrade-summaries mode
+    if args.upgrade_summaries:
+        try:
+            from summary_v2 import generate_summary_v2
+            import anthropic
+        except ImportError:
+            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            sys.exit(1)
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_key:
+            print("Error: ANTHROPIC_API_KEY environment variable required for --upgrade-summaries")
+            sys.exit(1)
+
+        anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+
+        # Find all clips with metadata, sorted by ID ascending
+        clips_dir = pipeline.output_dir / "clips"
+        all_clip_ids = []
+        for name in sorted(os.listdir(clips_dir), key=lambda x: int(x) if x.isdigit() else 99999):
+            meta_path = clips_dir / name / "metadata.json"
+            if meta_path.exists():
+                try:
+                    all_clip_ids.append(int(name))
+                except ValueError:
+                    continue
+
+        # Apply --max limit
+        all_clip_ids = all_clip_ids[:args.max]
+
+        # Skip clips that already have extracted_facts.json
+        clip_ids = []
+        skipped = 0
+        for cid in all_clip_ids:
+            facts_path = clips_dir / str(cid) / "extracted_facts.json"
+            if facts_path.exists():
+                skipped += 1
+            else:
+                clip_ids.append(cid)
+
+        print(f"\nUpgrading summaries: {len(clip_ids)} clips to process, {skipped} already done")
+        print(f"Extraction model: {args.summary_model}")
+        print(f"Narration model: Claude Sonnet\n")
+
+        succeeded = 0
+        failed_ids = []
+        for i, clip_id in enumerate(clip_ids, 1):
+            clip_dir = clips_dir / str(clip_id)
+            meta_path = clip_dir / "metadata.json"
+
+            with open(meta_path) as f:
+                metadata = json.load(f)
+
+            files = metadata.get("files", {})
+            date = metadata.get("date", "Unknown")
+            meeting_body = metadata.get("meeting_body", "Unknown")
+
+            # Load transcript
+            transcript = ""
+            seg_file = files.get("transcript_segments")
+            txt_file = files.get("transcript")
+            if seg_file and (clip_dir / seg_file).exists():
+                with open(clip_dir / seg_file) as f:
+                    segments = json.load(f)
+                transcript = " ".join(s["text"] for s in segments)
+            elif txt_file and (clip_dir / txt_file).exists():
+                transcript = (clip_dir / txt_file).read_text()
+
+            if not transcript:
+                print(f"[{i}/{len(clip_ids)}] Clip {clip_id}: no transcript, skipping")
+                continue
+
+            # Load agenda and minutes
+            agenda_text = None
+            if files.get("agenda_txt") and (clip_dir / files["agenda_txt"]).exists():
+                agenda_text = (clip_dir / files["agenda_txt"]).read_text()
+
+            minutes_text = None
+            if files.get("minutes_txt") and (clip_dir / files["minutes_txt"]).exists():
+                minutes_text = (clip_dir / files["minutes_txt"]).read_text()
+
+            print(f"[{i}/{len(clip_ids)}] Clip {clip_id} ({date} {meeting_body})")
+
+            try:
+                summary, facts = generate_summary_v2(
+                    openai_client=pipeline.client,
+                    anthropic_client=anthropic_client,
+                    transcript=transcript,
+                    agenda_text=agenda_text,
+                    minutes_text=minutes_text,
+                    meeting_body=meeting_body,
+                    date=date,
+                    extraction_model=args.summary_model,
+                    log_fn=lambda msg: print(f"  {msg}"),
+                )
+
+                if facts:
+                    (clip_dir / "extracted_facts.json").write_text(
+                        json.dumps(facts, indent=2, ensure_ascii=False)
+                    )
+                    metadata["files"]["extracted_facts"] = "extracted_facts.json"
+
+                if summary:
+                    (clip_dir / "summary.txt").write_text(summary)
+                    metadata["files"]["summary_txt"] = "summary.txt"
+                    metadata["models"]["summary"] = f"{args.summary_model}+claude-sonnet"
+
+                # Save updated metadata
+                with open(meta_path, "w") as f:
+                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+                succeeded += 1
+            except Exception as e:
+                print(f"  ERROR: {e}")
+                failed_ids.append(clip_id)
+
+        print(f"\nDone: {succeeded} upgraded, {len(failed_ids)} failed, {skipped} previously done")
+        if failed_ids:
+            print(f"Failed clips: {failed_ids}")
+        print(f"\nNext step: uv run python main.py --rebuild-rag")
+        sys.exit(0 if not failed_ids else 1)
+
+    # Handle backfill-docs mode
+    if args.backfill_docs:
+        results = pipeline.backfill_documents(
+            max_clips=args.max,
+            regenerate_summary=args.regenerate_summary
+        )
+        print(f"\nBackfill results:")
+        print(f"  Updated (new docs found): {len(results['updated'])} clips")
+        if results['updated']:
+            print(f"    {results['updated']}")
+        print(f"  Skipped (no new docs): {len(results['skipped'])} clips")
+        print(f"  Failed: {len(results['failed'])} clips")
+        if results['failed']:
+            print(f"    {results['failed']}")
+        sys.exit(0 if not results['failed'] else 1)
 
     # Handle generate-index mode
     if args.generate_index:

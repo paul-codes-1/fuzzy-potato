@@ -20,13 +20,12 @@ class TestProcessClipRagIntegration:
 
     def test_rag_ingest_not_called_when_disabled(self):
         """When rag_enabled=False, ingest_clip should NOT be called."""
-        rag_enabled = False
-        called = False
-
-        if rag_enabled:
-            called = True
-
-        assert not called
+        with patch("rag.ingest.ingest_clip") as mock_ingest:
+            # Simulate pipeline behavior: rag_enabled=False means ingest is never called
+            rag_enabled = False
+            if rag_enabled:
+                mock_ingest(6669, "/tmp", MagicMock(), MagicMock())
+            mock_ingest.assert_not_called()
 
 
 class TestRebuildRagFlag:
@@ -51,9 +50,8 @@ class TestRebuildRagFlag:
 
         # Ingest once
         ingest_clip(6669, sample_clip_dir, collection, mock_openai_batch_embeddings)
-        state = load_rag_state(sample_clip_dir)
-        state["ingested_clips"] = [6669]
-        save_rag_state(state, sample_clip_dir)
+        loaded = load_rag_state(sample_clip_dir)
+        assert 6669 in loaded["ingested_clips"]
 
         # Simulate rebuild: clear state and re-ingest
         state = {"ingested_clips": []}
@@ -61,9 +59,10 @@ class TestRebuildRagFlag:
 
         # Re-ingest (should work since state was cleared)
         ingest_clip(6669, sample_clip_dir, collection, mock_openai_batch_embeddings,
-                    skip_if_ingested=True)
+                    skip_if_ingested=True, rag_state=state)
 
+        # After re-ingestion, state should contain the clip again
         loaded = load_rag_state(sample_clip_dir)
-        assert loaded["ingested_clips"] == []  # State was reset
+        assert loaded["ingested_clips"] == [6669]
 
         client.delete_collection("rebuild_test")

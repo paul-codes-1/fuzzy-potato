@@ -32,7 +32,7 @@ export function useMeetings() {
 
 export function useMeeting(clipId) {
   const [meeting, setMeeting] = useState(null)
-  const [summary, setSummary] = useState(null)
+  const [extractedFacts, setExtractedFacts] = useState(null)
   const [transcript, setTranscript] = useState(null)
   const [transcriptSegments, setTranscriptSegments] = useState(null)
   const [agenda, setAgenda] = useState(null)
@@ -51,18 +51,15 @@ export function useMeeting(clipId) {
         const metadata = await metaResponse.json()
         setMeeting(metadata)
 
-        // Fetch summary HTML if available
-        if (metadata.files?.summary_html) {
+        // Fetch extracted facts if available
+        if (metadata.files?.extracted_facts) {
           try {
-            const summaryResponse = await fetch(`/data/clips/${clipId}/${metadata.files.summary_html}`)
-            if (summaryResponse.ok) {
-              const html = await summaryResponse.text()
-              // Extract body content from HTML
-              const match = html.match(/<body>([\s\S]*)<\/body>/)
-              setSummary(match ? match[1] : html)
+            const factsResponse = await fetch(`/data/clips/${clipId}/${metadata.files.extracted_facts}`)
+            if (factsResponse.ok) {
+              setExtractedFacts(await factsResponse.json())
             }
           } catch (e) {
-            console.warn('Could not load summary:', e)
+            console.warn('Could not load extracted facts:', e)
           }
         }
 
@@ -126,5 +123,5 @@ export function useMeeting(clipId) {
     }
   }, [clipId])
 
-  return { meeting, summary, transcript, transcriptSegments, agenda, minutes, loading, error }
+  return { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error }
 }

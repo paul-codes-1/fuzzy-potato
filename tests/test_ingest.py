@@ -527,11 +527,11 @@ class TestIngestClip:
         from rag.ingest import ingest_clip
 
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        # Should have chunks from transcript + agenda + minutes (no summary)
+        # Should have chunks from all sources: summary + transcript + agenda + minutes
         assert chroma_collection.count() > 0
-        # Verify NO summary chunks
+        # Verify summary chunks are now ingested
         results = chroma_collection.get(where={"source": "summary"}, include=["metadatas"])
-        assert len(results["ids"]) == 0
+        assert len(results["ids"]) > 0
 
     def test_ingest_clip_stores_transcript_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
@@ -821,24 +821,32 @@ class TestChunkId:
     def test_same_chunk_produces_same_id(self):
         from rag.ingest import _chunk_id
 
-        chunk = {"clip_id": 6669, "source": "transcript", "section_type": ""}
+        chunk = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
         id1 = _chunk_id(chunk, 0)
         id2 = _chunk_id(chunk, 0)
         assert id1 == id2
 
-    def test_different_index_produces_different_id(self):
+    def test_different_text_produces_different_id(self):
         from rag.ingest import _chunk_id
 
-        chunk = {"clip_id": 6669, "source": "transcript", "section_type": ""}
-        id1 = _chunk_id(chunk, 0)
-        id2 = _chunk_id(chunk, 1)
+        chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
+        chunk2 = {"clip_id": 6669, "source": "transcript", "text": "Goodbye world"}
+        id1 = _chunk_id(chunk1, 0)
+        id2 = _chunk_id(chunk2, 0)
         assert id1 != id2
 
     def test_different_clip_produces_different_id(self):
         from rag.ingest import _chunk_id
 
-        chunk1 = {"clip_id": 6669, "source": "transcript", "section_type": ""}
-        chunk2 = {"clip_id": 6670, "source": "transcript", "section_type": ""}
+        chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
+        chunk2 = {"clip_id": 6670, "source": "transcript", "text": "Hello world"}
+        assert _chunk_id(chunk1, 0) != _chunk_id(chunk2, 0)
+
+    def test_different_source_produces_different_id(self):
+        from rag.ingest import _chunk_id
+
+        chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
+        chunk2 = {"clip_id": 6669, "source": "minutes", "text": "Hello world"}
         assert _chunk_id(chunk1, 0) != _chunk_id(chunk2, 0)
 
 

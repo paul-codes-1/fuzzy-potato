@@ -37,8 +37,15 @@ def build_chroma_filter(filters: dict | None) -> dict | None:
     return {"$and": conditions}
 
 
-def deduplicate_results(results: dict, max_per_clip: int = 3) -> dict:
-    """Deduplicate ChromaDB results: keep max_per_clip chunks per clip, best-scored first."""
+def deduplicate_results(results: dict, max_per_clip: int = 4,
+                        max_per_source_per_clip: int = 2) -> dict:
+    """Deduplicate ChromaDB results: limit chunks per clip with source diversity.
+
+    Keeps up to max_per_clip chunks per clip, but no more than
+    max_per_source_per_clip from any single source type (summary, facts,
+    minutes, agenda, transcript). This ensures retrieval surfaces a mix
+    of source types rather than e.g. 4 summary sections from one clip.
+    """
     if not results["ids"] or not results["ids"][0]:
         return {"ids": [], "documents": [], "metadatas": [], "distances": []}
 
@@ -51,20 +58,34 @@ def deduplicate_results(results: dict, max_per_clip: int = 3) -> dict:
     items = list(zip(ids, documents, metadatas, distances))
     items.sort(key=lambda x: x[3])
 
-    # Keep max_per_clip per clip_id
+    # Keep max_per_clip per clip_id, max_per_source_per_clip per source within each clip
     clip_counts = defaultdict(int)
+    clip_source_counts = defaultdict(lambda: defaultdict(int))
     deduped = {"ids": [], "documents": [], "metadatas": [], "distances": []}
 
     for id_, doc, meta, dist in items:
         clip_id = meta.get("clip_id")
-        if clip_counts[clip_id] < max_per_clip:
-            deduped["ids"].append(id_)
-            deduped["documents"].append(doc)
-            deduped["metadatas"].append(meta)
-            deduped["distances"].append(dist)
-            clip_counts[clip_id] += 1
+        source = meta.get("source", "")
+
+        if clip_counts[clip_id] >= max_per_clip:
+            continue
+        if clip_source_counts[clip_id][source] >= max_per_source_per_clip:
+            continue
+
+        deduped["ids"].append(id_)
+        deduped["documents"].append(doc)
+        deduped["metadatas"].append(meta)
+        deduped["distances"].append(dist)
+        clip_counts[clip_id] += 1
+        clip_source_counts[clip_id][source] += 1
 
     return deduped
+
+
+def _fmt_timestamp(seconds: float) -> str:
+    """Format seconds as MM:SS for human-readable timestamps."""
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
 
 
 def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
@@ -74,7 +95,9 @@ def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
         header = f"--- Meeting: {chunk.get('title', 'Unknown')} | {chunk['date']} | {chunk['meeting_body']} | Clip {chunk['clip_id']} ---"
         source_info = f"[Source: {chunk['source']}"
         if "start_time" in chunk and "end_time" in chunk:
-            source_info += f", Timestamp: {chunk['start_time']}-{chunk['end_time']}"
+            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}-{_fmt_timestamp(chunk['end_time'])}"
+        elif "start_time" in chunk:
+            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}"
         source_info += "]"
         context_parts.append(f"{header}\n{source_info}\n{chunk['text']}")
 
@@ -102,21 +125,22 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
     where_clause = build_chroma_filter(filters)
 
     # 3. Query ChromaDB
-    query_kwargs = {
-        "query_embeddings": [q_embedding],
-        "n_results": min(top_k, collection.count()) if collection.count() > 0 else 1,
-        "include": ["documents", "metadatas", "distances"],
-    }
-    if where_clause:
-        query_kwargs["where"] = where_clause
-
-    if collection.count() == 0:
+    total_chunks = collection.count()
+    if total_chunks == 0:
         return {
             "answer": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
             "sources": [],
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
+
+    query_kwargs = {
+        "query_embeddings": [q_embedding],
+        "n_results": min(top_k, total_chunks),
+        "include": ["documents", "metadatas", "distances"],
+    }
+    if where_clause:
+        query_kwargs["where"] = where_clause
 
     results = collection.query(**query_kwargs)
 

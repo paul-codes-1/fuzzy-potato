@@ -653,27 +653,109 @@ a:hover {
   font-style: italic;
 }
 
-/* Meeting Summary */
-.meeting-summary h3 {
+/* Meeting Overview (extracted facts) */
+.meeting-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.facts-section h3 {
   font-size: 1.0625rem;
-  margin: 20px 0 10px;
+  margin: 0 0 12px;
   color: var(--text-primary);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
-.meeting-summary h3:first-child {
-  margin-top: 0;
+.facts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
 }
 
-.meeting-summary ul {
-  margin-left: 20px;
+.facts-card {
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
 }
 
-.meeting-summary li {
-  margin-bottom: 6px;
+.facts-card p {
+  margin: 6px 0;
+  color: var(--text-secondary);
 }
 
-.meeting-summary p {
-  margin-bottom: 10px;
+.facts-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vote-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.vote-passed, .vote-approved {
+  background: #c6f6d5;
+  color: #22543d;
+}
+
+.vote-failed, .vote-denied {
+  background: #fed7d7;
+  color: #822727;
+}
+
+.vote-tabled, .vote-deferred, .vote-postponed {
+  background: #fefcbf;
+  color: #744210;
+}
+
+.vote-first_reading, .vote-informational {
+  background: #bee3f8;
+  color: #2a4365;
+}
+
+.vote-tally {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 0.875rem;
+}
+
+.vote-for {
+  color: #22543d;
+  font-weight: 600;
+}
+
+.vote-against {
+  color: #822727;
+  font-weight: 600;
+}
+
+.financial-amount {
+  color: #2b6cb0;
+  font-size: 1.1em;
+}
+
+.facts-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  background: var(--border, #e2e8f0);
+  color: var(--text-secondary);
+}
+
+.facts-card .timestamp-link {
+  margin-top: 6px;
 }
 
 /* Transcript, Agenda, Minutes */

@@ -66,8 +66,8 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
       {meeting.meeting_body && (
         <span className="meeting-card-body">{meeting.meeting_body}</span>
       )}
-      {meeting.transcript_preview && !snippet && (
-        <div className="meeting-card-preview">{meeting.transcript_preview}</div>
+      {(meeting.agenda_preview || meeting.transcript_preview) && !snippet && (
+        <div className="meeting-card-preview">{meeting.agenda_preview || meeting.transcript_preview}</div>
       )}
       {snippet && (
         <HighlightedSnippet snippet={snippet} />

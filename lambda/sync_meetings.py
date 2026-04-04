@@ -24,7 +24,6 @@ S3 Structure:
     clips/
       {clip_id}/
         metadata.json
-        summary.html
         summary.txt
         transcript_*.txt
         *.mp3 (if audio kept)

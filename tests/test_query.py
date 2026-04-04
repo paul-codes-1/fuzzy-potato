@@ -74,26 +74,45 @@ class TestBuildChromaFilter:
 # ============================================================
 
 class TestDeduplicate:
-    """Test deduplication: max 3 chunks per clip (default), highest-scored first."""
+    """Test deduplication: max 4 chunks per clip (default), max 2 per source, highest-scored first."""
 
-    def test_dedup_keeps_max_three_per_clip(self):
+    def test_dedup_respects_max_per_clip(self):
         from rag.query import deduplicate_results
 
         results = {
-            "ids": [["a", "b", "c", "d", "e"]],
-            "documents": [["doc_a", "doc_b", "doc_c", "doc_d", "doc_e"]],
+            "ids": [["a", "b", "c", "d", "e", "f"]],
+            "documents": [["doc_a", "doc_b", "doc_c", "doc_d", "doc_e", "doc_f"]],
             "metadatas": [[
                 {"clip_id": 6669, "source": "transcript"},
                 {"clip_id": 6669, "source": "minutes"},
                 {"clip_id": 6669, "source": "agenda"},
-                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "facts"},
+                {"clip_id": 6669, "source": "summary"},
                 {"clip_id": 6670, "source": "minutes"},
             ]],
-            "distances": [[0.1, 0.2, 0.3, 0.4, 0.15]],
+            "distances": [[0.1, 0.2, 0.3, 0.35, 0.4, 0.15]],
         }
-        deduped = deduplicate_results(results)  # uses default max_per_clip=3
+        deduped = deduplicate_results(results)  # default max_per_clip=4
         clip_6669_count = sum(1 for m in deduped["metadatas"] if m["clip_id"] == 6669)
-        assert clip_6669_count == 3  # keeps 3, drops the 4th
+        assert clip_6669_count == 4  # keeps 4, drops the 5th
+
+    def test_dedup_limits_per_source_within_clip(self):
+        from rag.query import deduplicate_results
+
+        # 4 transcript chunks from same clip — should keep only 2
+        results = {
+            "ids": [["a", "b", "c", "d"]],
+            "documents": [["doc_a", "doc_b", "doc_c", "doc_d"]],
+            "metadatas": [[
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "transcript"},
+            ]],
+            "distances": [[0.1, 0.2, 0.3, 0.4]],
+        }
+        deduped = deduplicate_results(results)
+        assert len(deduped["ids"]) == 2  # max_per_source_per_clip=2
 
     def test_dedup_keeps_highest_scored_first(self):
         from rag.query import deduplicate_results
@@ -105,7 +124,7 @@ class TestDeduplicate:
                 {"clip_id": 6669, "source": "transcript"},
                 {"clip_id": 6669, "source": "minutes"},
                 {"clip_id": 6669, "source": "agenda"},
-                {"clip_id": 6669, "source": "transcript"},
+                {"clip_id": 6669, "source": "facts"},
             ]],
             "distances": [[0.5, 0.1, 0.3, 0.4]],  # lower distance = better
         }
@@ -129,7 +148,7 @@ class TestDeduplicate:
             ]],
             "distances": [[0.1, 0.2]],
         }
-        deduped = deduplicate_results(results, max_per_clip=3)
+        deduped = deduplicate_results(results, max_per_clip=4)
         assert len(deduped["documents"]) == 2
 
 
@@ -196,7 +215,7 @@ class TestBuildSynthesisPrompt:
             }],
         )
         user_msg = next(m for m in messages if m["role"] == "user")
-        assert "60" in user_msg["content"]  # timestamp should appear
+        assert "1:00-2:00" in user_msg["content"]  # timestamp should appear as MM:SS
 
     def test_system_prompt_instructs_citation(self):
         from rag.query import build_synthesis_messages

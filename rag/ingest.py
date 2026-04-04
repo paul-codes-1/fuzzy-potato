@@ -57,13 +57,126 @@ def chunk_summary(summary_text: str, clip_id: int, date: str, meeting_body: str)
 
         text = f"{section_type}\n{body}" if body else section_type
 
-        chunks.append({
+        chunk = {
             "text": text,
             "clip_id": clip_id,
             "date": date,
             "meeting_body": meeting_body,
             "source": "summary",
             "section_type": section_type,
+        }
+
+        # Parse [timestamp: MM:SS] for video deep-linking
+        time_match = re.search(r'\[timestamp:\s*(\d+):(\d+)\]', text)
+        if time_match:
+            chunk["start_time"] = int(time_match.group(1)) * 60 + int(time_match.group(2))
+
+        chunks.append(chunk)
+
+    return chunks
+
+
+def chunk_extracted_facts(facts: dict, clip_id: int, date: str, meeting_body: str) -> list[dict]:
+    """Convert extracted_facts.json into searchable text chunks for RAG.
+
+    Creates one chunk per category (votes, financial, agenda items, etc.)
+    with structured text that embeds well for semantic search.
+    """
+    if not facts:
+        return []
+
+    chunks = []
+
+    # Votes chunk — precise vote data is critical for retrieval
+    votes = facts.get("motions_and_votes", [])
+    if votes:
+        lines = []
+        for v in votes:
+            line = f"{v.get('identifier', 'Motion')}: {v.get('description', '')}"
+            line += f" — {v.get('outcome', 'unknown')}"
+            if v.get("ayes") is not None:
+                line += f" (Ayes: {v['ayes']}, Nays: {v.get('nays', 0)})"
+            if v.get("votes_against"):
+                line += f" Opposed: {', '.join(v['votes_against'])}"
+            if v.get("motion_by"):
+                line += f" Motion by {v['motion_by']}"
+            lines.append(line)
+        chunks.append({
+            "text": "Votes and Decisions\n" + "\n".join(lines),
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "votes",
+        })
+
+    # Financial chunk
+    financial = facts.get("financial_items", [])
+    if financial:
+        lines = []
+        for f_item in financial:
+            line = f"{f_item.get('amount', '?')}: {f_item.get('description', '')}"
+            if f_item.get("identifier"):
+                line += f" ({f_item['identifier']})"
+            if f_item.get("vendor_or_recipient"):
+                line += f" — {f_item['vendor_or_recipient']}"
+            lines.append(line)
+        chunks.append({
+            "text": "Financial Items\n" + "\n".join(lines),
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "financial",
+        })
+
+    # Agenda items chunk(s) — split if many items
+    agenda_items = facts.get("agenda_items", [])
+    if agenda_items:
+        lines = []
+        for item in agenda_items:
+            line = f"{item.get('title', 'Item')}"
+            if item.get("identifier"):
+                line += f" ({item['identifier']})"
+            line += f": {item.get('summary', '')}"
+            if item.get("outcome"):
+                line += f" — {item['outcome']}"
+            lines.append(line)
+        chunks.append({
+            "text": "Agenda Items\n" + "\n".join(lines),
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "agenda_items",
+        })
+
+    # Public comments
+    comments = facts.get("public_comments", [])
+    if comments:
+        lines = []
+        for c in comments:
+            speaker = c.get("speaker", "Unknown speaker")
+            lines.append(f"{speaker} on {c.get('topic', '?')}: {c.get('summary', '')}")
+        chunks.append({
+            "text": "Public Comments\n" + "\n".join(lines),
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "public_comments",
+        })
+
+    # Attendance (compact, but useful for "was X present?" queries)
+    attendance = facts.get("attendance", {})
+    if attendance.get("present"):
+        text = f"Attendance\nPresent: {', '.join(attendance['present'])}"
+        if attendance.get("absent"):
+            text += f"\nAbsent: {', '.join(attendance['absent'])}"
+        chunks.append({
+            "text": text,
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "attendance",
+        })
+
+    # Contentious items
+    contentious = facts.get("contentious_items", [])
+    if contentious:
+        lines = []
+        for item in contentious:
+            lines.append(f"{item.get('topic', '?')}: {item.get('details', '')}")
+        chunks.append({
+            "text": "Contested Items\n" + "\n".join(lines),
+            "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
+            "source": "facts", "section_type": "contentious",
         })
 
     return chunks
@@ -215,8 +328,8 @@ def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body
 
 
 def chunk_document(text: str, clip_id: int, date: str, meeting_body: str, source: str,
-                   target_words: int = TARGET_WORDS) -> list[dict]:
-    """Split agenda/minutes text by section boundaries into ~target_words chunks."""
+                   target_words: int = TARGET_WORDS, overlap_words: int = OVERLAP_WORDS) -> list[dict]:
+    """Split agenda/minutes text by section boundaries into ~target_words chunks with overlap."""
     if not text.strip():
         return []
 
@@ -224,10 +337,27 @@ def chunk_document(text: str, clip_id: int, date: str, meeting_body: str, source
     section_pattern = r'(?:^|\n)(?=[IVX]+\.\s|\d+\.\s|[A-Z][A-Z ]+\n)'
     raw_sections = re.split(section_pattern, text)
 
+    def _overlap_text(t: str) -> str:
+        """Return the trailing ~overlap_words of text for context carryover."""
+        words = t.split()
+        if len(words) <= overlap_words:
+            return t
+        return " ".join(words[-overlap_words:])
+
+    def _make_chunk(t: str) -> dict:
+        return {
+            "text": t.strip(),
+            "clip_id": clip_id,
+            "date": date,
+            "meeting_body": meeting_body,
+            "source": source,
+        }
+
     # Merge small sections and split large ones to stay near target_words
     chunks = []
     current_text = ""
     current_word_count = 0
+    prev_overlap = ""
 
     for section in raw_sections:
         section = section.strip()
@@ -242,19 +372,14 @@ def chunk_document(text: str, clip_id: int, date: str, meeting_body: str, source
         else:
             # Emit current buffer if non-empty
             if current_text.strip():
-                chunks.append({
-                    "text": current_text.strip(),
-                    "clip_id": clip_id,
-                    "date": date,
-                    "meeting_body": meeting_body,
-                    "source": source,
-                })
+                chunks.append(_make_chunk(current_text))
+                prev_overlap = _overlap_text(current_text)
 
             # If this section alone exceeds target, split it by paragraphs
             if section_words > target_words:
                 paragraphs = section.split('\n')
-                current_text = ""
-                current_word_count = 0
+                current_text = prev_overlap + ("\n" if prev_overlap else "")
+                current_word_count = len(prev_overlap.split()) if prev_overlap else 0
                 for para in paragraphs:
                     para = para.strip()
                     if not para:
@@ -265,28 +390,17 @@ def chunk_document(text: str, clip_id: int, date: str, meeting_body: str, source
                         current_word_count += para_words
                     else:
                         if current_text.strip():
-                            chunks.append({
-                                "text": current_text.strip(),
-                                "clip_id": clip_id,
-                                "date": date,
-                                "meeting_body": meeting_body,
-                                "source": source,
-                            })
-                        current_text = para
-                        current_word_count = para_words
+                            chunks.append(_make_chunk(current_text))
+                            prev_overlap = _overlap_text(current_text)
+                        current_text = prev_overlap + ("\n" if prev_overlap else "") + para
+                        current_word_count = len(prev_overlap.split()) + para_words
             else:
-                current_text = section
-                current_word_count = section_words
+                current_text = (prev_overlap + "\n\n" if prev_overlap else "") + section
+                current_word_count = (len(prev_overlap.split()) if prev_overlap else 0) + section_words
 
     # Emit remaining text
     if current_text.strip():
-        chunks.append({
-            "text": current_text.strip(),
-            "clip_id": clip_id,
-            "date": date,
-            "meeting_body": meeting_body,
-            "source": source,
-        })
+        chunks.append(_make_chunk(current_text))
 
     return chunks
 
@@ -296,8 +410,13 @@ def chunk_document(text: str, clip_id: int, date: str, meeting_body: str, source
 # ============================================================
 
 def _chunk_id(chunk: dict, index: int) -> str:
-    """Generate a deterministic unique ID for a chunk."""
-    key = f"{chunk['clip_id']}_{chunk['source']}_{chunk.get('section_type', '')}_{index}"
+    """Generate a deterministic unique ID for a chunk.
+
+    Uses clip_id + source + first 200 chars of text to avoid collisions
+    across sources and re-ingestion with different batch boundaries.
+    """
+    text_prefix = chunk.get("text", "")[:200]
+    key = f"{chunk['clip_id']}_{chunk['source']}_{text_prefix}"
     return hashlib.md5(key.encode()).hexdigest()
 
 
@@ -409,12 +528,19 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
 # ============================================================
 
 def ingest_clip(clip_id: int, output_dir, collection, openai_client,
-                skip_if_ingested: bool = False, verbose: bool = False):
-    """Ingest a single clip: read its files, chunk, embed, and store."""
+                skip_if_ingested: bool = False, rag_state: dict = None,
+                verbose: bool = False):
+    """Ingest a single clip: read its files, chunk, embed, store, and update state.
+
+    Args:
+        rag_state: Pre-loaded RAG state dict. If provided, avoids re-reading
+                   rag_state.json on every call. State is updated in-place and
+                   saved to disk after successful ingestion.
+    """
     output_dir = Path(output_dir)
 
     if skip_if_ingested:
-        state = load_rag_state(output_dir)
+        state = rag_state if rag_state is not None else load_rag_state(output_dir)
         if clip_id in state["ingested_clips"]:
             if verbose:
                 print(f"  Skipping clip {clip_id} (already ingested)")
@@ -437,7 +563,24 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
 
     all_chunks = []
 
-    # 1. Minutes chunks (highest priority — structured ground-truth source)
+    # 0a. Summary chunks (AI-structured narrative)
+    summary_file = files.get("summary_txt")
+    if summary_file:
+        summary_path = clip_dir / summary_file
+        if summary_path.exists():
+            summary_text = summary_path.read_text()
+            all_chunks.extend(chunk_summary(summary_text, clip_id, date, meeting_body))
+
+    # 0b. Extracted facts chunks (structured data — votes, amounts, names)
+    facts_file = files.get("extracted_facts")
+    if facts_file:
+        facts_path = clip_dir / facts_file
+        if facts_path.exists():
+            with open(facts_path) as f:
+                facts_data = json.load(f)
+            all_chunks.extend(chunk_extracted_facts(facts_data, clip_id, date, meeting_body))
+
+    # 1. Minutes chunks (official ground-truth source)
     minutes_file = files.get("minutes_txt")
     if minutes_file:
         minutes_path = clip_dir / minutes_file
@@ -466,6 +609,12 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
         store_chunks(all_chunks, collection, openai_client)
         if verbose:
             print(f"  Ingested clip {clip_id}: {len(all_chunks)} chunks")
+
+    # Update and persist RAG state
+    state = rag_state if rag_state is not None else load_rag_state(output_dir)
+    if clip_id not in state["ingested_clips"]:
+        state["ingested_clips"].append(clip_id)
+        save_rag_state(state, output_dir)
 
 
 # ============================================================
@@ -569,10 +718,6 @@ def main():
 
     if args.clip:
         ingest_clip(args.clip, output_dir, collection, openai_client, verbose=True)
-        state = load_rag_state(output_dir)
-        if args.clip not in state["ingested_clips"]:
-            state["ingested_clips"].append(args.clip)
-            save_rag_state(state, output_dir)
         print("Done.")
         return
 
@@ -602,10 +747,7 @@ def main():
         print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
         try:
             ingest_clip(clip_id, output_dir, collection, openai_client,
-                        skip_if_ingested=args.new, verbose=True)
-            if clip_id not in state["ingested_clips"]:
-                state["ingested_clips"].append(clip_id)
-                save_rag_state(state, output_dir)
+                        skip_if_ingested=args.new, rag_state=state, verbose=True)
         except Exception as e:
             print(f"  ERROR: {e}")
             failed.append(clip_id)

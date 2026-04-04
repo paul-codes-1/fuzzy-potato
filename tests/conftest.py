@@ -128,7 +128,6 @@ SAMPLE_METADATA = {
         "agenda_pdf": "agenda_6669.pdf",
         "agenda_txt": "agenda_6669.txt",
         "summary_txt": "summary.txt",
-        "summary_html": "summary.html",
         "minutes_txt": "2026-01-22_minutes_Urban_County_Council.txt",
     },
     "processed_at": "2026-01-31T22:04:02.617983",
