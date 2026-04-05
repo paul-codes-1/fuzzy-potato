@@ -2380,9 +2380,12 @@ Examples:
             seg_file = files.get("transcript_segments")
             txt_file = files.get("transcript")
             if seg_file and (clip_dir / seg_file).exists():
-                with open(clip_dir / seg_file) as f:
-                    segments = json.load(f)
-                transcript = " ".join(s["text"] for s in segments)
+                try:
+                    with open(clip_dir / seg_file) as f:
+                        segments = json.load(f)
+                    transcript = " ".join(s["text"] for s in segments)
+                except (json.JSONDecodeError, KeyError):
+                    segments = None
             elif txt_file and (clip_dir / txt_file).exists():
                 transcript = (clip_dir / txt_file).read_text()
 

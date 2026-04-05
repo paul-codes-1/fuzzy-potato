@@ -1,0 +1,106 @@
+{
+  "meeting_info": {
+    "date": null,
+    "time": null,
+    "body": "Lexington-Fayette Urban County Government",
+    "presiding_officer": "Vice Mayor",
+    "location": null
+  },
+  "attendance": {
+    "present": [
+      "Council Member Baxter",
+      "Judge Hanna",
+      "Council Member Curtis",
+      "Council Member Ellinger",
+      "Council Member Lynch",
+      "Council Member Combs"
+    ],
+    "absent": [],
+    "late": []
+  },
+  "motions_and_votes": [
+    {
+      "identifier": "Resolution 2026-2",
+      "description": "Approval of highway safety targets for 2026",
+      "motion_by": "Judge Hanna",
+      "second_by": "Council Member Baxter",
+      "outcome": "passed",
+      "vote_type": "voice",
+      "ayes": 0,
+      "nays": 0,
+      "abstentions": 0,
+      "votes_for": [],
+      "votes_against": [],
+      "conditions": null,
+      "transcript_approx_time": "120:00"
+    },
+    {
+      "identifier": "Resolution 2026-3",
+      "description": "Adoption of Lexington Regional Transit Asset Condition Targets for Calendar Year 2026",
+      "motion_by": "Council Member Combs",
+      "second_by": "Council Member Curtis",
+      "outcome": "passed",
+      "vote_type": "voice",
+      "ayes": 0,
+      "nays": 0,
+      "abstentions": 0,
+      "votes_for": [],
+      "votes_against": [],
+      "conditions": null,
+      "transcript_approx_time": "180:00"
+    }
+  ],
+  "financial_items": [],
+  "public_comments": [],
+  "agenda_items": [
+    {
+      "identifier": null,
+      "title": "Highway Safety Targets for 2026",
+      "type": "resolution",
+      "summary": "Discussion on setting highway safety targets for 2026, including fatalities and serious injuries, with a goal of zero by 2050.",
+      "key_speakers": [
+        "Mr. Aviglia",
+        "Council Member Baxter"
+      ],
+      "outcome": "approved",
+      "transcript_approx_time": "60:00"
+    },
+    {
+      "identifier": null,
+      "title": "Lexington Regional Transit Asset Condition Targets for 2026",
+      "type": "resolution",
+      "summary": "Discussion on the condition of transit assets, including revenue and non-revenue vehicles, and facilities, with targets set for 2026.",
+      "key_speakers": [
+        "Mr. Aviglia",
+        "Fred"
+      ],
+      "outcome": "approved",
+      "transcript_approx_time": "150:00"
+    },
+    {
+      "identifier": null,
+      "title": "Governor's Recommended State Highway Plan",
+      "type": "discussion",
+      "summary": "Review and discussion of the Governor's recommended state highway plan and regional highway project priorities, including projects in Fayette and Jessamine counties.",
+      "key_speakers": [
+        "Mr. Aviglia",
+        "Kelly"
+      ],
+      "outcome": "informational",
+      "transcript_approx_time": "210:00"
+    },
+    {
+      "identifier": null,
+      "title": "Federal Transportation Reauthorization",
+      "type": "discussion",
+      "summary": "Discussion on the upcoming expiration of the IIJA and the introduction of the Basics Act, which proposes changes to federal transportation funding and planning.",
+      "key_speakers": [
+        "Mr. Aviglia"
+      ],
+      "outcome": "informational",
+      "transcript_approx_time": "300:00"
+    }
+  ],
+  "appointments": [],
+  "contentious_items": []
+}

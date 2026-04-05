@@ -416,7 +416,7 @@ def _chunk_id(chunk: dict, index: int) -> str:
     across sources and re-ingestion with different batch boundaries.
     """
     text_prefix = chunk.get("text", "")[:200]
-    key = f"{chunk['clip_id']}_{chunk['source']}_{text_prefix}"
+    key = f"{chunk['clip_id']}_{chunk['source']}_{index}_{text_prefix}"
     return hashlib.md5(key.encode()).hexdigest()
 
 
@@ -451,7 +451,7 @@ def _embed_single(text: str, openai_client) -> list[float]:
             )
             return resp.data[0].embedding
         except Exception as e:
-            if "maximum context length" in str(e):
+            if "maximum context length" in str(e) or "maximum input length" in str(e):
                 limit = limit // 2  # halve the limit and retry
             else:
                 raise
@@ -472,7 +472,7 @@ def _embed_batch(texts: list[str], openai_client) -> list[list[float]]:
         )
         return [item.embedding for item in response.data]
     except Exception as e:
-        if "maximum context length" in str(e):
+        if "maximum context length" in str(e) or "maximum input length" in str(e):
             # Batch too large or single text too long — embed one at a time
             return [_embed_single(text, openai_client) for text in texts]
         else:
