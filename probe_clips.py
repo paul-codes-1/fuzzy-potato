@@ -2,15 +2,21 @@
 """Probe all clip IDs to find available clips without downloading."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GRANICUS_HOST = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
 
 
 def probe_clip(clip_id: int) -> dict | None:
     """Check if a clip exists and get its title without downloading."""
-    url = f"https://lfucg.granicus.com/player/clip/{clip_id}?view_id=14&redirect=true"
+    url = f"https://{GRANICUS_HOST}/player/clip/{clip_id}?view_id=14&redirect=true"
 
     try:
         result = subprocess.run(

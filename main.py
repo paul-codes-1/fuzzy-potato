@@ -72,6 +72,9 @@ class LFUCGPipeline:
         # First clip ID for auto-processing (from environment)
         self.first_clip_id = int(os.getenv("FIRST_CLIP_ID", "6669"))
 
+        # Granicus host (configurable via environment)
+        self.granicus_host = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+
         # Set up OpenAI client with timeout for large file uploads
         api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -123,15 +126,15 @@ class LFUCGPipeline:
 
     def clip_url(self, clip_id: int) -> str:
         """Generate Granicus clip URL"""
-        return f"https://lfucg.granicus.com/player/clip/{clip_id}?view_id={self.view_id}&redirect=true"
+        return f"https://{self.granicus_host}/player/clip/{clip_id}?view_id={self.view_id}&redirect=true"
 
     def agenda_url(self, clip_id: int) -> str:
         """Generate Granicus agenda PDF URL"""
-        return f"https://lfucg.granicus.com/AgendaViewer.php?view_id={self.view_id}&clip_id={clip_id}"
+        return f"https://{self.granicus_host}/AgendaViewer.php?view_id={self.view_id}&clip_id={clip_id}"
 
     def minutes_url(self, clip_id: int) -> str:
         """Generate Granicus minutes URL"""
-        return f"https://lfucg.granicus.com/MinutesViewer.php?view_id={self.view_id}&clip_id={clip_id}"
+        return f"https://{self.granicus_host}/MinutesViewer.php?view_id={self.view_id}&clip_id={clip_id}"
 
     def sanitize_filename(self, title: str) -> str:
         """Sanitize title for use as filename"""
@@ -184,7 +187,7 @@ class LFUCGPipeline:
 
     def scrape_available_clips(self) -> List[int]:
         """Scrape all available clip IDs from Granicus viewer page"""
-        url = f"https://lfucg.granicus.com/ViewPublisher.php?view_id={self.view_id}"
+        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={self.view_id}"
 
         self.log(f"Scraping clips from {url}")
 

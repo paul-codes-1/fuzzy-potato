@@ -8,7 +8,8 @@ from collections import defaultdict
 from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
 from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT
 
-GRANICUS_URL_TEMPLATE = "https://lfucg.granicus.com/player/clip/{clip_id}?view_id=14&entrytime={timestamp}"
+GRANICUS_HOST = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+GRANICUS_URL_TEMPLATE = f"https://{GRANICUS_HOST}/player/clip/{{clip_id}}?view_id=14&entrytime={{timestamp}}"
 DEFAULT_MODEL = "gpt-4o"
 MAX_HISTORY_PAIRS = 10
 
