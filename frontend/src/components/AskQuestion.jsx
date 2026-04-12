@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useI18n } from '../i18n/I18nProvider'
+import { useAnnounce } from './A11yAnnouncer'
+import SaveSearchButton from './SaveSearchButton'
 
-function ChatLFUCGLogo() {
-  return <span className="chatlfucg-logo" role="img" aria-label="ChatLFUCG logo">🐴</span>
+function ChatLogo() {
+  return <span className="chat-logo" role="img" aria-label="Chat logo">🏛️</span>
 }
 
 function formatTimestamp(seconds) {
@@ -39,6 +42,8 @@ function SourceCard({ source }) {
 }
 
 export default function AskQuestion() {
+  const { t, locale } = useI18n()
+  const announce = useAnnounce()
   const [question, setQuestion] = useState('')
   const [meetingBody, setMeetingBody] = useState('')
   const [dateAfter, setDateAfter] = useState('')
@@ -46,6 +51,20 @@ export default function AskQuestion() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+
+  // Announce state changes to screen readers
+  useEffect(() => {
+    if (loading) announce('Searching meeting records...')
+  }, [loading])
+  useEffect(() => {
+    if (error) announce(`Error: ${error}`, 'assertive')
+  }, [error])
+  useEffect(() => {
+    if (result) {
+      const srcCount = result.sources?.length || 0
+      announce(`Answer loaded with ${srcCount} source${srcCount !== 1 ? 's' : ''}`)
+    }
+  }, [result])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -61,7 +80,8 @@ export default function AskQuestion() {
       if (dateAfter) body.date_after = dateAfter
       if (dateBefore) body.date_before = dateBefore
 
-      const response = await fetch('/api/ask', {
+      const langParam = locale && locale !== 'en' ? `?lang=${locale}` : ''
+      const response = await fetch(`/api/ask${langParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -83,54 +103,54 @@ export default function AskQuestion() {
   return (
     <div className="container ask-container">
       <div className="ask-header">
-        <ChatLFUCGLogo />
-        <h2>ChatLFUCG</h2>
-        <p>Ask questions about Lexington city council meetings and get AI-powered answers with citations.</p>
+        <ChatLogo />
+        <h2>{t('ask.title')}</h2>
+        <p>{t('ask.description')}</p>
       </div>
 
       <div className="ask-coverage-note">
-        <strong>Coverage note:</strong> The archive spans August 2007 to present with no monthly gaps,
-        but only about 10% of meetings have full transcripts so far. Results are strongest for late 2007,
-        late 2019, and August 2025 onward. We're working to transcribe the rest — if you'd like to help
-        cover the cost of AI transcription for the remaining ~2,000 meetings,{' '}
+        <strong>{t('ask.coverageNote')}</strong> {t('ask.coverageText')}{' '}
+        {t('ask.coverageCost')}{' '}
         <a href="https://github.com/paul-codes-1/fuzzy-potato/" target="_blank" rel="noopener noreferrer">
-          get in touch on GitHub
+          {t('ask.coverageHelp')}
         </a>.
       </div>
 
-      <form onSubmit={handleSubmit} className="ask-form">
+      <form onSubmit={handleSubmit} className="ask-form" aria-label="Ask a question about meeting records">
         <div className="ask-input-row">
+          <label htmlFor="ask-question-input" className="sr-only">Your question</label>
           <input
+            id="ask-question-input"
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask a question about Lexington city meetings..."
+            placeholder={t('ask.placeholder')}
             className="ask-input"
             disabled={loading}
           />
           <button type="submit" className="ask-button" disabled={loading || !question.trim()}>
-            {loading ? 'Searching...' : 'Ask'}
+            {loading ? t('ask.searching') : t('ask.askButton')}
           </button>
         </div>
 
         <div className="ask-filters">
           <label className="ask-filter">
-            <span id="meeting-body-label">Meeting Body</span>
+            <span id="meeting-body-label">{t('filters.meetingBody')}</span>
             <select
               value={meetingBody}
               onChange={(e) => setMeetingBody(e.target.value)}
               aria-labelledby="meeting-body-label"
               disabled={loading}
             >
-              <option value="">All</option>
-              <option value="Council">Council</option>
-              <option value="Committee">Committee</option>
-              <option value="Commission">Commission</option>
-              <option value="Board">Board</option>
+              <option value="">{t('filters.all')}</option>
+              <option value="Council">{t('filters.council')}</option>
+              <option value="Committee">{t('filters.committee')}</option>
+              <option value="Commission">{t('filters.commission')}</option>
+              <option value="Board">{t('filters.board')}</option>
             </select>
           </label>
           <label className="ask-filter">
-            After
+            {t('filters.after')}
             <input
               type="date"
               value={dateAfter}
@@ -139,7 +159,7 @@ export default function AskQuestion() {
             />
           </label>
           <label className="ask-filter">
-            Before
+            {t('filters.before')}
             <input
               type="date"
               value={dateBefore}
@@ -151,27 +171,39 @@ export default function AskQuestion() {
       </form>
 
       {loading && (
-        <div className="ask-loading">
-          <div className="ask-spinner" />
-          <p>Searching meetings and generating answer...</p>
+        <div className="ask-loading" role="status" aria-live="polite">
+          <div className="ask-spinner" aria-hidden="true" />
+          <p>{t('ask.searchingMeetings')}</p>
         </div>
       )}
 
       {error && (
-        <div className="ask-error">
-          <p>Something went wrong: {error}</p>
+        <div className="ask-error" role="alert">
+          <p>{t('ask.somethingWrong', { error })}</p>
         </div>
       )}
 
       {result && (
         <div className="ask-result">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <SaveSearchButton
+              searchType="rag_ask"
+              queryText={question}
+              label="Save this question"
+              filters={{
+                meeting_body: meetingBody || undefined,
+                date_after: dateAfter || undefined,
+                date_before: dateBefore || undefined,
+              }}
+            />
+          </div>
           <div className="ask-answer">
             <div dangerouslySetInnerHTML={{ __html: simpleMarkdown(result.answer) }} />
           </div>
 
           {result.sources && result.sources.length > 0 && (
             <div className="ask-sources">
-              <h3>Sources ({result.sources.length})</h3>
+              <h3>{t('ask.sources', { count: result.sources.length })}</h3>
               {result.sources.map((source, i) => (
                 <SourceCard key={`${source.clip_id}-${i}`} source={source} />
               ))}

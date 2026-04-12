@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n/I18nProvider'
+
 function TopicFilter({
   meetingBodies,
   selectedBody,
@@ -5,20 +7,22 @@ function TopicFilter({
   sortBy,
   setSortBy
 }) {
+  const { t } = useI18n()
+
   return (
     <div className="filters-container">
       {/* Sort controls */}
       <div className="sort-controls">
-        <label htmlFor="sort-select">Sort by:</label>
+        <label htmlFor="sort-select">{t('filters.sortBy')}</label>
         <select
           id="sort-select"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
-          <option value="date-desc">Newest first</option>
-          <option value="date-asc">Oldest first</option>
-          <option value="title">Title A-Z</option>
+          <option value="date-desc">{t('filters.newestFirst')}</option>
+          <option value="date-asc">{t('filters.oldestFirst')}</option>
+          <option value="title">{t('filters.titleAZ')}</option>
         </select>
       </div>
 
@@ -29,7 +33,7 @@ function TopicFilter({
           onClick={() => setSelectedBody(null)}
           aria-pressed={!selectedBody}
         >
-          All Bodies
+          {t('filters.allBodies')}
         </button>
         {meetingBodies.map(body => (
           <button
@@ -46,7 +50,7 @@ function TopicFilter({
       {/* Active filter indicator */}
       {selectedBody && (
         <div className="active-filters">
-          <span>Filtering by:</span>
+          <span>{t('filters.filteringBy')}</span>
           <span className="active-filter-tag">
             {selectedBody}
             <button
@@ -60,7 +64,7 @@ function TopicFilter({
             className="clear-filters"
             onClick={() => setSelectedBody(null)}
           >
-            Clear all
+            {t('filters.clearAll')}
           </button>
         </div>
       )}

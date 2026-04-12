@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { I18nProvider } from '../../i18n/I18nProvider'
+import { AnnounceProvider } from '../A11yAnnouncer'
 import AskQuestion from '../AskQuestion'
+
+const ROUTER_FUTURE_FLAGS = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+}
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -10,8 +17,12 @@ global.fetch = mockFetch
 
 function renderAskQuestion() {
   return render(
-    <MemoryRouter>
-      <AskQuestion />
+    <MemoryRouter future={ROUTER_FUTURE_FLAGS}>
+      <I18nProvider>
+        <AnnounceProvider>
+          <AskQuestion />
+        </AnnounceProvider>
+      </I18nProvider>
     </MemoryRouter>
   )
 }
@@ -89,7 +100,7 @@ describe('AskQuestion', () => {
             meeting_body: 'Council',
             timestamp: 120,
             excerpt: 'Zoning ordinance passed...',
-            granicus_url: 'https://lfucg.granicus.com/player/clip/6669?view_id=14&entrytime=120',
+            granicus_url: 'https://example.granicus.com/player/clip/6669?view_id=14&entrytime=120',
           },
         ],
         chunks_retrieved: 5,
@@ -122,7 +133,7 @@ describe('AskQuestion', () => {
             meeting_body: 'Council',
             timestamp: 120,
             excerpt: 'Some excerpt...',
-            granicus_url: 'https://lfucg.granicus.com/player/clip/6669?view_id=14&entrytime=120',
+            granicus_url: 'https://example.granicus.com/player/clip/6669?view_id=14&entrytime=120',
           },
         ],
         chunks_retrieved: 3,
@@ -135,7 +146,7 @@ describe('AskQuestion', () => {
 
     await waitFor(() => {
       const timestampLink = screen.getByRole('link', { name: /2:00/i })
-      expect(timestampLink).toHaveAttribute('href', 'https://lfucg.granicus.com/player/clip/6669?view_id=14&entrytime=120')
+      expect(timestampLink).toHaveAttribute('href', 'https://example.granicus.com/player/clip/6669?view_id=14&entrytime=120')
     })
   })
 

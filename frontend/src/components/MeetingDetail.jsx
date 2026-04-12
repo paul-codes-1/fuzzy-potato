@@ -1,6 +1,9 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
+import { MeetingDiffTab } from './MeetingDiff'
+
+const GRANICUS_HOST = import.meta.env.VITE_GRANICUS_HOST || ''
 
 // Format seconds to MM:SS or HH:MM:SS
 function formatTimestamp(seconds) {
@@ -305,17 +308,18 @@ function MeetingDetail() {
     if (transcript || meeting.files?.transcript) result.push({ id: 'transcript', label: 'Transcript' })
     if (agenda || meeting.files?.agenda_txt) result.push({ id: 'agenda', label: 'Agenda' })
     if (minutes || meeting.files?.minutes_txt) result.push({ id: 'minutes', label: 'Official Minutes' })
+    result.push({ id: 'changes', label: 'Changes' })
     return result
   }, [extractedFacts, transcript, agenda, minutes, meeting])
 
   if (loading) {
-    return <div className="loading">Loading meeting details...</div>
+    return <div className="loading" role="status" aria-live="polite">Loading meeting details...</div>
   }
 
   if (error || !meeting) {
     return (
-      <div className="empty-state">
-        <h3>Meeting not found</h3>
+      <div className="empty-state" role="alert">
+        <h2>Meeting not found</h2>
         <p>{error || 'The requested meeting could not be loaded.'}</p>
         <Link to="/">Back to all meetings</Link>
       </div>
@@ -396,14 +400,17 @@ function MeetingDetail() {
       {/* Tabbed content viewer */}
       {tabs.length > 0 && (
         <div className="content-viewer">
-          <div className="content-tabs" role="tablist">
+          <div className="content-tabs" role="tablist" aria-label="Meeting content views">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 role="tab"
+                id={`tab-${tab.id}`}
                 aria-selected={currentTab === tab.id}
+                aria-controls={`tabpanel-${tab.id}`}
                 className={`content-tab ${currentTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
+                tabIndex={currentTab === tab.id ? 0 : -1}
               >
                 {tab.label}
               </button>
@@ -419,7 +426,7 @@ function MeetingDetail() {
             </div>
           )}
 
-          <div className="content-panel" role="tabpanel">
+          <div className="content-panel" role="tabpanel" id={`tabpanel-${currentTab}`} aria-labelledby={`tab-${currentTab}`}>
             {currentTab === 'overview' && extractedFacts && (
               <div className="meeting-overview">
                 {/* Meeting Info */}
@@ -684,6 +691,10 @@ function MeetingDetail() {
                 )}
               </div>
             )}
+
+            {currentTab === 'changes' && (
+              <MeetingDiffTab clipId={clipId} />
+            )}
           </div>
         </div>
       )}
@@ -706,7 +717,7 @@ function MeetingDetail() {
         </h2>
         <p className="video-fallback-link">
           <a
-            href={`https://lfucg.granicus.com/player/clip/${clipId}?view_id=14${videoStartTime ? `&entrytime=${videoStartTime}` : ''}`}
+            href={`https://${GRANICUS_HOST}/player/clip/${clipId}?view_id=14${videoStartTime ? `&entrytime=${videoStartTime}` : ''}`}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -723,18 +734,19 @@ function MeetingDetail() {
         </p>
         <div className="video-container">
           {videoLoading && (
-            <div className="video-loading-overlay">
-              <div className="video-loading-spinner"></div>
+            <div className="video-loading-overlay" role="status" aria-live="polite">
+              <div className="video-loading-spinner" aria-hidden="true"></div>
               <span>Loading video at {formatTimestamp(videoStartTime)}...</span>
             </div>
           )}
           <iframe
+            title={`Video player for ${meeting.title || 'meeting'}`}
             width="100%"
             height="100%"
             frameBorder="0"
             allowFullScreen
             onLoad={() => setVideoLoading(false)}
-            src={`//lfucg.granicus.com/player/clip/${clipId}?view_id=14&redirect=true&embed=1${videoStartTime ? `&entrytime=${videoStartTime}&autostart=1` : '&autostart=0'}`}
+            src={`//${GRANICUS_HOST}/player/clip/${clipId}?view_id=14&redirect=true&embed=1${videoStartTime ? `&entrytime=${videoStartTime}&autostart=1` : '&autostart=0'}`}
           />
         </div>
       </div>

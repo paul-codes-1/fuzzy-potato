@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 
 export function useChat() {
+  const { locale } = useI18n()
   const [messages, setMessages] = useState([])
   const [filters, setFilters] = useState({
     meeting_body: '',
@@ -35,7 +37,8 @@ export function useChat() {
       if (filters.date_after) body.date_after = filters.date_after
       if (filters.date_before) body.date_before = filters.date_before
 
-      const response = await fetch('/api/chat', {
+      const langParam = locale && locale !== 'en' ? `?lang=${locale}` : ''
+      const response = await fetch(`/api/chat${langParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -61,7 +64,7 @@ export function useChat() {
     } finally {
       setLoading(false)
     }
-  }, [filters, modelProvider])
+  }, [filters, modelProvider, locale])
 
   const clearChat = useCallback(() => {
     setMessages([])

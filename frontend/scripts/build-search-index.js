@@ -2,7 +2,7 @@
 /**
  * Build FlexSearch index from transcript, minutes, and agenda files.
  *
- * Reads all transcript, minutes, and agenda .txt files from lfucg_output/clips/
+ * Reads all transcript, minutes, and agenda .txt files from meetings_output/clips/
  * and creates chunked FlexSearch indexes for full-text search.
  *
  * Usage: node scripts/build-search-index.js
@@ -16,9 +16,9 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const CLIPS_DIR = path.resolve(__dirname, '../../lfucg_output/clips')
+const CLIPS_DIR = path.resolve(__dirname, '../../meetings_output/clips')
 const OUTPUT_DIR = path.resolve(__dirname, '../public/data')
-const INDEX_JSON = path.resolve(__dirname, '../../lfucg_output/index.json')
+const INDEX_JSON = path.resolve(__dirname, '../../meetings_output/index.json')
 
 // Target chunk size in bytes (~1.5MB to stay comfortably under 2MB)
 const TARGET_CHUNK_SIZE = 1.5 * 1024 * 1024

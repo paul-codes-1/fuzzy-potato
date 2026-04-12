@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import ChatLFUCG from '../ChatLFUCG'
+import { I18nProvider } from '../../i18n/I18nProvider'
+import { AnnounceProvider } from '../A11yAnnouncer'
+import ChatMeetings from '../ChatMeetings'
+
+const ROUTER_FUTURE_FLAGS = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+}
 
 // jsdom doesn't implement scrollIntoView
 Element.prototype.scrollIntoView = vi.fn()
@@ -12,13 +19,17 @@ global.fetch = mockFetch
 
 function renderChat() {
   return render(
-    <MemoryRouter>
-      <ChatLFUCG />
+    <MemoryRouter future={ROUTER_FUTURE_FLAGS}>
+      <I18nProvider>
+        <AnnounceProvider>
+          <ChatMeetings />
+        </AnnounceProvider>
+      </I18nProvider>
     </MemoryRouter>
   )
 }
 
-describe('ChatLFUCG', () => {
+describe('ChatMeetings', () => {
   beforeEach(() => {
     mockFetch.mockReset()
   })
@@ -29,7 +40,7 @@ describe('ChatLFUCG', () => {
 
   it('renders empty state with suggested questions', () => {
     renderChat()
-    expect(screen.getByText(/ask questions about lexington/i)).toBeInTheDocument()
+    expect(screen.getByText(/ask questions about city council/i)).toBeInTheDocument()
     // Should have suggested question buttons
     expect(screen.getByText(/budget changes/i)).toBeInTheDocument()
     expect(screen.getByText(/zoning approvals/i)).toBeInTheDocument()
@@ -120,7 +131,7 @@ describe('ChatLFUCG', () => {
 
     // Messages should be cleared, empty state should return
     await waitFor(() => {
-      expect(screen.getByText(/ask questions about lexington/i)).toBeInTheDocument()
+      expect(screen.getByText(/ask questions about city council/i)).toBeInTheDocument()
     })
     expect(screen.queryByText(/some answer about parks/i)).not.toBeInTheDocument()
   })

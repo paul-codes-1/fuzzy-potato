@@ -1,20 +1,40 @@
 import { useState, useRef, useEffect } from 'react'
 import { useChat } from '../hooks/useChat'
+import { useI18n } from '../i18n/I18nProvider'
+import { useAnnounce } from './A11yAnnouncer'
 import ChatMessage from './ChatMessage'
 import ModelSelector from './ModelSelector'
 
-const SUGGESTED_QUESTIONS = [
-  "What budget changes were approved in 2024?",
-  "How many zoning approvals were there last year?",
-  "What did council say about short-term rentals?",
-  "What infrastructure projects were discussed recently?",
-]
-
-export default function ChatLFUCG() {
+export default function ChatMeetings() {
+  const { t, locale } = useI18n()
+  const announce = useAnnounce()
   const { messages, filters, modelProvider, loading, error,
           sendMessage, setModelProvider, setFilters, clearChat, retry } = useChat()
   const [input, setInput] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+
+  // Announce loading/error/new response to screen readers
+  useEffect(() => {
+    if (loading) announce('Thinking...')
+  }, [loading])
+  useEffect(() => {
+    if (error) announce(`Error: ${error}`, 'assertive')
+  }, [error])
+  useEffect(() => {
+    if (messages.length > 0) {
+      const last = messages[messages.length - 1]
+      if (last.role === 'assistant') {
+        announce('New response received')
+      }
+    }
+  }, [messages.length])
+
+  const SUGGESTED_QUESTIONS = [
+    t('suggestedQuestions.budget'),
+    t('suggestedQuestions.zoning'),
+    t('suggestedQuestions.rentals'),
+    t('suggestedQuestions.infrastructure'),
+  ]
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -41,15 +61,15 @@ export default function ChatLFUCG() {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <h2>ChatLFUCG</h2>
-        <button className="chat-new-btn" onClick={clearChat}>New Chat</button>
+        <h2>{t('chatMeetings.title')}</h2>
+        <button className="chat-new-btn" onClick={clearChat}>{t('chatMeetings.newChat')}</button>
       </div>
 
       {messages.length === 0 && !loading ? (
         <div className="chat-empty-state">
-          <div className="chatlfucg-logo">🐴</div>
-          <h3>ChatLFUCG</h3>
-          <p>Ask questions about Lexington city council meetings, votes, budgets, and more.</p>
+          <div className="chat-logo" aria-hidden="true">🏛️</div>
+          <h3>{t('chatMeetings.emptyTitle')}</h3>
+          <p>{t('chatMeetings.emptyDescription')}</p>
           <div className="chat-suggested-questions">
             {SUGGESTED_QUESTIONS.map((q) => (
               <button
@@ -63,21 +83,21 @@ export default function ChatLFUCG() {
           </div>
         </div>
       ) : (
-        <div className="chat-messages">
+        <div className="chat-messages" role="log" aria-label="Chat conversation" aria-live="polite">
           {messages.map((msg, i) => (
             <ChatMessage key={i} message={msg} />
           ))}
           {loading && (
-            <div className="chat-typing">
-              <div className="chat-typing-dot" />
-              <div className="chat-typing-dot" />
-              <div className="chat-typing-dot" />
+            <div className="chat-typing" role="status" aria-label="Generating response">
+              <div className="chat-typing-dot" aria-hidden="true" />
+              <div className="chat-typing-dot" aria-hidden="true" />
+              <div className="chat-typing-dot" aria-hidden="true" />
             </div>
           )}
           {error && (
-            <div className="chat-error">
+            <div className="chat-error" role="alert">
               <p>{error}</p>
-              <button className="chat-retry-btn" onClick={retry}>Retry</button>
+              <button className="chat-retry-btn" onClick={retry}>{t('chatMeetings.retry')}</button>
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -87,46 +107,51 @@ export default function ChatLFUCG() {
       <div className="chat-input-area">
         <ModelSelector value={modelProvider} onChange={setModelProvider} />
         <div className="chat-input-row">
+          <label htmlFor="chat-message-input" className="sr-only">Chat message</label>
           <textarea
+            id="chat-message-input"
             className="chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about city meetings..."
+            placeholder={t('chatMeetings.placeholder')}
             rows={1}
             disabled={loading}
+            aria-label="Type your question about meeting records"
           />
           <button
             className="chat-send-btn"
             onClick={handleSend}
             disabled={!input.trim() || loading}
           >
-            Send
+            {t('chatMeetings.send')}
           </button>
         </div>
         <button
           className="chat-filters-toggle"
           onClick={() => setShowFilters(!showFilters)}
+          aria-expanded={showFilters}
+          aria-controls="chat-filters-panel"
         >
-          {showFilters ? 'Hide Filters' : 'Filters'}
+          {showFilters ? t('filters.hideFilters') : t('filters.filters')}
         </button>
         {showFilters && (
-          <div className="chat-filters-panel">
+          <div className="chat-filters-panel" id="chat-filters-panel">
             <label>
-              Meeting Body
+              {t('filters.meetingBody')}
               <select
                 value={filters.meeting_body || ''}
                 onChange={(e) => setFilters({ ...filters, meeting_body: e.target.value || undefined })}
               >
-                <option value="">All</option>
-                <option value="Council">Council</option>
-                <option value="Committee">Committee</option>
-                <option value="Commission">Commission</option>
-                <option value="Board">Board</option>
+                <option value="">{t('filters.all')}</option>
+                <option value="Council">{t('filters.council')}</option>
+                <option value="Committee">{t('filters.committee')}</option>
+                <option value="Commission">{t('filters.commission')}</option>
+                <option value="Board">{t('filters.board')}</option>
               </select>
             </label>
             <label>
-              After
+              {t('filters.after')}
               <input
                 type="date"
                 value={filters.date_after || ''}
@@ -134,7 +159,7 @@ export default function ChatLFUCG() {
               />
             </label>
             <label>
-              Before
+              {t('filters.before')}
               <input
                 type="date"
                 value={filters.date_before || ''}

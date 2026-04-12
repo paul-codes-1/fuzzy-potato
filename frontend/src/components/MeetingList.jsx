@@ -1,6 +1,9 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useMeetings } from '../hooks/useMeetings'
 import { useSearch } from '../hooks/useSearch'
+import { useI18n } from '../i18n/I18nProvider'
+import { useAnnounce } from './A11yAnnouncer'
 import SearchBar from './SearchBar'
 import TopicFilter from './TopicFilter'
 
@@ -28,7 +31,7 @@ function HighlightedSnippet({ snippet }) {
 
   return (
     <div className="meeting-card-snippet">
-      <span className="snippet-label">Match found:</span>
+      <span className="snippet-label">{snippet.matchLabel || 'Match found:'}</span>
       <span className="snippet-text">
         {prefix}{before}
         <mark className="snippet-highlight">{match}</mark>
@@ -38,26 +41,15 @@ function HighlightedSnippet({ snippet }) {
   )
 }
 
-function MeetingCard({ meeting, snippet, href, onClick }) {
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'Unknown date'
-    const date = new Date(dateStr + 'T00:00:00')
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
-  }
-
+function MeetingCard({ meeting, snippet, href, onClick, t, formatDate }) {
   const duration = estimateDuration(meeting.transcript_words)
 
   return (
-    <a className="meeting-card" href={href} onClick={onClick} role="article">
+    <a className="meeting-card" href={href} onClick={onClick} role="listitem" aria-label={`${meeting.title}, ${formatDate(meeting.date) || t('meetingList.unknownDate')}`}>
       <div className="meeting-card-header">
-        <div className="meeting-card-date">{formatDate(meeting.date)}</div>
+        <div className="meeting-card-date">{formatDate(meeting.date) || t('meetingList.unknownDate')}</div>
         {duration && (
-          <div className="meeting-card-duration" title="Estimated duration">
+          <div className="meeting-card-duration" title={t('meetingList.estimatedDuration')}>
             {duration}
           </div>
         )}
@@ -76,7 +68,7 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
   )
 }
 
-function Pagination({ currentPage, totalPages, onPageChange }) {
+function Pagination({ currentPage, totalPages, onPageChange, t }) {
   if (totalPages <= 1) return null
 
   // Build page numbers to show
@@ -103,23 +95,26 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
   }
 
   return (
-    <div className="pagination">
+    <nav className="pagination" aria-label="Meeting list pagination">
       <button
         className="pagination-btn"
         disabled={currentPage === 1}
         onClick={() => onPageChange(currentPage - 1)}
+        aria-label={t('pagination.previous')}
       >
-        Previous
+        {t('pagination.previous')}
       </button>
       <div className="pagination-pages">
         {pages.map((page, i) =>
           page === '...' ? (
-            <span key={`ellipsis-${i}`} className="pagination-ellipsis">...</span>
+            <span key={`ellipsis-${i}`} className="pagination-ellipsis" aria-hidden="true">...</span>
           ) : (
             <button
               key={page}
               className={`pagination-page ${page === currentPage ? 'active' : ''}`}
               onClick={() => onPageChange(page)}
+              aria-label={`Page ${page}`}
+              aria-current={page === currentPage ? 'page' : undefined}
             >
               {page}
             </button>
@@ -130,10 +125,11 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
         className="pagination-btn"
         disabled={currentPage === totalPages}
         onClick={() => onPageChange(currentPage + 1)}
+        aria-label={t('pagination.next')}
       >
-        Next
+        {t('pagination.next')}
       </button>
-    </div>
+    </nav>
   )
 }
 
@@ -141,6 +137,8 @@ function MeetingList() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { meetings, loading, error } = useMeetings()
+  const { t, formatDate } = useI18n()
+  const announce = useAnnounce()
   const {
     query,
     setQuery,
@@ -155,6 +153,16 @@ function MeetingList() {
     flexSearchLoaded,
     flexSearchProgress
   } = useSearch(meetings, searchParams, setSearchParams)
+
+  // Announce search result count changes to screen readers
+  useEffect(() => {
+    if (!loading && meetings.length > 0) {
+      const msg = query
+        ? `${filteredMeetings.length} meetings matching "${query}"`
+        : `${filteredMeetings.length} meetings`
+      announce(msg)
+    }
+  }, [filteredMeetings.length, query, loading])
 
   const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
   const totalPages = Math.max(1, Math.ceil(filteredMeetings.length / PER_PAGE))
@@ -179,13 +187,13 @@ function MeetingList() {
   }
 
   if (loading) {
-    return <div className="loading">Loading meetings...</div>
+    return <div className="loading" role="status" aria-live="polite">{t('meetingList.loading')}</div>
   }
 
   if (error) {
     return (
-      <div className="empty-state">
-        <h3>Error loading meetings</h3>
+      <div className="empty-state" role="alert">
+        <h3>{t('meetingList.errorTitle')}</h3>
         <p>{error}</p>
       </div>
     )
@@ -214,25 +222,27 @@ function MeetingList() {
 
       <div className="results-summary container">
         <p>
-          {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''}
-          {query && ` matching "${query}"`}
-          {totalPages > 1 && ` \u2022 Page ${safePage} of ${totalPages}`}
+          {t('meetingList.meetingCount', { count: filteredMeetings.length })}
+          {query && ` ${t('meetingList.matching', { query })}`}
+          {totalPages > 1 && ` \u2022 ${t('meetingList.pageOf', { page: safePage, total: totalPages })}`}
         </p>
       </div>
 
       {filteredMeetings.length === 0 ? (
-        <div className="empty-state">
-          <h3>No meetings found</h3>
-          <p>Try adjusting your search or filters</p>
+        <div className="empty-state" role="status" aria-live="polite">
+          <h2>{t('meetingList.noMeetings')}</h2>
+          <p>{t('meetingList.noMeetingsHint')}</p>
         </div>
       ) : (
         <>
-          <div className="meeting-list container">
+          <div className="meeting-list container" role="list" aria-label="Meeting results">
             {paginatedMeetings.map(meeting => (
               <MeetingCard
                 key={meeting.clip_id}
                 meeting={meeting}
                 snippet={searchSnippets.get(meeting.clip_id)}
+                t={t}
+                formatDate={formatDate}
                 href={
                   query.trim()
                     ? `/meeting/${meeting.clip_id}?highlight=${encodeURIComponent(query.trim())}`
@@ -255,6 +265,7 @@ function MeetingList() {
             currentPage={safePage}
             totalPages={totalPages}
             onPageChange={handlePageChange}
+            t={t}
           />
         </>
       )}
