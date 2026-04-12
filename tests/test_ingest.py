@@ -1,14 +1,13 @@
-"""Tests for rag/ingest.py - Chunking, embedding, and ChromaDB storage."""
+"""Tests for api/ingest.py - Chunking, embedding, and ChromaDB storage."""
 
 import json
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.conftest import (
     SAMPLE_SUMMARY, SAMPLE_SEGMENTS, SAMPLE_AGENDA, SAMPLE_MINUTES,
-    SAMPLE_NOISY_SEGMENTS, SAMPLE_SEGMENTS_WITH_GAPS,
+    SAMPLE_NOISY_SEGMENTS,
 )
 
 
@@ -20,14 +19,14 @@ class TestChunkSummary:
     """Test parsing summary.txt into section-based chunks."""
 
     def test_chunk_summary_splits_on_h2_headers(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         chunks = chunk_summary(SAMPLE_SUMMARY, clip_id=6669, date="2026-01-22", meeting_body="Council")
         # The sample summary has 5 ## sections
         assert len(chunks) == 5
 
     def test_chunk_summary_preserves_section_text(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         chunks = chunk_summary(SAMPLE_SUMMARY, clip_id=6669, date="2026-01-22", meeting_body="Council")
         # First chunk should be Meeting Overview
@@ -35,7 +34,7 @@ class TestChunkSummary:
         assert "Mayor Linda Gorton" in chunks[0]["text"]
 
     def test_chunk_summary_sets_correct_metadata(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         chunks = chunk_summary(SAMPLE_SUMMARY, clip_id=6669, date="2026-01-22", meeting_body="Council")
         for chunk in chunks:
@@ -47,7 +46,7 @@ class TestChunkSummary:
             assert "text" in chunk
 
     def test_chunk_summary_section_types_match_headers(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         chunks = chunk_summary(SAMPLE_SUMMARY, clip_id=6669, date="2026-01-22", meeting_body="Council")
         section_types = [c["section_type"] for c in chunks]
@@ -56,13 +55,13 @@ class TestChunkSummary:
         assert "Public Comments & Citizen Input" in section_types
 
     def test_chunk_summary_empty_summary_returns_empty(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         chunks = chunk_summary("", clip_id=6669, date="2026-01-22", meeting_body="Council")
         assert chunks == []
 
     def test_chunk_summary_no_h2_headers_returns_single_chunk(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         text = "This is a summary with no section headers.\nJust plain text."
         chunks = chunk_summary(text, clip_id=6669, date="2026-01-22", meeting_body="Council")
@@ -78,7 +77,7 @@ class TestCleanSegments:
     """Test filtering out noisy Whisper segments."""
 
     def test_dot_only_segments_removed(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = [
             {"start": 0.0, "end": 1.0, "text": "."},
@@ -92,7 +91,7 @@ class TestCleanSegments:
         assert "Welcome to the meeting." in texts
 
     def test_music_symbol_segments_removed(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = [
             {"start": 0.0, "end": 1.0, "text": "\u266a"},
@@ -105,7 +104,7 @@ class TestCleanSegments:
         assert cleaned[0]["text"] == "Good evening everyone."
 
     def test_repeated_phrase_runs_collapsed(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = [
             {"start": 0.0, "end": 5.0, "text": "Hello everyone."},
@@ -120,7 +119,7 @@ class TestCleanSegments:
         assert of_the_count == 1
 
     def test_non_ascii_gibberish_removed(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = [
             {"start": 0.0, "end": 5.0, "text": "Normal English text here."},
@@ -134,7 +133,7 @@ class TestCleanSegments:
         assert cleaned[1]["text"] == "Back to normal speech here."
 
     def test_normal_speech_preserved(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         cleaned = clean_segments(SAMPLE_SEGMENTS)
         # Most of the sample segments are normal speech — should keep most of them
@@ -142,7 +141,7 @@ class TestCleanSegments:
         assert len(cleaned) >= len(SAMPLE_SEGMENTS) - 1
 
     def test_noisy_segments_fixture_cleaned(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         cleaned = clean_segments(SAMPLE_NOISY_SEGMENTS)
         texts = [s["text"] for s in cleaned]
@@ -161,7 +160,7 @@ class TestCleanSegments:
 
     def test_two_consecutive_duplicates_collapsed(self):
         """Even 2 consecutive identical segments should be collapsed to 1."""
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = [
             {"start": 0.0, "end": 5.0, "text": "Hello everyone."},
@@ -174,7 +173,7 @@ class TestCleanSegments:
         assert thank_you_count == 1
 
     def test_empty_segments_returns_empty(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         assert clean_segments([]) == []
 
@@ -187,14 +186,14 @@ class TestChunkTranscript:
     """Test grouping transcript segments into ~500-word passages with overlap."""
 
     def test_chunk_transcript_groups_segments(self):
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         chunks = chunk_transcript(SAMPLE_SEGMENTS, clip_id=6669, date="2026-01-22", meeting_body="Council")
         # With 9 short segments, should produce at least 1 chunk
         assert len(chunks) >= 1
 
     def test_chunk_transcript_sets_timestamps(self):
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         chunks = chunk_transcript(SAMPLE_SEGMENTS, clip_id=6669, date="2026-01-22", meeting_body="Council")
         for chunk in chunks:
@@ -204,7 +203,7 @@ class TestChunkTranscript:
             assert chunk["end_time"] >= chunk["start_time"]
 
     def test_chunk_transcript_start_matches_first_cleaned_segment(self):
-        from rag.ingest import chunk_transcript, clean_segments
+        from api.ingest import chunk_transcript, clean_segments
 
         chunks = chunk_transcript(SAMPLE_SEGMENTS, clip_id=6669, date="2026-01-22", meeting_body="Council")
         # First chunk should start at the first *cleaned* segment's start time
@@ -213,7 +212,7 @@ class TestChunkTranscript:
         assert chunks[0]["start_time"] == cleaned[0]["start"]
 
     def test_chunk_transcript_sets_correct_metadata(self):
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         chunks = chunk_transcript(SAMPLE_SEGMENTS, clip_id=6669, date="2026-01-22", meeting_body="Council")
         for chunk in chunks:
@@ -223,14 +222,14 @@ class TestChunkTranscript:
             assert chunk["source"] == "transcript"
 
     def test_chunk_transcript_empty_segments_returns_empty(self):
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         chunks = chunk_transcript([], clip_id=6669, date="2026-01-22", meeting_body="Council")
         assert chunks == []
 
     def test_chunk_transcript_respects_word_limit(self):
         """Long transcripts should be split into multiple ~500-word passages."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         # Generate many segments to exceed 500 words
         long_segments = []
@@ -245,7 +244,7 @@ class TestChunkTranscript:
 
     def test_chunk_transcript_overlap_between_passages(self):
         """Adjacent passages should share some overlapping text."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         long_segments = []
         for i in range(100):
@@ -262,7 +261,7 @@ class TestChunkTranscript:
 
     def test_silence_gap_triggers_chunk_boundary(self):
         """A >5s silence gap should trigger a chunk boundary when enough words accumulated."""
-        from rag.ingest import chunk_transcript, MIN_CHUNK_WORDS
+        from api.ingest import chunk_transcript
 
         # Build segments: enough words before the gap, then a gap, then more words
         segments = []
@@ -291,7 +290,7 @@ class TestChunkTranscript:
 
     def test_procedural_phrase_triggers_chunk_boundary(self):
         """Procedural phrases like 'next item' should trigger a boundary."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         segments = []
         t = 0.0
@@ -323,7 +322,7 @@ class TestChunkTranscript:
 
     def test_min_word_threshold_prevents_tiny_chunks(self):
         """Boundaries should not create chunks smaller than MIN_CHUNK_WORDS."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         # Only 3 segments — too few words for MIN_CHUNK_WORDS, so boundary shouldn't trigger
         segments = [
@@ -338,7 +337,7 @@ class TestChunkTranscript:
 
     def test_no_duplicate_final_chunk_when_last_emit_at_end(self):
         """When the last segment triggers an emit, no duplicate overlap chunk should follow."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         # Single huge segment that exceeds target_words
         segments = [
@@ -350,7 +349,7 @@ class TestChunkTranscript:
 
     def test_no_duplicate_when_boundary_fires_at_last_segment(self):
         """When a topic boundary fires at the very last segment, no duplicate."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         segments = []
         t = 0.0
@@ -378,7 +377,7 @@ class TestChunkTranscript:
 
     def test_falls_back_to_word_count_splitting(self):
         """Without boundaries, chunks should split at target_words like before."""
-        from rag.ingest import chunk_transcript
+        from api.ingest import chunk_transcript
 
         # Generate many segments with no gaps or procedural phrases
         segments = []
@@ -400,7 +399,7 @@ class TestChunkDocument:
     """Test splitting agenda/minutes text by section headers."""
 
     def test_chunk_agenda_splits_by_sections(self):
-        from rag.ingest import chunk_document
+        from api.ingest import chunk_document
 
         chunks = chunk_document(SAMPLE_AGENDA, clip_id=6669, date="2026-01-22",
                                 meeting_body="Council", source="agenda")
@@ -409,7 +408,7 @@ class TestChunkDocument:
             assert chunk["source"] == "agenda"
 
     def test_chunk_minutes_splits_by_sections(self):
-        from rag.ingest import chunk_document
+        from api.ingest import chunk_document
 
         chunks = chunk_document(SAMPLE_MINUTES, clip_id=6669, date="2026-01-22",
                                 meeting_body="Council", source="minutes")
@@ -418,7 +417,7 @@ class TestChunkDocument:
             assert chunk["source"] == "minutes"
 
     def test_chunk_document_sets_correct_metadata(self):
-        from rag.ingest import chunk_document
+        from api.ingest import chunk_document
 
         chunks = chunk_document(SAMPLE_AGENDA, clip_id=6669, date="2026-01-22",
                                 meeting_body="Council", source="agenda")
@@ -428,7 +427,7 @@ class TestChunkDocument:
             assert chunk["meeting_body"] == "Council"
 
     def test_chunk_document_empty_text_returns_empty(self):
-        from rag.ingest import chunk_document
+        from api.ingest import chunk_document
 
         chunks = chunk_document("", clip_id=6669, date="2026-01-22",
                                 meeting_body="Council", source="agenda")
@@ -436,7 +435,7 @@ class TestChunkDocument:
 
     def test_chunk_document_respects_word_limit(self):
         """Long documents should be split into ~500-word chunks."""
-        from rag.ingest import chunk_document
+        from api.ingest import chunk_document
 
         long_doc = "\n".join([f"Section {i}: " + "word " * 200 for i in range(5)])
         chunks = chunk_document(long_doc, clip_id=6669, date="2026-01-22",
@@ -454,7 +453,7 @@ class TestStoreChunks:
     """Test storing chunks in ChromaDB with correct metadata."""
 
     def test_store_chunks_adds_to_collection(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks
+        from api.ingest import store_chunks
 
         chunks = [
             {
@@ -470,7 +469,7 @@ class TestStoreChunks:
         assert chroma_collection.count() == 1
 
     def test_store_chunks_preserves_metadata(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks
+        from api.ingest import store_chunks
 
         chunks = [
             {
@@ -494,7 +493,7 @@ class TestStoreChunks:
         assert meta["end_time"] == 120.0
 
     def test_store_chunks_generates_unique_ids(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks
+        from api.ingest import store_chunks
 
         chunks = [
             {"text": "Chunk A", "clip_id": 6669, "date": "2026-01-22",
@@ -506,7 +505,7 @@ class TestStoreChunks:
         assert chroma_collection.count() == 2
 
     def test_store_chunks_calls_openai_embeddings(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks
+        from api.ingest import store_chunks
 
         chunks = [
             {"text": "Test embedding call", "clip_id": 6669, "date": "2026-01-22",
@@ -514,6 +513,38 @@ class TestStoreChunks:
         ]
         store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
         mock_openai_batch_embeddings.embeddings.create.assert_called()
+
+    def test_store_chunks_records_embedding_cost_for_tenant(self, chroma_collection, mock_openai_client):
+        from api.ingest import EMBEDDING_MODEL, store_chunks
+
+        embed_response = MagicMock()
+        embed_response.data = [MagicMock(embedding=[0.1] * 1536)]
+        embed_response.usage = MagicMock(total_tokens=123)
+        mock_openai_client.embeddings.create.return_value = embed_response
+
+        tracker = MagicMock()
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            store_chunks(
+                [{
+                    "text": "Tenant-specific chunk",
+                    "clip_id": 6669,
+                    "date": "2026-01-22",
+                    "meeting_body": "Council",
+                    "source": "summary",
+                    "section_type": "Overview",
+                    "tenant_id": "tenant-a",
+                }],
+                chroma_collection,
+                mock_openai_client,
+            )
+
+        tracker.record_embedding.assert_called_once_with(
+            tenant_id="tenant-a",
+            model=EMBEDDING_MODEL,
+            tokens=123,
+            request_id=None,
+            operation="rag.ingest.embed_chunks",
+        )
 
 
 # ============================================================
@@ -524,7 +555,7 @@ class TestIngestClip:
     """Test ingesting a single clip from its output directory."""
 
     def test_ingest_clip_processes_all_sources(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import ingest_clip
+        from api.ingest import ingest_clip
 
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
         # Should have chunks from all sources: summary + transcript + agenda + minutes
@@ -534,14 +565,14 @@ class TestIngestClip:
         assert len(results["ids"]) > 0
 
     def test_ingest_clip_stores_transcript_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import ingest_clip
+        from api.ingest import ingest_clip
 
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
         results = chroma_collection.get(where={"source": "transcript"}, include=["metadatas"])
         assert len(results["ids"]) >= 1
 
     def test_ingest_clip_stores_minutes_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import ingest_clip
+        from api.ingest import ingest_clip
 
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
         results = chroma_collection.get(where={"source": "minutes"}, include=["metadatas"])
@@ -549,7 +580,7 @@ class TestIngestClip:
 
     def test_ingest_clip_skips_missing_files_gracefully(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
         """If a clip directory has only metadata and minutes, it should still work."""
-        from rag.ingest import ingest_clip
+        from api.ingest import ingest_clip
 
         clip_dir = tmp_path / "clips" / "9999"
         clip_dir.mkdir(parents=True)
@@ -575,7 +606,7 @@ class TestIncrementalIngestion:
     """Test that already-ingested clips are skipped."""
 
     def test_ingest_new_skips_already_ingested(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import ingest_clip, load_rag_state, save_rag_state
+        from api.ingest import ingest_clip, load_rag_state, save_rag_state
 
         # Ingest once
         ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
@@ -592,14 +623,14 @@ class TestIncrementalIngestion:
         assert chroma_collection.count() == count_after_first
 
     def test_load_rag_state_returns_default_when_missing(self, tmp_path):
-        from rag.ingest import load_rag_state
+        from api.ingest import load_rag_state
 
         state = load_rag_state(tmp_path)
         assert "ingested_clips" in state
         assert state["ingested_clips"] == []
 
     def test_save_and_load_rag_state_roundtrip(self, tmp_path):
-        from rag.ingest import load_rag_state, save_rag_state
+        from api.ingest import load_rag_state, save_rag_state
 
         state = {"ingested_clips": [6669, 6670]}
         save_rag_state(state, tmp_path)
@@ -615,7 +646,7 @@ class TestStats:
     """Test the --stats CLI output."""
 
     def test_get_stats_returns_counts(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks, get_stats
+        from api.ingest import store_chunks, get_stats
 
         chunks = [
             {"text": "Chunk 1", "clip_id": 6669, "date": "2026-01-22",
@@ -630,7 +661,7 @@ class TestStats:
         assert stats["unique_clips"] == 2
 
     def test_get_stats_with_output_dir_uses_rag_state(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
-        from rag.ingest import store_chunks, get_stats, save_rag_state
+        from api.ingest import store_chunks, get_stats, save_rag_state
 
         chunks = [
             {"text": "Chunk 1", "clip_id": 6669, "date": "2026-01-22",
@@ -654,19 +685,19 @@ class TestTruncateText:
     """Test _truncate_text character-based truncation."""
 
     def test_short_text_returned_unchanged(self):
-        from rag.ingest import _truncate_text
+        from api.ingest import _truncate_text
 
         text = "Hello world"
         assert _truncate_text(text, max_chars=100) == text
 
     def test_text_at_exact_limit_returned_unchanged(self):
-        from rag.ingest import _truncate_text
+        from api.ingest import _truncate_text
 
         text = "a" * 100
         assert _truncate_text(text, max_chars=100) == text
 
     def test_long_text_truncated_at_word_boundary(self):
-        from rag.ingest import _truncate_text
+        from api.ingest import _truncate_text
 
         text = "word " * 100  # 500 chars
         result = _truncate_text(text, max_chars=50)
@@ -674,14 +705,14 @@ class TestTruncateText:
         assert not result.endswith(" ")  # should trim trailing space from word boundary
 
     def test_no_spaces_falls_back_to_char_limit(self):
-        from rag.ingest import _truncate_text
+        from api.ingest import _truncate_text
 
         text = "a" * 200  # no spaces at all
         result = _truncate_text(text, max_chars=100)
         assert len(result) == 100
 
     def test_spaces_only_in_first_half_uses_char_limit(self):
-        from rag.ingest import _truncate_text
+        from api.ingest import _truncate_text
 
         # Space at position 10, then no spaces for the rest
         text = "short word" + "x" * 190  # space at index 5
@@ -698,7 +729,7 @@ class TestEmbedSingle:
     """Test _embed_single progressive truncation on token limit errors."""
 
     def test_happy_path_first_call_succeeds(self):
-        from rag.ingest import _embed_single
+        from api.ingest import _embed_single
 
         client = MagicMock()
         mock_resp = MagicMock()
@@ -710,7 +741,7 @@ class TestEmbedSingle:
         assert client.embeddings.create.call_count == 1
 
     def test_retries_on_token_limit_error(self):
-        from rag.ingest import _embed_single
+        from api.ingest import _embed_single
 
         client = MagicMock()
         call_count = [0]
@@ -730,7 +761,7 @@ class TestEmbedSingle:
         assert call_count[0] == 2
 
     def test_last_resort_2000_char_truncation(self):
-        from rag.ingest import _embed_single
+        from api.ingest import _embed_single
 
         client = MagicMock()
         call_count = [0]
@@ -753,7 +784,7 @@ class TestEmbedSingle:
         assert call_count[0] > 2
 
     def test_non_token_limit_error_raises(self):
-        from rag.ingest import _embed_single
+        from api.ingest import _embed_single
 
         client = MagicMock()
         client.embeddings.create.side_effect = Exception("network error")
@@ -766,7 +797,7 @@ class TestEmbedBatch:
     """Test _embed_batch fallback to one-at-a-time on token limit errors."""
 
     def test_batch_succeeds_returns_all_embeddings(self):
-        from rag.ingest import _embed_batch
+        from api.ingest import _embed_batch
 
         client = MagicMock()
         mock_resp = MagicMock()
@@ -780,7 +811,7 @@ class TestEmbedBatch:
         assert len(result) == 2
 
     def test_batch_fallback_to_single_on_token_limit(self):
-        from rag.ingest import _embed_batch
+        from api.ingest import _embed_batch
 
         client = MagicMock()
         call_count = [0]
@@ -802,7 +833,7 @@ class TestEmbedBatch:
         assert call_count[0] == 3
 
     def test_non_token_limit_error_raises(self):
-        from rag.ingest import _embed_batch
+        from api.ingest import _embed_batch
 
         client = MagicMock()
         client.embeddings.create.side_effect = RuntimeError("connection refused")
@@ -819,7 +850,7 @@ class TestChunkId:
     """Test deterministic chunk ID generation."""
 
     def test_same_chunk_produces_same_id(self):
-        from rag.ingest import _chunk_id
+        from api.ingest import _chunk_id
 
         chunk = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
         id1 = _chunk_id(chunk, 0)
@@ -827,7 +858,7 @@ class TestChunkId:
         assert id1 == id2
 
     def test_different_text_produces_different_id(self):
-        from rag.ingest import _chunk_id
+        from api.ingest import _chunk_id
 
         chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
         chunk2 = {"clip_id": 6669, "source": "transcript", "text": "Goodbye world"}
@@ -836,14 +867,14 @@ class TestChunkId:
         assert id1 != id2
 
     def test_different_clip_produces_different_id(self):
-        from rag.ingest import _chunk_id
+        from api.ingest import _chunk_id
 
         chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
         chunk2 = {"clip_id": 6670, "source": "transcript", "text": "Hello world"}
         assert _chunk_id(chunk1, 0) != _chunk_id(chunk2, 0)
 
     def test_different_source_produces_different_id(self):
-        from rag.ingest import _chunk_id
+        from api.ingest import _chunk_id
 
         chunk1 = {"clip_id": 6669, "source": "transcript", "text": "Hello world"}
         chunk2 = {"clip_id": 6669, "source": "minutes", "text": "Hello world"}
@@ -858,7 +889,7 @@ class TestCleanSegmentsPass3:
     """Test the song lyrics tail-stripping heuristic."""
 
     def test_strips_short_poetic_tail_without_procedural(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         # Build 100 normal segments, then 12 short poetic lines in last 10%
         segments = []
@@ -880,7 +911,7 @@ class TestCleanSegmentsPass3:
         assert len(cleaned) <= 91
 
     def test_preserves_tail_with_procedural_phrases(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         segments = []
         for i in range(90):
@@ -905,7 +936,7 @@ class TestCleanSegmentsPass3:
         assert len(cleaned) == 102
 
     def test_pass3_requires_minimum_100_segments(self):
-        from rag.ingest import clean_segments
+        from api.ingest import clean_segments
 
         # Only 50 segments — Pass 3 needs >= 10 to even check,
         # but tail of 50*0.1=5 segments, needs 10 short poetic, can't trigger

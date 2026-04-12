@@ -5,21 +5,17 @@ embedding, ChromaDB storage, retrieval, deduplication, and synthesis.
 Uses in-memory ChromaDB and mocked OpenAI/Anthropic clients.
 """
 
-import json
 from unittest.mock import MagicMock
 
 import chromadb
 import pytest
 
-from rag.ingest import (
+from api.ingest import (
     ingest_clip,
     get_stats,
-    chunk_summary,
     chunk_extracted_facts,
-    chunk_transcript,
-    chunk_document,
 )
-from rag.query import ask, deduplicate_results, build_synthesis_messages
+from api.query import ask, deduplicate_results, build_synthesis_messages
 
 
 @pytest.fixture
@@ -146,7 +142,7 @@ class TestIngestToQueryPipeline:
 
         for source in result["sources"]:
             assert "granicus_url" in source
-            assert "lfucg.granicus.com" in source["granicus_url"]
+            assert "example.granicus.com" in source["granicus_url"]
 
     def test_query_with_meeting_body_filter(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
         ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
@@ -356,7 +352,7 @@ class TestRagStateManagement:
     """Test that ingestion properly tracks state for resumability."""
 
     def test_ingest_clip_saves_state(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        from rag.ingest import load_rag_state
+        from api.ingest import load_rag_state
 
         ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
 
@@ -364,7 +360,7 @@ class TestRagStateManagement:
         assert 6669 in state["ingested_clips"]
 
     def test_skip_if_ingested_works(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        from rag.ingest import load_rag_state
+        from api.ingest import load_rag_state
 
         # First ingest
         ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)

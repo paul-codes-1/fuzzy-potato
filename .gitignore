@@ -1,11 +1,23 @@
 pipeline.log
 probe.log
-lfucg_output
+meetings_output
 .venv
 __pycache__
 .idea
+.DS_Store
+.claude/
+.mcp.json
 
 frontend/dist
 frontend/node_modules
 
 .env
+DEPLOY_RAG.md
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+tfplan
+.terraform.lock.hcl

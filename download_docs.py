@@ -16,7 +16,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
-from main import LFUCGPipeline
+from main import MeetingPipeline
 
 
 def load_available_clips(output_dir: Path):
@@ -86,7 +86,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="Re-download even if files exist")
     parser.add_argument("--agenda-only", action="store_true", help="Only download agendas")
     parser.add_argument("--minutes-only", action="store_true", help="Only download minutes")
-    parser.add_argument("--output-dir", default="./lfucg_output", help="Output directory")
+    parser.add_argument("--output-dir", default="./meetings_output", help="Output directory")
     parser.add_argument("--quiet", action="store_true", help="Reduce output")
     args = parser.parse_args()
 
@@ -105,7 +105,7 @@ def main():
     print(f"Found {len(clips)} clips needing documents (out of {len(load_available_clips(output_dir))} available)")
 
     # Initialize pipeline (only needs requests/pdfplumber/etc, but constructor requires OpenAI key)
-    pipeline = LFUCGPipeline(
+    pipeline = MeetingPipeline(
         output_dir=args.output_dir,
         verbose=not args.quiet,
         force_reprocess=args.force,

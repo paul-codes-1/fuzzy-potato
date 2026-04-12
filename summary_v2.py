@@ -5,9 +5,71 @@ Pass 2 (Claude Sonnet): Generate section-by-section narrative from extracted fac
 """
 
 import json
-import os
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_token_count(value) -> int | None:
+    """Convert a usage field to int only when it is actually numeric."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _usage_value(usage, *names: str) -> int:
+    """Read the first available integer token field from a usage object."""
+    if usage is None:
+        return 0
+    for name in names:
+        value = _coerce_token_count(getattr(usage, name, None))
+        if value is not None:
+            return value
+    return 0
+
+
+def _record_llm_cost(
+    tenant_id: str | None,
+    usage,
+    *,
+    model: str,
+    operation: str,
+    request_id: str | None = None,
+) -> None:
+    """Best-effort completion cost tracking; never raises."""
+    if not tenant_id or usage is None:
+        return
+
+    input_tokens = _usage_value(usage, "prompt_tokens", "input_tokens")
+    output_tokens = _usage_value(usage, "completion_tokens", "output_tokens")
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+
+    try:
+        from api.cost import get_cost_tracker
+
+        get_cost_tracker().record_llm_call(
+            tenant_id=tenant_id,
+            model=model,
+            operation=operation,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            request_id=request_id,
+            module="summary_v2",
+        )
+    except Exception:
+        logger.debug("cost tracking failed for summary_v2 llm call", exc_info=True)
+
 
 # ============================================================
 # Pass 1: Structured extraction prompt (GPT-4o)
@@ -117,7 +179,9 @@ def build_extraction_prompt(transcript: str, agenda_text: Optional[str],
 
 
 def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[str],
-                          minutes_text: Optional[str], model: str = "gpt-4o") -> dict:
+                          minutes_text: Optional[str], model: str = "gpt-4o",
+                          tenant_id: Optional[str] = None,
+                          request_id: Optional[str] = None) -> dict:
     """Pass 1: Extract structured facts from meeting sources using GPT-4o.
 
     Returns parsed JSON dict, or empty dict on failure.
@@ -133,6 +197,13 @@ def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[
         temperature=0.1,
         max_tokens=8000,
         response_format={"type": "json_object"},
+    )
+    _record_llm_cost(
+        tenant_id,
+        getattr(response, "usage", None),
+        model=model,
+        operation="summary_v2_extract",
+        request_id=request_id,
     )
 
     raw = response.choices[0].message.content.strip()
@@ -254,7 +325,7 @@ def _generate_agenda_item_sections(facts: dict) -> list[dict]:
         sections.append({
             "name": title[:80],
             "always": True,
-            "instruction": f"Summarize the discussion on this agenda item. Include key speakers, what was presented or debated, any concerns raised, and the outcome.",
+            "instruction": "Summarize the discussion on this agenda item. Include key speakers, what was presented or debated, any concerns raised, and the outcome.",
             "data": json.dumps({"agenda_item": item}, indent=2),
         })
 
@@ -263,7 +334,9 @@ def _generate_agenda_item_sections(facts: dict) -> list[dict]:
 
 def generate_section(anthropic_client, section_name: str, instruction: str,
                      facts_json: str, meeting_body: str, date: str,
-                     model: str = "claude-sonnet-4-20250514") -> Optional[str]:
+                     model: str = "claude-sonnet-4-20250514",
+                     tenant_id: Optional[str] = None,
+                     request_id: Optional[str] = None) -> Optional[str]:
     """Generate a single summary section using Claude Sonnet.
 
     Returns the section text including the ## header, or None on failure.
@@ -282,6 +355,13 @@ def generate_section(anthropic_client, section_name: str, instruction: str,
         messages=[{"role": "user", "content": user_prompt}],
         temperature=0.3,
     )
+    _record_llm_cost(
+        tenant_id,
+        getattr(response, "usage", None),
+        model=model,
+        operation="summary_v2_narrate",
+        request_id=request_id,
+    )
 
     text = response.content[0].text.strip()
     # Ensure it starts with the ## header
@@ -295,7 +375,9 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
                         meeting_body: str = "Unknown", date: str = "Unknown",
                         extraction_model: str = "gpt-4o",
                         narration_model: str = "claude-sonnet-4-20250514",
-                        log_fn=None) -> tuple[Optional[str], Optional[dict]]:
+                        log_fn=None,
+                        tenant_id: Optional[str] = None,
+                        request_id: Optional[str] = None) -> tuple[Optional[str], Optional[dict]]:
     """Two-pass summary generation.
 
     Returns (summary_text, extracted_facts) tuple.
@@ -309,7 +391,8 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
     # === Pass 1: Structured extraction ===
     log(f"Pass 1: Extracting structured facts with {extraction_model}...")
     facts = extract_meeting_facts(openai_client, transcript, agenda_text,
-                                  minutes_text, model=extraction_model)
+                                  minutes_text, model=extraction_model,
+                                  tenant_id=tenant_id, request_id=request_id)
     if not facts:
         log("Pass 1 failed: no facts extracted")
         return None, None
@@ -333,6 +416,7 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
         section_text = generate_section(
             anthropic_client, section_def["name"], section_def["instruction"],
             facts_json, meeting_body, date, model=narration_model,
+            tenant_id=tenant_id, request_id=request_id,
         )
         if section_text:
             all_sections.append(section_text)
@@ -345,6 +429,7 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
         section_text = generate_section(
             anthropic_client, section_def["name"], section_def["instruction"],
             facts_json, meeting_body, date, model=narration_model,
+            tenant_id=tenant_id, request_id=request_id,
         )
         if section_text:
             all_sections.append(section_text)

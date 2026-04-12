@@ -1,7 +1,6 @@
 """Tests for Docker deployment: entrypoint.sh and server startup behavior."""
 
 import os
-import subprocess
 
 
 class TestEntrypoint:
@@ -42,11 +41,11 @@ class TestDockerfile:
             content = f.read()
         assert "8000" in content, "Dockerfile must expose port 8000"
 
-    def test_dockerfile_installs_rag_deps(self):
+    def test_dockerfile_installs_api_deps(self):
         dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")
         with open(dockerfile) as f:
             content = f.read()
-        assert "rag" in content, "Dockerfile must install RAG dependencies"
+        assert ".[api]" in content, "Dockerfile must install API dependencies"
 
     def test_dockerfile_bakes_in_data(self):
         dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")
@@ -73,7 +72,7 @@ class TestDockerignore:
         dockerignore = os.path.join(os.path.dirname(__file__), "..", ".dockerignore")
         with open(dockerignore) as f:
             content = f.read()
-        assert "lfucg_output" in content, ".dockerignore must exclude lfucg_output"
+        assert "meetings_output" in content, ".dockerignore must exclude meetings_output"
 
     def test_dockerignore_excludes_frontend(self):
         dockerignore = os.path.join(os.path.dirname(__file__), "..", ".dockerignore")
@@ -87,7 +86,7 @@ class TestServerStartupLogging:
     """Test that server logs collection count on startup."""
 
     def test_server_has_startup_event(self):
-        server_path = os.path.join(os.path.dirname(__file__), "..", "rag", "server.py")
+        server_path = os.path.join(os.path.dirname(__file__), "..", "api", "server.py")
         with open(server_path) as f:
             content = f.read()
         assert "startup" in content or "lifespan" in content, \

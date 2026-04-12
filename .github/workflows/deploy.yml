@@ -1,0 +1,227 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      terraform_action:
+        description: "Terraform action (apply or plan-only)"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - plan
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.7.0"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Determine environment
+  # -------------------------------------------------------------------------
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      tf_action: ${{ steps.env.outputs.tf_action }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "tf_action=${{ inputs.terraform_action }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+            echo "tf_action=apply" >> "$GITHUB_OUTPUT"
+          fi
+
+  # -------------------------------------------------------------------------
+  # Terraform: provision/update infrastructure
+  # -------------------------------------------------------------------------
+  terraform:
+    name: "Terraform (${{ needs.setup.outputs.environment }})"
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      ecr_url: ${{ steps.tf-outputs.outputs.ecr_url }}
+      bucket_name: ${{ steps.tf-outputs.outputs.bucket_name }}
+      distribution_id: ${{ steps.tf-outputs.outputs.distribution_id }}
+      app_runner_arn: ${{ steps.tf-outputs.outputs.app_runner_arn }}
+    env:
+      TF_ENV: ${{ needs.setup.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: infra
+        run: terraform init -backend-config=environments/${{ env.TF_ENV }}-backend.hcl
+
+      - name: Terraform Plan
+        working-directory: infra
+        run: terraform plan -var-file=environments/${{ env.TF_ENV }}.tfvars -out=tfplan
+
+      - name: Terraform Apply
+        if: needs.setup.outputs.tf_action == 'apply'
+        working-directory: infra
+        run: terraform apply -auto-approve tfplan
+
+      - name: Export Terraform outputs
+        if: needs.setup.outputs.tf_action == 'apply'
+        id: tf-outputs
+        working-directory: infra
+        run: |
+          echo "ecr_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "bucket_name=$(terraform output -raw frontend_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "app_runner_arn=$(terraform output -raw app_runner_service_arn)" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------------------------
+  # Build & push Docker image to ECR
+  # -------------------------------------------------------------------------
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [setup, terraform]
+    if: needs.setup.outputs.tf_action == 'apply'
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          ECR_URL: ${{ needs.terraform.outputs.ecr_url }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_URL}:${IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" .
+          docker tag "${IMAGE_URI}" "${ECR_URL}:latest"
+          docker push "${IMAGE_URI}"
+          docker push "${ECR_URL}:latest"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------------------------
+  # Deploy API to App Runner
+  # -------------------------------------------------------------------------
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: [setup, terraform, build-and-push]
+    if: needs.setup.outputs.tf_action == 'apply'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to App Runner
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          SERVICE_ARN: ${{ needs.terraform.outputs.app_runner_arn }}
+        run: |
+          echo "Deploying image: ${IMAGE_URI}"
+          aws apprunner update-service \
+            --service-arn "${SERVICE_ARN}" \
+            --source-configuration "{
+              \"ImageRepository\": {
+                \"ImageIdentifier\": \"${IMAGE_URI}\",
+                \"ImageRepositoryType\": \"ECR\",
+                \"ImageConfiguration\": {
+                  \"Port\": \"8000\"
+                }
+              },
+              \"AutoDeploymentsEnabled\": false
+            }"
+          echo "Deployment initiated."
+
+  # -------------------------------------------------------------------------
+  # Deploy frontend to S3 + CloudFront
+  # -------------------------------------------------------------------------
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: [setup, terraform]
+    if: needs.setup.outputs.tf_action == 'apply'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync to S3
+        env:
+          BUCKET: ${{ needs.terraform.outputs.bucket_name }}
+        run: aws s3 sync frontend/dist/ "s3://${BUCKET}/" --delete
+
+      - name: Invalidate CloudFront cache
+        env:
+          DIST_ID: ${{ needs.terraform.outputs.distribution_id }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${DIST_ID}" \
+            --paths "/*"

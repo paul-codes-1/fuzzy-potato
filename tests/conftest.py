@@ -1,12 +1,10 @@
 import json
-import os
-import tempfile
 from unittest.mock import MagicMock
 
 import pytest
 
 
-# --- Sample data matching real LFUCG output formats ---
+# --- Sample data matching real pipeline output formats ---
 
 SAMPLE_SUMMARY = """## Meeting Overview
 - **Date and Time**: January 22, 2026, 6:00 PM
@@ -188,7 +186,7 @@ SAMPLE_EXTRACTED_FACTS = {
 
 SAMPLE_METADATA = {
     "clip_id": 6669,
-    "url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true",
+    "url": "https://example.granicus.com/player/clip/6669?view_id=14&redirect=true",
     "date": "2026-01-22",
     "meeting_body": "Council",
     "title": "Urban County Council (1)",
@@ -217,7 +215,7 @@ SAMPLE_METADATA = {
 
 @pytest.fixture
 def sample_clip_dir(tmp_path):
-    """Create a temporary directory mirroring lfucg_output/clips/{clip_id}/ structure."""
+    """Create a temporary directory mirroring meetings_output/clips/{clip_id}/ structure."""
     clip_id = 6669
     clip_dir = tmp_path / "clips" / str(clip_id)
     clip_dir.mkdir(parents=True)
@@ -312,9 +310,9 @@ def chroma_collection():
 
     client = chromadb.Client()  # ephemeral in-memory
     collection = client.get_or_create_collection(
-        name="test_lfucg_meetings",
+        name="test_meetings",
         metadata={"hnsw:space": "cosine"},
     )
     yield collection
     # Cleanup
-    client.delete_collection("test_lfucg_meetings")
+    client.delete_collection("test_meetings")

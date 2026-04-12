@@ -1,7 +1,7 @@
 [project]
-name = "pythonproject"
-version = "0.1.0"
-description = "LFUCG Meeting Pipeline - Downloads, transcribes, and generates summaries from city council meeting videos"
+name = "civiclens"
+version = "1.0.0"
+description = "AI-powered government meeting intelligence platform — transcription, structured extraction, RAG Q&A, and multi-tenant SaaS"
 requires-python = ">=3.9"
 dependencies = [
     "beautifulsoup4>=4.14.3",
@@ -16,17 +16,53 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+    "anthropic>=0.30.0",
+    "apscheduler>=3.10.0,<4.0.0",
+    "chromadb>=0.4.0",
+    "fastapi>=0.100.0",
+    "httpx>=0.24.0",
+    "PyJWT>=2.8.0",
+    "pywebpush>=2.0.0",
+    "python3-saml>=1.16.0",
+    "stripe>=8.0.0",
+    "uvicorn>=0.23.0",
+]
 rag = [
     "anthropic>=0.30.0",
     "chromadb>=0.4.0",
     "fastapi>=0.100.0",
+    "httpx>=0.24.0",
     "uvicorn>=0.23.0",
+]
+slack = [
+    "slack-sdk>=3.21.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.0",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
+    "locust>=2.24.0",
 ]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "F841"]  # line length handled by formatter; unused vars common in this codebase
+
+[tool.ruff.lint.per-file-ignores]
+"api/billing.py" = ["F821", "E402"]  # stripe type annotations + conditional imports
+"api/server.py" = ["E402"]  # conditional imports after app setup
+"api/backup.py" = ["E402"]  # conditional botocore import
+"tests/*" = ["F841"]  # unused variables common in test fixtures
+"scripts/*" = ["F841"]
+"sdk/*" = ["F841"]
+"api/migrations/*" = ["F841"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

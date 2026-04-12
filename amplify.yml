@@ -10,8 +10,8 @@ frontend:
         - cd frontend && npm run build-search-index
         # Copy data files to dist for serving
         - mkdir -p frontend/dist/data
-        - cp -r lfucg_output/index.json frontend/dist/data/ 2>/dev/null || echo "No index.json found"
-        - cp -r lfucg_output/clips frontend/dist/data/ 2>/dev/null || echo "No clips found"
+        - cp -r meetings_output/index.json frontend/dist/data/ 2>/dev/null || echo "No index.json found"
+        - cp -r meetings_output/clips frontend/dist/data/ 2>/dev/null || echo "No clips found"
   artifacts:
     baseDirectory: frontend/dist
     files:

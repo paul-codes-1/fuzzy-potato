@@ -2,15 +2,24 @@
 """Probe all clip IDs to find available clips without downloading."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GRANICUS_HOST = os.getenv("GRANICUS_HOST")
+if not GRANICUS_HOST:
+    raise ValueError("GRANICUS_HOST environment variable is required (e.g. cityname.granicus.com)")
+GRANICUS_VIEW_ID = os.getenv("GRANICUS_VIEW_ID", "3")
 
 
 def probe_clip(clip_id: int) -> dict | None:
     """Check if a clip exists and get its title without downloading."""
-    url = f"https://lfucg.granicus.com/player/clip/{clip_id}?view_id=14&redirect=true"
+    url = f"https://{GRANICUS_HOST}/player/clip/{clip_id}?view_id={GRANICUS_VIEW_ID}&redirect=true"
 
     try:
         result = subprocess.run(
@@ -34,7 +43,7 @@ def probe_clip(clip_id: int) -> dict | None:
 
 
 def main():
-    output_file = Path("lfucg_output/available_clips.json")
+    output_file = Path("meetings_output/available_clips.json")
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load existing progress if any

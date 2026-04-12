@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from summary_v2 import (
     build_extraction_prompt,
@@ -158,6 +157,35 @@ class TestExtractMeetingFacts:
         assert call_kwargs["response_format"] == {"type": "json_object"}
         assert call_kwargs["temperature"] == 0.1
 
+    def test_records_cost_when_usage_present(self):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "{}"
+        mock_response.usage = MagicMock(prompt_tokens=123, completion_tokens=45)
+        mock_client.chat.completions.create.return_value = mock_response
+        tracker = MagicMock()
+
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            extract_meeting_facts(
+                mock_client,
+                "transcript",
+                None,
+                None,
+                tenant_id="tenant-a",
+                request_id="req-1",
+            )
+
+        tracker.record_llm_call.assert_called_once_with(
+            tenant_id="tenant-a",
+            model="gpt-4o",
+            operation="summary_v2_extract",
+            input_tokens=123,
+            output_tokens=45,
+            request_id="req-1",
+            module="summary_v2",
+        )
+
 
 # ============================================================
 # Section data helpers
@@ -287,6 +315,37 @@ class TestGenerateSection:
         assert call_kwargs["model"] == "claude-sonnet-4-20250514"
         assert call_kwargs["temperature"] == 0.3
 
+    def test_records_cost_when_usage_present(self):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock()]
+        mock_response.content[0].text = "## Test\nContent"
+        mock_response.usage = MagicMock(input_tokens=210, output_tokens=80)
+        mock_client.messages.create.return_value = mock_response
+        tracker = MagicMock()
+
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            generate_section(
+                mock_client,
+                "Test",
+                "instruction",
+                "{}",
+                "Council",
+                "2026-01-22",
+                tenant_id="tenant-a",
+                request_id="req-2",
+            )
+
+        tracker.record_llm_call.assert_called_once_with(
+            tenant_id="tenant-a",
+            model="claude-sonnet-4-20250514",
+            operation="summary_v2_narrate",
+            input_tokens=210,
+            output_tokens=80,
+            request_id="req-2",
+            module="summary_v2",
+        )
+
 
 # ============================================================
 # End-to-end: generate_summary_v2
@@ -310,7 +369,7 @@ class TestGenerateSummaryV2:
             user_msg = kwargs["messages"][0]["content"]
             resp = MagicMock()
             resp.content = [MagicMock()]
-            resp.content[0].text = f"## Section\nGenerated content for this section."
+            resp.content[0].text = "## Section\nGenerated content for this section."
             return resp
 
         client.messages.create.side_effect = create_response
@@ -390,7 +449,7 @@ class TestGenerateSummaryV2:
 class TestChunkSummaryTimestamps:
 
     def test_extracts_timestamp_from_section(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         text = """## Meeting Overview
 The council met on January 22. [timestamp: 0:45] They discussed zoning changes.
@@ -406,7 +465,7 @@ Ordinance 0016-26 passed 8-0. [timestamp: 25:15]
         assert votes.get("start_time") == 25 * 60 + 15
 
     def test_no_timestamp_means_no_start_time(self):
-        from rag.ingest import chunk_summary
+        from api.ingest import chunk_summary
 
         text = """## Attendance
 Present: Beasley, Boone, Brown.

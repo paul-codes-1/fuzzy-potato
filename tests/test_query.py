@@ -1,9 +1,8 @@
-"""Tests for rag/query.py - Retrieval, filtering, deduplication, and synthesis."""
+"""Tests for api/query.py - Retrieval, filtering, deduplication, and synthesis."""
 
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 # ============================================================
@@ -14,37 +13,37 @@ class TestBuildChromaFilter:
     """Test building ChromaDB where clauses from filter dicts."""
 
     def test_no_filters_returns_none(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter(None)
         assert result is None
 
     def test_empty_filters_returns_none(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({})
         assert result is None
 
     def test_meeting_body_filter(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({"meeting_body": "Council"})
         assert result == {"meeting_body": "Council"}
 
     def test_date_after_filter(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({"date_after": "2025-01-01"})
         assert result == {"date": {"$gte": "2025-01-01"}}
 
     def test_date_before_filter(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({"date_before": "2026-01-01"})
         assert result == {"date": {"$lte": "2026-01-01"}}
 
     def test_combined_filters(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({
             "meeting_body": "Council",
@@ -58,7 +57,7 @@ class TestBuildChromaFilter:
         assert {"date": {"$lte": "2026-06-01"}} in conditions
 
     def test_meeting_body_with_date_after(self):
-        from rag.query import build_chroma_filter
+        from api.query import build_chroma_filter
 
         result = build_chroma_filter({
             "meeting_body": "Committee",
@@ -77,7 +76,7 @@ class TestDeduplicate:
     """Test deduplication: max 4 chunks per clip (default), max 2 per source, highest-scored first."""
 
     def test_dedup_respects_max_per_clip(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {
             "ids": [["a", "b", "c", "d", "e", "f"]],
@@ -97,7 +96,7 @@ class TestDeduplicate:
         assert clip_6669_count == 4  # keeps 4, drops the 5th
 
     def test_dedup_limits_per_source_within_clip(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         # 4 transcript chunks from same clip — should keep only 2
         results = {
@@ -115,7 +114,7 @@ class TestDeduplicate:
         assert len(deduped["ids"]) == 2  # max_per_source_per_clip=2
 
     def test_dedup_keeps_highest_scored_first(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {
             "ids": [["a", "b", "c", "d"]],
@@ -137,7 +136,7 @@ class TestDeduplicate:
         assert "worst" not in deduped["documents"]
 
     def test_dedup_preserves_different_clips(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {
             "ids": [["a", "b"]],
@@ -160,7 +159,7 @@ class TestBuildSynthesisPrompt:
     """Test that the synthesis prompt is well-formed."""
 
     def test_prompt_includes_question(self):
-        from rag.query import build_synthesis_messages
+        from api.query import build_synthesis_messages
 
         messages = build_synthesis_messages(
             question="What about zoning?",
@@ -180,7 +179,7 @@ class TestBuildSynthesisPrompt:
         assert "What about zoning?" in user_msg["content"]
 
     def test_prompt_includes_chunk_context(self):
-        from rag.query import build_synthesis_messages
+        from api.query import build_synthesis_messages
 
         messages = build_synthesis_messages(
             question="What about zoning?",
@@ -199,7 +198,7 @@ class TestBuildSynthesisPrompt:
         assert "2026-01-22" in user_msg["content"]
 
     def test_prompt_includes_timestamp_for_transcript(self):
-        from rag.query import build_synthesis_messages
+        from api.query import build_synthesis_messages
 
         messages = build_synthesis_messages(
             question="What was discussed?",
@@ -218,7 +217,7 @@ class TestBuildSynthesisPrompt:
         assert "1:00-2:00" in user_msg["content"]  # timestamp should appear as MM:SS
 
     def test_system_prompt_instructs_citation(self):
-        from rag.query import build_synthesis_messages
+        from api.query import build_synthesis_messages
 
         messages = build_synthesis_messages(
             question="test",
@@ -230,15 +229,51 @@ class TestBuildSynthesisPrompt:
 
 
 # ============================================================
-# 4. Full ask() flow tests
+# 4. Granicus URL tests
+# ============================================================
+
+class TestGranicusUrlBuilding:
+    """Test Granicus URL generation for sources."""
+
+    def test_build_granicus_url_reads_env_at_call_time(self, monkeypatch):
+        from api.query import _build_granicus_url
+
+        monkeypatch.setenv("GRANICUS_HOST", "runtime.granicus.com")
+        monkeypatch.setenv("GRANICUS_VIEW_ID", "7")
+
+        url = _build_granicus_url(
+            clip_id=6669,
+            timestamp=120,
+            clip_meta={},
+        )
+
+        assert url == "https://runtime.granicus.com/player/clip/6669?view_id=7&entrytime=120"
+
+    def test_build_granicus_url_prefers_clip_metadata_over_env(self, monkeypatch):
+        from api.query import _build_granicus_url
+
+        monkeypatch.setenv("GRANICUS_HOST", "runtime.granicus.com")
+        monkeypatch.setenv("GRANICUS_VIEW_ID", "7")
+
+        url = _build_granicus_url(
+            clip_id=6669,
+            timestamp=120,
+            clip_meta={"url": "https://example.granicus.com/player/clip/6669?view_id=14&redirect=true"},
+        )
+
+        assert url == "https://example.granicus.com/player/clip/6669?view_id=14&entrytime=120"
+
+
+# ============================================================
+# 5. Full ask() flow tests
 # ============================================================
 
 class TestAsk:
     """Test the full ask() function with mocked dependencies."""
 
     def test_ask_returns_answer_and_sources(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.query import ask
-        from rag.ingest import store_chunks
+        from api.query import ask
+        from api.ingest import store_chunks
 
         # Seed the collection with some chunks
         chunks = [
@@ -269,8 +304,8 @@ class TestAsk:
         assert isinstance(result["sources"], list)
 
     def test_ask_response_has_correct_structure(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.query import ask
-        from rag.ingest import store_chunks
+        from api.query import ask
+        from api.ingest import store_chunks
 
         chunks = [
             {"text": "Budget discussion for parks.",
@@ -306,7 +341,7 @@ class TestAsk:
     def test_ask_with_no_results_returns_clear_message(self, mock_openai_batch_embeddings):
         """When collection is empty, should return a 'not enough info' answer."""
         import chromadb
-        from rag.query import ask
+        from api.query import ask
 
         client = chromadb.Client()
         empty_collection = client.get_or_create_collection("empty_test")
@@ -328,8 +363,8 @@ class TestAsk:
         client.delete_collection("empty_test")
 
     def test_ask_passes_filters_to_chromadb(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.query import ask
-        from rag.ingest import store_chunks
+        from api.query import ask
+        from api.ingest import store_chunks
 
         chunks = [
             {"text": "Council meeting about zoning",
@@ -356,8 +391,8 @@ class TestAsk:
         assert "filters_applied" in result
 
     def test_ask_calls_openai_chat_with_wellformed_messages(self, chroma_collection, mock_openai_batch_embeddings):
-        from rag.query import ask
-        from rag.ingest import store_chunks
+        from api.query import ask
+        from api.ingest import store_chunks
 
         chunks = [
             {"text": "Test content",
@@ -386,16 +421,69 @@ class TestAsk:
         assert messages[0]["role"] == "system"
         assert any(m["role"] == "user" for m in messages)
 
+    def test_ask_records_embedding_and_synthesis_costs(self, chroma_collection, mock_openai_batch_embeddings):
+        from api.ingest import EMBEDDING_MODEL, store_chunks
+        from api.query import ask
+
+        chunks = [
+            {"text": "Budget discussion for parks.",
+             "clip_id": 6670, "date": "2026-01-23", "meeting_body": "Committee",
+             "source": "transcript", "start_time": 120.0, "end_time": 180.0},
+        ]
+        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+
+        embed_response = MagicMock()
+        embed_response.data = [MagicMock(embedding=[0.2] * 1536)]
+        embed_response.usage = MagicMock(total_tokens=321)
+        mock_openai_batch_embeddings.embeddings.create.side_effect = None
+        mock_openai_batch_embeddings.embeddings.create.return_value = embed_response
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = "Parks budget was discussed."
+        mock_chat_resp = MagicMock()
+        mock_chat_resp.choices = [mock_choice]
+        mock_chat_resp.usage = MagicMock(prompt_tokens=111, completion_tokens=29)
+        mock_openai_batch_embeddings.chat.completions.create.return_value = mock_chat_resp
+
+        tracker = MagicMock()
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            ask(
+                question="What about parks?",
+                collection=chroma_collection,
+                openai_client=mock_openai_batch_embeddings,
+                clip_metadata={6670: {"title": "Committee Meeting", "date": "2026-01-23",
+                                       "meeting_body": "Committee"}},
+                tenant_id="tenant-a",
+                request_id="req-ask-1",
+            )
+
+        tracker.record_embedding.assert_called_once_with(
+            tenant_id="tenant-a",
+            model=EMBEDDING_MODEL,
+            tokens=321,
+            request_id="req-ask-1",
+            operation="rag.ask.embed_query",
+        )
+        tracker.record_llm_call.assert_called_once_with(
+            tenant_id="tenant-a",
+            model="gpt-4o",
+            operation="rag.ask.synthesize",
+            input_tokens=111,
+            output_tokens=29,
+            request_id="req-ask-1",
+            module="query",
+        )
+
 
 # ============================================================
-# 5. build_synthesis_messages edge cases
+# 6. build_synthesis_messages edge cases
 # ============================================================
 
 class TestBuildSynthesisEdgeCases:
     """Test edge cases in synthesis message building."""
 
     def test_empty_chunks_produces_valid_messages(self):
-        from rag.query import build_synthesis_messages
+        from api.query import build_synthesis_messages
 
         messages = build_synthesis_messages(question="What happened?", chunks=[])
         assert len(messages) == 2
@@ -405,20 +493,20 @@ class TestBuildSynthesisEdgeCases:
 
 
 # ============================================================
-# 6. load_clip_metadata tests
+# 7. load_clip_metadata tests
 # ============================================================
 
 class TestLoadClipMetadata:
     """Test loading clip metadata from disk."""
 
     def test_missing_directory_returns_empty(self, tmp_path):
-        from rag.query import load_clip_metadata
+        from api.query import load_clip_metadata
 
         result = load_clip_metadata(str(tmp_path / "nonexistent"))
         assert result == {}
 
     def test_loads_valid_metadata(self, tmp_path):
-        from rag.query import load_clip_metadata
+        from api.query import load_clip_metadata
 
         clips_dir = tmp_path / "clips" / "6669"
         clips_dir.mkdir(parents=True)
@@ -430,7 +518,7 @@ class TestLoadClipMetadata:
         assert result[6669]["title"] == "Council Meeting"
 
     def test_skips_malformed_json(self, tmp_path):
-        from rag.query import load_clip_metadata
+        from api.query import load_clip_metadata
 
         clips_dir = tmp_path / "clips" / "6669"
         clips_dir.mkdir(parents=True)
@@ -441,7 +529,7 @@ class TestLoadClipMetadata:
         assert result == {}
 
     def test_skips_metadata_missing_clip_id(self, tmp_path):
-        from rag.query import load_clip_metadata
+        from api.query import load_clip_metadata
 
         clips_dir = tmp_path / "clips" / "6669"
         clips_dir.mkdir(parents=True)
@@ -452,7 +540,7 @@ class TestLoadClipMetadata:
         assert result == {}
 
     def test_loads_multiple_clips(self, tmp_path):
-        from rag.query import load_clip_metadata
+        from api.query import load_clip_metadata
 
         for clip_id in [6669, 6670, 6671]:
             clip_dir = tmp_path / "clips" / str(clip_id)
@@ -466,28 +554,28 @@ class TestLoadClipMetadata:
 
 
 # ============================================================
-# 7. Deduplication edge cases
+# 8. Deduplication edge cases
 # ============================================================
 
 class TestDeduplicateEdgeCases:
     """Test deduplication edge cases."""
 
     def test_dedup_empty_results(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
         deduped = deduplicate_results(results)
         assert deduped["ids"] == []
 
     def test_dedup_no_ids_key(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {"ids": [], "documents": [], "metadatas": [], "distances": []}
         deduped = deduplicate_results(results)
         assert deduped["ids"] == []
 
     def test_dedup_with_explicit_max_per_clip_2(self):
-        from rag.query import deduplicate_results
+        from api.query import deduplicate_results
 
         results = {
             "ids": [["a", "b", "c"]],
@@ -504,14 +592,14 @@ class TestDeduplicateEdgeCases:
 
 
 # ============================================================
-# 8. build_chat_synthesis_messages tests
+# 9. build_chat_synthesis_messages tests
 # ============================================================
 
 class TestBuildChatSynthesisMessages:
     """Test building multi-turn chat synthesis messages."""
 
     def test_includes_conversation_history(self):
-        from rag.query import build_chat_synthesis_messages
+        from api.query import build_chat_synthesis_messages
 
         history = [
             {"role": "user", "content": "What about zoning?"},
@@ -533,7 +621,7 @@ class TestBuildChatSynthesisMessages:
         assert "Meeting excerpts:" in non_system[2]["content"]
 
     def test_injects_context_in_last_user_message(self):
-        from rag.query import build_chat_synthesis_messages
+        from api.query import build_chat_synthesis_messages
 
         history = [
             {"role": "user", "content": "What about zoning?"},
@@ -553,7 +641,7 @@ class TestBuildChatSynthesisMessages:
                 assert "Meeting excerpts:" not in msg["content"]
 
     def test_strips_extra_keys_from_history(self):
-        from rag.query import build_chat_synthesis_messages
+        from api.query import build_chat_synthesis_messages
 
         history = [
             {"role": "user", "content": "test", "sources": [], "model": "gpt-4o", "timestamp": "2026-01-01"},
@@ -566,7 +654,7 @@ class TestBuildChatSynthesisMessages:
             assert set(msg.keys()) == {"role", "content"}
 
     def test_trims_to_max_history(self):
-        from rag.query import MAX_HISTORY_PAIRS, build_chat_synthesis_messages
+        from api.query import MAX_HISTORY_PAIRS, build_chat_synthesis_messages
 
         # Create 30 messages (15 pairs) + final user message = 31 messages
         history = []
@@ -584,7 +672,7 @@ class TestBuildChatSynthesisMessages:
         assert len(result) <= MAX_HISTORY_PAIRS * 2 + 1 + 1
 
     def test_single_message_works(self):
-        from rag.query import build_chat_synthesis_messages
+        from api.query import build_chat_synthesis_messages
 
         history = [{"role": "user", "content": "What happened?"}]
         chunks = [{"text": "Meeting content", "clip_id": 6669, "date": "2026-01-22",
@@ -598,14 +686,14 @@ class TestBuildChatSynthesisMessages:
 
 
 # ============================================================
-# 9. synthesize_with_anthropic tests
+# 10. synthesize_with_anthropic tests
 # ============================================================
 
 class TestSynthesizeWithAnthropic:
     """Test Anthropic synthesis routing."""
 
     def test_calls_anthropic_with_correct_format(self, mock_anthropic_client):
-        from rag.query import synthesize_with_anthropic
+        from api.query import synthesize_with_anthropic
 
         messages = [
             {"role": "system", "content": "You are a research assistant."},
@@ -622,7 +710,7 @@ class TestSynthesizeWithAnthropic:
             assert msg["role"] != "system"
 
     def test_returns_response_text(self, mock_anthropic_client):
-        from rag.query import synthesize_with_anthropic
+        from api.query import synthesize_with_anthropic
 
         messages = [
             {"role": "system", "content": "System prompt."},
@@ -634,7 +722,7 @@ class TestSynthesizeWithAnthropic:
 
 
 # ============================================================
-# 10. chat() function tests
+# 11. chat() function tests
 # ============================================================
 
 class TestChat:
@@ -654,7 +742,7 @@ class TestChat:
         return mock_collection
 
     def test_chat_returns_correct_structure(self, mock_openai_client):
-        from rag.query import chat
+        from api.query import chat
 
         mock_collection = self._make_mock_collection()
         clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
@@ -676,7 +764,7 @@ class TestChat:
         assert result["role"] == "assistant"
 
     def test_chat_with_openai(self, mock_openai_client):
-        from rag.query import chat
+        from api.query import chat
 
         mock_collection = self._make_mock_collection()
         clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
@@ -694,7 +782,7 @@ class TestChat:
         mock_openai_client.chat.completions.create.assert_called_once()
 
     def test_chat_with_anthropic(self, mock_openai_client, mock_anthropic_client):
-        from rag.query import chat
+        from api.query import chat
 
         mock_collection = self._make_mock_collection()
         clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
@@ -713,7 +801,7 @@ class TestChat:
         mock_anthropic_client.messages.create.assert_called_once()
 
     def test_chat_uses_latest_user_message_for_retrieval(self, mock_openai_client):
-        from rag.query import chat
+        from api.query import chat
 
         mock_collection = self._make_mock_collection()
         clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
@@ -736,3 +824,98 @@ class TestChat:
         embed_call = mock_openai_client.embeddings.create.call_args
         embed_input = embed_call.kwargs.get("input") or embed_call[1].get("input")
         assert embed_input == ["What about the zoning vote?"]
+
+    def test_chat_openai_records_embedding_and_synthesis_costs(self, mock_openai_client):
+        from api.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        embed_response = MagicMock()
+        embed_response.data = [MagicMock(embedding=[0.1] * 1536)]
+        embed_response.usage = MagicMock(total_tokens=222)
+        mock_openai_client.embeddings.create.return_value = embed_response
+
+        chat_response = MagicMock()
+        chat_response.choices = [MagicMock(message=MagicMock(content="OpenAI answer"))]
+        chat_response.usage = MagicMock(prompt_tokens=90, completion_tokens=18)
+        mock_openai_client.chat.completions.create.return_value = chat_response
+
+        tracker = MagicMock()
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            chat(
+                messages=[{"role": "user", "content": "test"}],
+                collection=mock_collection,
+                openai_client=mock_openai_client,
+                clip_metadata=clip_metadata,
+                model_provider="openai",
+                tenant_id="tenant-chat",
+                request_id="req-chat-openai",
+            )
+
+        tracker.record_embedding.assert_called_once_with(
+            tenant_id="tenant-chat",
+            model="text-embedding-3-small",
+            tokens=222,
+            request_id="req-chat-openai",
+            operation="rag.chat.embed_query",
+        )
+        tracker.record_llm_call.assert_called_once_with(
+            tenant_id="tenant-chat",
+            model="gpt-4o",
+            operation="rag.chat.synthesize",
+            input_tokens=90,
+            output_tokens=18,
+            request_id="req-chat-openai",
+            module="query",
+        )
+
+    def test_chat_anthropic_records_embedding_and_synthesis_costs(
+        self,
+        mock_openai_client,
+        mock_anthropic_client,
+    ):
+        from api.query import chat
+
+        mock_collection = self._make_mock_collection()
+        clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
+                                 "meeting_body": "Council"}}
+
+        embed_response = MagicMock()
+        embed_response.data = [MagicMock(embedding=[0.1] * 1536)]
+        embed_response.usage = MagicMock(total_tokens=144)
+        mock_openai_client.embeddings.create.return_value = embed_response
+
+        anthropic_response = mock_anthropic_client.messages.create.return_value
+        anthropic_response.usage = MagicMock(input_tokens=77, output_tokens=33)
+
+        tracker = MagicMock()
+        with patch("api.cost.get_cost_tracker", return_value=tracker):
+            chat(
+                messages=[{"role": "user", "content": "test"}],
+                collection=mock_collection,
+                openai_client=mock_openai_client,
+                clip_metadata=clip_metadata,
+                anthropic_client=mock_anthropic_client,
+                model_provider="anthropic",
+                tenant_id="tenant-chat",
+                request_id="req-chat-anthropic",
+            )
+
+        tracker.record_embedding.assert_called_once_with(
+            tenant_id="tenant-chat",
+            model="text-embedding-3-small",
+            tokens=144,
+            request_id="req-chat-anthropic",
+            operation="rag.chat.embed_query",
+        )
+        tracker.record_llm_call.assert_called_once_with(
+            tenant_id="tenant-chat",
+            model="claude-sonnet",
+            operation="rag.chat.synthesize",
+            input_tokens=77,
+            output_tokens=33,
+            request_id="req-chat-anthropic",
+            module="query",
+        )

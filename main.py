@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-LFUCG Meeting Pipeline - Standalone Version
-Downloads, transcribes, and generates articles for LFUCG meeting clips.
+Meeting Pipeline - Standalone Version
+Downloads, transcribes, and generates articles for Granicus meeting clips.
 
 Usage:
-    python lfucg_pipeline.py 6650                    # Process single clip
-    python lfucg_pipeline.py 6650 6660               # Process range
-    python lfucg_pipeline.py --auto                  # Auto-increment from last
-    python lfucg_pipeline.py --scrape                # Scrape and process all new
+    python main.py 6650                    # Process single clip
+    python main.py 6650 6660               # Process range
+    python main.py --auto                  # Auto-increment from last
+    python main.py --scrape                # Scrape and process all new
 
 Requirements:
     pip install yt-dlp openai requests beautifulsoup4 lxml
@@ -21,6 +21,7 @@ import json
 import argparse
 import subprocess
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -45,11 +46,73 @@ except ImportError:
     sys.exit(1)
 
 
-class LFUCGPipeline:
+logger = logging.getLogger(__name__)
+
+
+def _coerce_token_count(value) -> int | None:
+    """Convert a usage field to int only when it is actually numeric."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _usage_value(usage, *names: str) -> int:
+    """Read the first available integer token field from a usage object."""
+    if usage is None:
+        return 0
+    for name in names:
+        value = _coerce_token_count(getattr(usage, name, None))
+        if value is not None:
+            return value
+    return 0
+
+
+def _record_llm_cost(
+    tenant_id: str | None,
+    usage,
+    *,
+    model: str,
+    operation: str,
+    request_id: str | None = None,
+) -> None:
+    """Best-effort completion cost tracking; never raises."""
+    if not tenant_id or usage is None:
+        return
+
+    input_tokens = _usage_value(usage, "prompt_tokens", "input_tokens")
+    output_tokens = _usage_value(usage, "completion_tokens", "output_tokens")
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+
+    try:
+        from api.cost import get_cost_tracker
+
+        get_cost_tracker().record_llm_call(
+            tenant_id=tenant_id,
+            model=model,
+            operation=operation,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            request_id=request_id,
+            module="pipeline",
+        )
+    except Exception:
+        logger.debug("cost tracking failed for pipeline llm call", exc_info=True)
+
+
+class MeetingPipeline:
     def __init__(
             self,
-            output_dir: str = "./lfucg_output",
-            view_id: str = "14",
+            output_dir: str = "./meetings_output",
+            view_id: str = None,
             openai_api_key: Optional[str] = None,
             transcribe_model: str = "whisper-1",
             summary_model: str = "gpt-4o",
@@ -59,7 +122,9 @@ class LFUCGPipeline:
             transcribe_timeout: int = 600
     ):
         self.output_dir = Path(output_dir)
-        self.view_id = view_id
+        self.view_id = view_id or os.getenv("GRANICUS_VIEW_ID")
+        if not self.view_id:
+            raise ValueError("GRANICUS_VIEW_ID environment variable is required")
         self.keep_audio = keep_audio
         self.verbose = verbose
         self.force_reprocess = force_reprocess
@@ -71,6 +136,14 @@ class LFUCGPipeline:
 
         # First clip ID for auto-processing (from environment)
         self.first_clip_id = int(os.getenv("FIRST_CLIP_ID", "6669"))
+
+        # Granicus host (configurable via environment)
+        self.granicus_host = os.getenv("GRANICUS_HOST")
+        if not self.granicus_host:
+            raise ValueError("GRANICUS_HOST environment variable is required (e.g. cityname.granicus.com)")
+
+        # Cache of clip_id -> direct audio URL (populated by scrape_available_clips)
+        self.direct_audio_urls: Dict[int, str] = {}
 
         # Set up OpenAI client with timeout for large file uploads
         api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -123,15 +196,15 @@ class LFUCGPipeline:
 
     def clip_url(self, clip_id: int) -> str:
         """Generate Granicus clip URL"""
-        return f"https://lfucg.granicus.com/player/clip/{clip_id}?view_id={self.view_id}&redirect=true"
+        return f"https://{self.granicus_host}/player/clip/{clip_id}?view_id={self.view_id}&redirect=true"
 
     def agenda_url(self, clip_id: int) -> str:
         """Generate Granicus agenda PDF URL"""
-        return f"https://lfucg.granicus.com/AgendaViewer.php?view_id={self.view_id}&clip_id={clip_id}"
+        return f"https://{self.granicus_host}/AgendaViewer.php?view_id={self.view_id}&clip_id={clip_id}"
 
     def minutes_url(self, clip_id: int) -> str:
         """Generate Granicus minutes URL"""
-        return f"https://lfucg.granicus.com/MinutesViewer.php?view_id={self.view_id}&clip_id={clip_id}"
+        return f"https://{self.granicus_host}/MinutesViewer.php?view_id={self.view_id}&clip_id={clip_id}"
 
     def sanitize_filename(self, title: str) -> str:
         """Sanitize title for use as filename"""
@@ -183,8 +256,13 @@ class LFUCGPipeline:
             return None
 
     def scrape_available_clips(self) -> List[int]:
-        """Scrape all available clip IDs from Granicus viewer page"""
-        url = f"https://lfucg.granicus.com/ViewPublisher.php?view_id={self.view_id}"
+        """Scrape all available clip IDs from Granicus viewer page.
+
+        Also detects and caches direct audio download URLs (e.g. MP3 links on
+        archive-video.granicus.com) when available, keyed by clip_id in
+        self.direct_audio_urls.
+        """
+        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={self.view_id}"
 
         self.log(f"Scraping clips from {url}")
 
@@ -208,6 +286,25 @@ class LFUCGPipeline:
                     matches = re.findall(r'clip_id[=:](\d+)', script.string)
                     clip_ids.update(int(m) for m in matches)
 
+            # Detect direct audio download URLs by scanning table rows.
+            # Some Granicus sites (e.g. Elk Grove) expose direct MP3 links on
+            # archive-video.granicus.com alongside each clip entry.
+            for row in soup.find_all('tr'):
+                row_clip_id = None
+                audio_url = None
+                for a in row.find_all('a', href=True):
+                    href = a['href']
+                    cid = re.search(r'clip_id=(\d+)', href)
+                    if cid:
+                        row_clip_id = int(cid.group(1))
+                    if re.search(r'archive-video\.granicus\.com/.*\.mp3', href):
+                        audio_url = href if href.startswith('http') else f"https:{href}"
+                if row_clip_id and audio_url:
+                    self.direct_audio_urls[row_clip_id] = audio_url
+
+            if self.direct_audio_urls:
+                self.log(f"Found direct audio URLs for {len(self.direct_audio_urls)} clips")
+
             result = sorted(clip_ids)
             self.log(f"Found {len(result)} clips via scraping")
             if result:
@@ -218,6 +315,33 @@ class LFUCGPipeline:
         except Exception as e:
             self.log(f"Error scraping: {e}", "ERROR")
             return []
+
+    def _populate_direct_audio_urls(self):
+        """One-time scrape of ViewPublisher to find direct audio download URLs."""
+        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={self.view_id}"
+        self.progress(f"Checking for direct audio URLs on {self.granicus_host}...")
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'lxml')
+            for row in soup.find_all('tr'):
+                row_clip_id = None
+                audio_url = None
+                for a in row.find_all('a', href=True):
+                    href = a['href']
+                    cid = re.search(r'clip_id=(\d+)', href)
+                    if cid:
+                        row_clip_id = int(cid.group(1))
+                    if re.search(r'archive-video\.granicus\.com/.*\.mp3', href):
+                        audio_url = href if href.startswith('http') else f"https:{href}"
+                if row_clip_id and audio_url:
+                    self.direct_audio_urls[row_clip_id] = audio_url
+            if self.direct_audio_urls:
+                self.progress(f"Found direct audio URLs for {len(self.direct_audio_urls)} clips")
+            else:
+                self.progress("No direct audio URLs found, will use yt-dlp")
+        except Exception as e:
+            self.progress(f"Could not check for direct audio URLs: {e}")
 
     def download_audio(self, clip_id: int, clip_dir: Path, title: Optional[str] = None, date: Optional[str] = None) -> Optional[str]:
         """Download audio using yt-dlp with progress. Returns the audio filename or None on failure."""
@@ -253,7 +377,104 @@ class LFUCGPipeline:
             self.progress(f"Audio already exists as {existing.name} ({size_mb:.2f} MB) - skipping download")
             return existing.name
 
-        self.log(f"Downloading clip {clip_id} from {url}")
+        # If direct_audio_urls hasn't been populated yet (e.g. single-clip mode),
+        # do a one-time scrape of the ViewPublisher page to check for direct URLs.
+        if not self.direct_audio_urls:
+            self._populate_direct_audio_urls()
+
+        direct_url = self.direct_audio_urls.get(clip_id)
+
+        # If no direct URL from ViewPublisher, try the clip's player page
+        if not direct_url:
+            direct_url = self._get_clip_audio_url(clip_id)
+
+        if direct_url:
+            return self._download_audio_direct(direct_url, clip_id, output_path, audio_filename)
+        else:
+            return self._download_audio_ytdlp(url, clip_id, output_path, audio_filename)
+
+    def _get_clip_audio_url(self, clip_id: int) -> Optional[str]:
+        """Check the clip's player page for a direct MP3 download link."""
+        url = self.clip_url(clip_id)
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'lxml')
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if re.search(r'archive-video\.granicus\.com/.*\.mp3', href):
+                    audio_url = href if href.startswith('http') else f"https:{href}"
+                    self.log(f"Found direct audio URL on clip page: {audio_url}")
+                    self.direct_audio_urls[clip_id] = audio_url
+                    return audio_url
+        except Exception as e:
+            self.log(f"Could not check clip page for audio URL: {e}")
+        return None
+
+    def _download_audio_direct(self, direct_url: str, clip_id: int, output_path: Path, audio_filename: str) -> Optional[str]:
+        """Download audio directly via HTTP and convert to pipeline format (22kHz mono 48kbps)."""
+        self.log(f"Direct-downloading clip {clip_id} from {direct_url}")
+
+        raw_path = output_path.with_suffix('.raw.mp3')
+
+        try:
+            response = requests.get(direct_url, stream=True, timeout=120)
+            response.raise_for_status()
+
+            total = int(response.headers.get('content-length', 0))
+            downloaded = 0
+
+            with open(raw_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = downloaded * 100 / total
+                        print(f"\r  Downloading: {pct:.1f}% ({downloaded // 1024}KB / {total // 1024}KB)", end='', flush=True)
+            print()
+
+            if not raw_path.exists() or raw_path.stat().st_size == 0:
+                self.log("Direct download produced empty file", "ERROR")
+                return None
+
+            raw_mb = raw_path.stat().st_size / (1024 * 1024)
+            self.progress(f"Downloaded {raw_mb:.2f} MB, converting to 22kHz mono 48kbps...")
+
+            # Convert to pipeline standard: 22kHz mono 48kbps mp3
+            cmd = [
+                "ffmpeg", "-y", "-i", str(raw_path),
+                "-ar", "22050", "-ac", "1", "-b:a", "48k",
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            # Clean up raw file
+            raw_path.unlink(missing_ok=True)
+
+            if result.returncode != 0:
+                self.log(f"ffmpeg conversion failed: {result.stderr[-500:]}", "ERROR")
+                return None
+
+            if output_path.exists() and output_path.stat().st_size > 0:
+                size_mb = output_path.stat().st_size / (1024 * 1024)
+                self.progress(f"Converted to {size_mb:.2f} MB as {audio_filename}")
+                return audio_filename
+            else:
+                self.log("ffmpeg produced empty file", "ERROR")
+                return None
+
+        except requests.RequestException as e:
+            self.log(f"Direct download failed: {e}", "ERROR")
+            raw_path.unlink(missing_ok=True)
+            return None
+        except subprocess.TimeoutExpired:
+            self.log("ffmpeg conversion timed out", "ERROR")
+            raw_path.unlink(missing_ok=True)
+            return None
+
+    def _download_audio_ytdlp(self, url: str, clip_id: int, output_path: Path, audio_filename: str) -> Optional[str]:
+        """Download audio using yt-dlp (fallback when no direct URL available)."""
+        self.log(f"Downloading clip {clip_id} via yt-dlp from {url}")
 
         try:
             # Use yt-dlp with progress display
@@ -1108,6 +1329,13 @@ Guidelines:
                 temperature=0.3,
                 max_tokens=8000  # Increased for more detailed summaries
             )
+            _record_llm_cost(
+                getattr(self, "tenant_id", None),
+                getattr(response, "usage", None),
+                model=self.summary_model,
+                operation="legacy_summary_generation",
+                request_id=f"legacy-summary:{clip_id}",
+            )
 
             summary = response.choices[0].message.content.strip()
 
@@ -1638,14 +1866,16 @@ Guidelines:
             # RAG ingestion (if enabled)
             if getattr(self, 'rag_enabled', False):
                 try:
-                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection
+                    from api.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection
                     from openai import OpenAI
                     collection = get_chroma_collection(str(self.output_dir))
                     openai_client = OpenAI()
-                    rag_ingest_clip(clip_id, self.output_dir, collection, openai_client, verbose=self.verbose)
+                    rag_ingest_clip(clip_id, self.output_dir, collection, openai_client,
+                                    verbose=self.verbose,
+                                    tenant_id=getattr(self, 'tenant_id', None))
                     self.log(f"RAG: Ingested clip {clip_id}")
                 except ImportError:
-                    self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
+                    self.log("API dependencies not installed, skipping ingestion", "WARNING")
                 except Exception as e:
                     self.log(f"RAG ingestion failed for clip {clip_id}: {e}", "WARNING")
 
@@ -1892,7 +2122,7 @@ Guidelines:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LFUCG Meeting Pipeline - Download, transcribe, and generate meeting summaries",
+        description="Meeting Pipeline - Download, transcribe, and generate meeting summaries",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1961,14 +2191,14 @@ Examples:
 
     parser.add_argument(
         "--output-dir",
-        default="./lfucg_output",
-        help="Output directory (default: ./lfucg_output)"
+        default="./meetings_output",
+        help="Output directory (default: ./meetings_output)"
     )
 
     parser.add_argument(
         "--view-id",
-        default="14",
-        help="Granicus view ID (default: 14)"
+        default=None,
+        help="Granicus view ID (overrides GRANICUS_VIEW_ID env var)"
     )
 
     parser.add_argument(
@@ -2041,8 +2271,8 @@ Examples:
 
     parser.add_argument(
         "--test-summary-dir",
-        default="./lfucg_test_output",
-        help="Output directory for --test-summary (default: ./lfucg_test_output)"
+        default="./test_output",
+        help="Output directory for --test-summary (default: ./test_output)"
     )
 
     parser.add_argument(
@@ -2069,13 +2299,52 @@ Examples:
         help="With --backfill-docs, regenerate summary when new docs are found"
     )
 
+    parser.add_argument(
+        "--tenant-id",
+        default=None,
+        help="Tenant ID for multi-tenant data isolation. When set, stores clips under "
+             "meetings_output/tenants/{tenant_id}/clips/ and uses tenant's Granicus config."
+    )
+
     args = parser.parse_args()
+
+    # Resolve tenant config if --tenant-id provided
+    tenant_id = args.tenant_id
+    tenant_granicus_host = None
+    tenant_granicus_view_id = None
+    pipeline_output_dir = args.output_dir
+
+    if tenant_id:
+        try:
+            from api.auth import TenantStore
+            db_path = os.path.join(args.output_dir, "tenants.db")
+            tenant_store = TenantStore(db_path)
+            tenant = tenant_store.get_by_id(tenant_id)
+            if tenant is None:
+                print(f"Error: Tenant '{tenant_id}' not found in {db_path}")
+                sys.exit(1)
+            tenant_granicus_host = tenant.granicus_host
+            tenant_granicus_view_id = tenant.granicus_view_id
+            # Scope output to tenant subdirectory
+            pipeline_output_dir = os.path.join(args.output_dir, "tenants", tenant_id)
+            print(f"Tenant: {tenant.name} ({tenant_id})")
+            print(f"  Granicus host: {tenant_granicus_host}")
+            print(f"  Output dir:    {pipeline_output_dir}")
+        except ImportError:
+            print("Error: Tenant support requires API dependencies. Run: uv sync --extra api")
+            sys.exit(1)
 
     # Initialize pipeline
     try:
-        pipeline = LFUCGPipeline(
-            output_dir=args.output_dir,
-            view_id=args.view_id,
+        # If tenant provided, override Granicus env vars for this process
+        if tenant_granicus_host:
+            os.environ["GRANICUS_HOST"] = tenant_granicus_host
+        if tenant_granicus_view_id:
+            os.environ["GRANICUS_VIEW_ID"] = tenant_granicus_view_id
+
+        pipeline = MeetingPipeline(
+            output_dir=pipeline_output_dir,
+            view_id=tenant_granicus_view_id or args.view_id,
             transcribe_model=args.transcribe_model,
             summary_model=args.summary_model,
             keep_audio=not args.no_audio,
@@ -2087,13 +2356,14 @@ Examples:
         print(f"Error: {e}")
         sys.exit(1)
 
-    # Set RAG enabled flag
+    # Set RAG enabled flag and tenant context
     pipeline.rag_enabled = args.rag
+    pipeline.tenant_id = tenant_id
 
     # Handle rebuild-rag mode
     if args.rebuild_rag:
         try:
-            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, save_rag_state
+            from api.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, save_rag_state
             from openai import OpenAI
 
             openai_client = OpenAI()
@@ -2118,13 +2388,14 @@ Examples:
             for i, clip_id in enumerate(clip_ids):
                 print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
                 rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client,
-                                rag_state=state, verbose=True)
+                                rag_state=state, verbose=True,
+                                tenant_id=tenant_id)
 
-            from rag.ingest import get_stats
+            from api.ingest import get_stats
             stats = get_stats(collection)
             print(f"\nRAG rebuild complete: {stats['total_chunks']} chunks from {stats['unique_clips']} clips")
         except ImportError:
-            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            print("Error: API dependencies not installed. Run: uv sync --extra api")
             sys.exit(1)
         sys.exit(0)
 
@@ -2134,7 +2405,7 @@ Examples:
             from summary_v2 import generate_summary_v2
             import anthropic
         except ImportError:
-            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            print("Error: API dependencies not installed. Run: uv sync --extra api")
             sys.exit(1)
 
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -2166,7 +2437,7 @@ Examples:
         print(f"\nTesting two-pass summary on {len(test_clip_ids)} clips")
         print(f"Output directory: {test_dir}")
         print(f"Extraction model: {args.summary_model}")
-        print(f"Narration model: Claude Sonnet")
+        print("Narration model: Claude Sonnet")
         print()
 
         for i, clip_id in enumerate(test_clip_ids, 1):
@@ -2242,6 +2513,7 @@ Examples:
                     date=date,
                     extraction_model=args.summary_model,
                     log_fn=lambda msg: print(f"  {msg}"),
+                    tenant_id=getattr(args, "tenant_id", None),
                 )
 
                 if facts:
@@ -2256,7 +2528,7 @@ Examples:
                     print(f"  Done: v1={old_len} chars, v2={len(summary)} chars, "
                           f"facts={len(json.dumps(facts))} chars")
                 else:
-                    print(f"  FAILED: no summary generated")
+                    print("  FAILED: no summary generated")
 
             except Exception as e:
                 print(f"  ERROR: {e}")
@@ -2312,7 +2584,7 @@ Examples:
                 except (json.JSONDecodeError, KeyError):
                     pass
 
-        print(f"Cleaned v1 summaries:")
+        print("Cleaned v1 summaries:")
         print(f"  summary.html removed: {html_removed}")
         print(f"  summary.txt removed (non-upgraded clips): {txt_removed}")
         print(f"  metadata.json updated: {metadata_updated}")
@@ -2324,7 +2596,7 @@ Examples:
             from summary_v2 import generate_summary_v2
             import anthropic
         except ImportError:
-            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            print("Error: API dependencies not installed. Run: uv sync --extra api")
             sys.exit(1)
 
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -2360,7 +2632,7 @@ Examples:
 
         print(f"\nUpgrading summaries: {len(clip_ids)} clips to process, {skipped} already done")
         print(f"Extraction model: {args.summary_model}")
-        print(f"Narration model: Claude Sonnet\n")
+        print("Narration model: Claude Sonnet\n")
 
         succeeded = 0
         failed_ids = []
@@ -2415,6 +2687,7 @@ Examples:
                     date=date,
                     extraction_model=args.summary_model,
                     log_fn=lambda msg: print(f"  {msg}"),
+                    tenant_id=getattr(args, "tenant_id", None),
                 )
 
                 if facts:
@@ -2440,7 +2713,7 @@ Examples:
         print(f"\nDone: {succeeded} upgraded, {len(failed_ids)} failed, {skipped} previously done")
         if failed_ids:
             print(f"Failed clips: {failed_ids}")
-        print(f"\nNext step: uv run python main.py --rebuild-rag")
+        print("\nNext step: uv run python main.py --rebuild-rag")
         sys.exit(0 if not failed_ids else 1)
 
     # Handle backfill-docs mode
@@ -2449,7 +2722,7 @@ Examples:
             max_clips=args.max,
             regenerate_summary=args.regenerate_summary
         )
-        print(f"\nBackfill results:")
+        print("\nBackfill results:")
         print(f"  Updated (new docs found): {len(results['updated'])} clips")
         if results['updated']:
             print(f"    {results['updated']}")
@@ -2472,7 +2745,7 @@ Examples:
     # Handle update-transcripts mode
     if args.update_transcripts:
         results = pipeline.update_transcript_timestamps(max_clips=args.max)
-        print(f"\nTranscript update results:")
+        print("\nTranscript update results:")
         print(f"  Updated: {len(results['updated'])} clips")
         print(f"  Failed: {len(results['failed'])} clips")
         if results['updated']:

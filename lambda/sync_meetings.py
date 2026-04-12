@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AWS Lambda handler for LFUCG Meeting Pipeline sync.
+AWS Lambda handler for Meeting Pipeline sync.
 
 Triggered by EventBridge schedule (12pm and 8pm weekdays) to:
 1. Download existing state from S3
@@ -41,7 +41,7 @@ from botocore.exceptions import ClientError
 # Add parent directory to path to import main pipeline
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from main import LFUCGPipeline
+from main import MeetingPipeline
 
 
 def download_from_s3(bucket: str, prefix: str, local_dir: str, files_only: list = None) -> int:
@@ -178,7 +178,7 @@ def handler(event, context):
     force = event.get('force', False)
     full_sync = event.get('full_sync', False)
     reverse = event.get('reverse', False)
-    output_dir = '/tmp/lfucg_output'
+    output_dir = '/tmp/meetings_output'
     s3_bucket = os.environ.get('S3_BUCKET')
     s3_prefix = os.environ.get('S3_DATA_PREFIX', 'data/')
 
@@ -211,7 +211,7 @@ def handler(event, context):
             download_from_s3(s3_bucket, s3_prefix, output_dir, files_only=state_files)
 
         # Initialize pipeline
-        pipeline = LFUCGPipeline(
+        pipeline = MeetingPipeline(
             output_dir=output_dir,
             force_reprocess=force,
             verbose=True
