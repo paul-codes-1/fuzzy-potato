@@ -236,3 +236,9 @@ uv run uvicorn rag.server:app --reload --port 8000
 cd frontend && npm run dev
 # Vite proxies /api/* → localhost:8000
 ```
+
+# Build, tag, push                                                                                                                                                                                                  
+  docker build --platform linux/amd64 -t lfucg-rag-api .                                                                                                                                                              
+  docker tag lfucg-rag-api:latest 861476138515.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest                                                                                                                   
+  aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 861476138515.dkr.ecr.us-east-1.amazonaws.com                                                                           
+  docker push 861476138515.dkr.ecr.us-east-1.amazonaws.com/lfucg-rag-api:latest 
