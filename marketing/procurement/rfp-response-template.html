@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFP Response Template — CivicLens</title>
+  <meta name="description" content="Pre-filled RFP response template for CivicLens. Company overview, technical architecture, data residency, SLA, pricing, and references.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+
+    /* Document styling */
+    .rfp-doc h2 {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 1.875rem;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .rfp-doc h3 {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 1.25rem;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+      color: #e8a838;
+    }
+    .rfp-doc p { margin-bottom: 1rem; line-height: 1.7; color: #b8c7df; }
+    .rfp-doc ul { margin-bottom: 1rem; padding-left: 1.25rem; list-style: disc; color: #b8c7df; }
+    .rfp-doc ul li { margin-bottom: 0.4rem; line-height: 1.6; }
+    .rfp-doc table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    .rfp-doc th, .rfp-doc td {
+      padding: 0.75rem 1rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    .rfp-doc th {
+      background: rgba(232,168,56,0.08);
+      color: #e8a838;
+      font-weight: 600;
+    }
+    .rfp-doc td { color: #b8c7df; }
+
+    /* Print styles */
+    @media print {
+      body::before { display: none; }
+      .no-print { display: none !important; }
+      body { background: white !important; color: #111 !important; }
+      .rfp-doc { max-width: 100% !important; padding: 0 !important; background: white !important; border: none !important; box-shadow: none !important; }
+      .rfp-doc h2 { color: #0c1a33 !important; border-bottom-color: #ccc !important; }
+      .rfp-doc h3 { color: #b87a1e !important; }
+      .rfp-doc p, .rfp-doc ul, .rfp-doc td { color: #111 !important; }
+      .rfp-doc th { background: #f5f5f5 !important; color: #b87a1e !important; border-color: #ccc !important; }
+      .rfp-doc td { border-color: #ccc !important; }
+      .print-header { display: block !important; text-align: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #0c1a33; }
+      .print-header h1 { color: #0c1a33 !important; font-size: 1.75rem; }
+      .print-header p { color: #555 !important; }
+      @page { margin: 0.75in; }
+    }
+    .print-header { display: none; }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="no-print fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+        <a href="index.html" class="text-amber-400">For Procurement</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="window.print()" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2 border border-white/10 rounded-lg hover:bg-white/5">
+          Print
+        </button>
+        <a href="mailto:sales@civiclens.ai?subject=Request%20RFP%20Response%20(.docx)" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all">
+          Download as .docx
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== DOC HEADER (no print) ========== -->
+  <section class="no-print pt-32 pb-12">
+    <div class="max-w-4xl mx-auto px-6">
+      <a href="index.html" class="inline-flex items-center gap-2 text-navy-400 hover:text-amber-400 text-sm mb-6 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Procurement Kit
+      </a>
+      <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Document 1 of 4</p>
+      <h1 class="font-display text-4xl md:text-5xl tracking-tight mb-4">RFP Response Template</h1>
+      <p class="text-navy-300 text-lg leading-relaxed">Drop this into your RFP response document. Every section is pre-filled with accurate, procurement-ready language about CivicLens.</p>
+    </div>
+  </section>
+
+  <!-- ========== DOCUMENT BODY ========== -->
+  <section class="pb-24">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="rfp-doc bg-navy-900/40 border border-white/10 rounded-2xl p-8 md:p-12">
+
+        <div class="print-header">
+          <h1>CivicLens RFP Response</h1>
+          <p>Prepared for government procurement review | civiclens.ai</p>
+        </div>
+
+        <h2>1. Company Overview</h2>
+        <p><strong>Company:</strong> CivicLens, Inc.<br>
+        <strong>Product:</strong> CivicLens — AI-powered civic meeting intelligence platform<br>
+        <strong>Founded:</strong> 2025<br>
+        <strong>Headquarters:</strong> United States<br>
+        <strong>Business Model:</strong> B2G SaaS with self-hosted and managed cloud deployment options</p>
+
+        <p>CivicLens is a multi-tenant SaaS platform that transforms Granicus-hosted government meeting archives into searchable, queryable knowledge bases. The platform provides AI-powered transcription, structured data extraction (votes, financial items, attendance), natural-language Q&amp;A backed by retrieval-augmented generation (RAG), sentiment analysis, and integrations with Slack, Microsoft Teams, and Zapier.</p>
+
+        <p>Our customers are city clerks, city managers, public-records officers, IT directors, and civic-engagement teams at municipalities that already use Granicus for meeting video hosting. We are purpose-built for local government and we do not serve enterprise customers outside the public sector.</p>
+
+        <h2>2. Technical Architecture Summary</h2>
+
+        <h3>2.1 System Components</h3>
+        <p>CivicLens is a modern Python and JavaScript application stack composed of:</p>
+        <ul>
+          <li><strong>Ingestion pipeline</strong> (Python) — scrapes Granicus clips, downloads audio, transcribes via OpenAI Whisper, extracts structured facts using GPT-4o, and generates narrative summaries using Anthropic Claude.</li>
+          <li><strong>RAG API server</strong> (FastAPI) — tenant-scoped REST API for question answering, chat, search, analytics, audit, billing, webhooks, and SSO.</li>
+          <li><strong>Vector store</strong> — ChromaDB with OpenAI text-embedding-3-small embeddings for semantic retrieval.</li>
+          <li><strong>Relational store</strong> — SQLite for single-node deployments and PostgreSQL for production multi-instance deployments.</li>
+          <li><strong>Frontend</strong> — React 18 single-page application with internationalization support (English, Spanish, Chinese, Vietnamese, Korean).</li>
+          <li><strong>Embeddable widget</strong> — drop-in <code>&lt;script&gt;</code> tag for government websites.</li>
+        </ul>
+
+        <h3>2.2 Deployment Shapes</h3>
+        <p>CivicLens supports two deployment topologies:</p>
+        <ul>
+          <li><strong>Managed cloud (recommended)</strong> — hosted by CivicLens on AWS using CloudFront for static frontend delivery and AWS App Runner for the API layer, with ACM-managed TLS certificates.</li>
+          <li><strong>Self-hosted</strong> — customer runs the full stack via Docker on their own infrastructure, with all state kept under a configurable <code>MEETINGS_OUTPUT_DIR</code>. A documented Terraform module is provided for AWS self-deployment.</li>
+        </ul>
+
+        <h3>2.3 AI Model Providers</h3>
+        <p>CivicLens uses commercial large-language-model APIs from OpenAI (Whisper transcription, GPT-4o extraction, text-embedding-3-small embeddings) and Anthropic (Claude for narrative summarization and chat). We do not train foundation models on customer data. Customer content sent to model providers is governed by the zero-retention data processing terms those providers offer to enterprise API customers.</p>
+
+        <h2>3. Data Residency</h2>
+        <p>In the managed cloud deployment, all CivicLens application data is stored in AWS regions within the United States. Customers with stricter residency requirements can select the self-hosted deployment option and retain full control of data location, including on-premises hosting.</p>
+
+        <p>CivicLens does not replicate or copy customer data outside of the region in which the tenant is provisioned, except as strictly required for disaster-recovery backups (which are also held within the same national jurisdiction).</p>
+
+        <p>Public meeting artifacts (video, agendas, minutes) originate from the customer's own Granicus account and are already part of the public record. CivicLens acts as a downstream processor of that already-public information.</p>
+
+        <h2>4. Uptime SLA</h2>
+        <table>
+          <thead>
+            <tr><th>Plan</th><th>Monthly Uptime SLA</th><th>Credit Policy</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Starter</td><td>99.5%</td><td>Best-effort, no service credits</td></tr>
+            <tr><td>Pro</td><td>99.9%</td><td>10% monthly credit below 99.9%, 25% below 99.0%</td></tr>
+            <tr><td>Enterprise</td><td>99.9%</td><td>25% monthly credit below 99.9%, 50% below 99.0%, plus cure period for repeat incidents</td></tr>
+          </tbody>
+        </table>
+        <p>SLA exclusions: scheduled maintenance (announced 72 hours in advance), force majeure events, and outages of upstream dependencies (Granicus, OpenAI, Anthropic) that are outside CivicLens's reasonable control. Real-time status is published at <code>status.civiclens.ai</code>.</p>
+
+        <h2>5. Support Tiers</h2>
+        <table>
+          <thead>
+            <tr><th>Tier</th><th>Hours</th><th>Response Time</th><th>Channels</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Starter</td>
+              <td>9am–6pm ET, Mon–Fri</td>
+              <td>2 business days</td>
+              <td>Email, knowledge base</td>
+            </tr>
+            <tr>
+              <td>Pro</td>
+              <td>8am–8pm ET, Mon–Fri</td>
+              <td>4 business hours (P1), 1 business day (P2)</td>
+              <td>Email, chat, knowledge base</td>
+            </tr>
+            <tr>
+              <td>Enterprise</td>
+              <td>24x7 for P1 incidents</td>
+              <td>30 minutes (P1), 2 hours (P2), 1 business day (P3)</td>
+              <td>Email, chat, phone, dedicated Slack channel, named customer success manager</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Severity Definitions</h3>
+        <ul>
+          <li><strong>P1 (Critical)</strong> — production system unavailable or data integrity at risk for all users in the tenant.</li>
+          <li><strong>P2 (High)</strong> — major feature unavailable or significantly degraded; workaround not available.</li>
+          <li><strong>P3 (Medium)</strong> — minor feature degraded; workaround available.</li>
+          <li><strong>P4 (Low)</strong> — question, cosmetic issue, or feature request.</li>
+        </ul>
+
+        <h2>6. Pricing Tiers</h2>
+        <table>
+          <thead>
+            <tr><th>Plan</th><th>Monthly</th><th>Included Queries</th><th>Meetings Ingested</th><th>SSO</th><th>Best For</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Starter</td>
+              <td>$299</td>
+              <td>100 / mo</td>
+              <td>Unlimited historical + new</td>
+              <td>No</td>
+              <td>Small cities, pilots, single department</td>
+            </tr>
+            <tr>
+              <td>Pro</td>
+              <td>$799</td>
+              <td>1,000 / mo</td>
+              <td>Unlimited + scheduler</td>
+              <td>SAML 2.0</td>
+              <td>Mid-size cities, multi-department rollout</td>
+            </tr>
+            <tr>
+              <td>Enterprise</td>
+              <td>$2,499</td>
+              <td>Unlimited</td>
+              <td>Unlimited + custom cron</td>
+              <td>SAML 2.0 + SCIM on roadmap</td>
+              <td>Large cities, counties, regional agencies</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>All plans include: Q&amp;A chat with citations, vote tracking, financial-item extraction, meeting summaries, search, audit logging, data export, FOIA-compliant packaging, Slack and Teams integrations, and the embeddable widget. Enterprise plans additionally include branding customization, priority pipeline processing, and a named customer success contact. Annual commitment discounts of 10% to 15% are available and are the norm for government contracts.</p>
+
+        <h3>6.1 Why Per-Org, Not Per-Seat</h3>
+        <p>CivicLens is priced per organization (tenant), not per user. This is a deliberate choice: we believe civic transparency tools should not penalize governments for adding more staff or citizens to the platform. Every plan allows unlimited named users within the tenant. Query allowances are tenant-wide, not per-user.</p>
+
+        <h2>7. References</h2>
+        <p>Reference customers can be provided on request under mutual NDA. Representative customer profile:</p>
+        <ul>
+          <li>Mid-size U.S. city (population 50,000–250,000) using Granicus for meeting hosting.</li>
+          <li>City clerk or records office as the primary operational owner.</li>
+          <li>IT department as the technical contact during rollout.</li>
+          <li>Typical go-live from contract signature to production: 10 to 15 business days.</li>
+        </ul>
+
+        <p>Live public demonstrations of the platform running against a real city's meeting archive are available at <a href="../demo.html" class="text-amber-400">civiclens.ai/demo</a>. Reference calls can be scheduled during the evaluation period.</p>
+
+        <h2>8. Standard Procurement Documents</h2>
+        <p>The following documents are available on request:</p>
+        <ul>
+          <li>W-9 (U.S. tax form)</li>
+          <li>Certificate of Insurance (General Liability, Professional Liability / E&amp;O, Cyber Liability)</li>
+          <li>Master Services Agreement (MSA) and a plain-language summary</li>
+          <li>Data Processing Agreement (DPA) aligned with CCPA and GDPR principles</li>
+          <li>Business Associate Agreement (BAA) — on request for jurisdictions with HIPAA-adjacent data concerns</li>
+          <li>Sub-processor list</li>
+          <li>Pre-answered Security Questionnaire (also published at the link below)</li>
+          <li>VPAT 2.4 accessibility conformance report</li>
+        </ul>
+
+        <h2>9. Points of Contact</h2>
+        <table>
+          <thead>
+            <tr><th>Role</th><th>Contact</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Sales &amp; Contracts</td><td>sales@civiclens.ai</td></tr>
+            <tr><td>Security &amp; Compliance</td><td>security@civiclens.ai</td></tr>
+            <tr><td>Technical Integration</td><td>support@civiclens.ai</td></tr>
+            <tr><td>Legal</td><td>legal@civiclens.ai</td></tr>
+          </tbody>
+        </table>
+
+        <p class="mt-8 text-sm text-navy-400 italic">This RFP response template is provided as a starting point. CivicLens will respond to specific RFP questions in the format and structure required by the issuing agency. Contact sales@civiclens.ai to request a custom response.</p>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="no-print flex flex-col sm:flex-row gap-4 justify-center mt-10">
+        <button onclick="window.print()" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-amber-400 text-navy-100 font-semibold px-6 py-3 rounded-xl transition-all hover:bg-white/5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          Print This Page
+        </button>
+        <a href="mailto:sales@civiclens.ai?subject=Request%20RFP%20Response%20(.docx)" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all hover:shadow-xl hover:shadow-amber-500/25">
+          Email me the .docx version
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="no-print border-t border-white/5 bg-navy-950 py-12">
+    <div class="max-w-7xl mx-auto px-6 text-center">
+      <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. &middot; <a href="index.html" class="hover:text-amber-400">Procurement Kit</a> &middot; <a href="../contact.html" class="hover:text-amber-400">Contact</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicLens for GovTech — Built for State &amp; Local Government IT</title>
+  <meta name="description" content="Procurement-ready meeting intelligence for state and local government IT. SOC 2 aligned, FedRAMP path, SSO-ready, and works with your existing Granicus. Managed SaaS or self-hosted.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="CivicLens for GovTech — Built for State &amp; Local Government IT">
+  <meta property="og:description" content="Procurement-ready AI meeting intelligence that plugs into your existing Granicus stack. SSO, audit logs, and a clean path through RFP.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://civiclens.ai/govtech">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    /* Reveal animations */
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+
+    /* Hero stagger */
+    .hero-line {
+      opacity: 0;
+      transform: translateY(40px);
+      animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .hero-line:nth-child(1) { animation-delay: 0.15s; }
+    .hero-line:nth-child(2) { animation-delay: 0.3s; }
+    .hero-line:nth-child(3) { animation-delay: 0.5s; }
+    .hero-line:nth-child(4) { animation-delay: 0.65s; }
+    @keyframes heroReveal {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Glowing accent line */
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    /* Nav blur */
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+
+    /* Feature card hover */
+    .feature-card {
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px -15px rgba(0,0,0,0.4);
+    }
+
+    /* Hero mesh */
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(61,95,148,0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 80% at 80% 20%, rgba(232,168,56,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 60% 80%, rgba(61,95,148,0.2) 0%, transparent 60%);
+      animation: meshShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes meshShift {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+      100% { background-position: 20% 20%, 80% 10%, 40% 80%; }
+    }
+
+    /* Pricing highlight border */
+    .pricing-highlight {
+      position: relative;
+    }
+    .pricing-highlight::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 1rem;
+      background: linear-gradient(135deg, #e8a838, #3d5f94, #e8a838);
+      z-index: -1;
+      animation: borderRotate 4s linear infinite;
+      background-size: 200% 200%;
+    }
+    @keyframes borderRotate {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Architecture boxes */
+    .arch-box {
+      border: 1px solid rgba(255,255,255,0.1);
+      background: linear-gradient(180deg, rgba(20,38,71,0.8), rgba(12,26,51,0.9));
+      border-radius: 0.75rem;
+      padding: 1.25rem 1rem;
+      text-align: center;
+      min-width: 140px;
+      transition: border-color 0.3s ease, transform 0.3s ease;
+    }
+    .arch-box:hover {
+      border-color: rgba(232,168,56,0.5);
+      transform: translateY(-2px);
+    }
+    .arch-arrow {
+      color: #5e7faf;
+      font-size: 1.5rem;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    /* Trust bar logos */
+    .trust-logo {
+      filter: grayscale(100%);
+      opacity: 0.6;
+      transition: all 0.3s ease;
+    }
+    .trust-logo:hover {
+      filter: grayscale(0);
+      opacity: 1;
+    }
+
+    /* Compliance table */
+    .compliance-row:nth-child(even) {
+      background: rgba(255,255,255,0.02);
+    }
+    .compliance-row:hover {
+      background: rgba(232,168,56,0.04);
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased overflow-x-hidden">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="govtech.html" class="text-amber-400">GovTech</a>
+        <a href="case-studies/" class="hover:text-amber-400 transition-colors">Case Studies</a>
+        <a href="pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="developers.html" class="hover:text-amber-400 transition-colors">Developers</a>
+        <a href="contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="contact.html" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2">
+          Sign In
+        </a>
+        <a href="contact.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Schedule a Demo
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="relative min-h-[80vh] flex items-center pt-16">
+    <div class="hero-mesh absolute inset-0"></div>
+    <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+
+    <div class="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
+      <div class="max-w-4xl">
+        <div class="hero-line inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm font-medium mb-8">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          For state &amp; local government IT
+        </div>
+        <h1 class="hero-line font-display text-5xl md:text-6xl lg:text-7xl leading-[1.05] tracking-tight mb-6">
+          Built for State &amp; Local <span class="text-amber-400">Government IT</span>
+        </h1>
+        <p class="hero-line text-lg md:text-xl text-navy-200 leading-relaxed max-w-3xl mb-10">
+          Procurement-ready AI meeting intelligence that plugs into the Granicus stack you already run. SOC 2 aligned, FedRAMP authorization on the roadmap, SSO-ready, and deployable as managed SaaS, on your own cloud, or air-gapped. No rip-and-replace.
+        </p>
+        <div class="hero-line flex flex-col sm:flex-row gap-4">
+          <a href="contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+            Schedule a Demo
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+          <a href="/docs/SECURITY_WHITEPAPER.md" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            Security Whitepaper
+          </a>
+        </div>
+        <div class="hero-line mt-8 flex flex-wrap items-center gap-6 text-xs text-navy-400">
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> SOC 2 aligned</span>
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> FedRAMP on roadmap</span>
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> SAML 2.0 SSO</span>
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> WCAG 2.1 AA</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== TRUST BAR ========== -->
+  <section class="py-16 border-y border-white/5 bg-navy-900/40">
+    <div class="max-w-7xl mx-auto px-6">
+      <p class="text-center text-xs uppercase tracking-[0.2em] text-navy-400 font-semibold mb-10 reveal">
+        Referenced in CivicLens case studies
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 reveal reveal-delay-1">
+        <div class="trust-logo flex items-center gap-3">
+          <svg class="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg>
+          <span class="font-display text-lg text-navy-100">City of Elk Grove</span>
+        </div>
+        <div class="trust-logo flex items-center gap-3">
+          <svg class="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg>
+          <span class="font-display text-lg text-navy-100">Lexington-Fayette UCG</span>
+        </div>
+        <div class="trust-logo flex items-center gap-3">
+          <svg class="w-8 h-8 text-navy-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg>
+          <span class="font-display text-lg text-navy-300 italic">[Your city here]</span>
+        </div>
+        <div class="trust-logo flex items-center gap-3">
+          <svg class="w-8 h-8 text-navy-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg>
+          <span class="font-display text-lg text-navy-300 italic">[Your county here]</span>
+        </div>
+      </div>
+      <p class="text-center text-xs text-navy-500 mt-6 reveal reveal-delay-2">
+        These are reference deployments, not paid customer logos. Full case studies available on request.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== WHY IT TEAMS CHOOSE ========== -->
+  <section class="py-24 md:py-32 relative">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Why IT teams choose CivicLens</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Designed from day one to fit inside the constraints real government IT departments operate under — procurement cycles, data isolation, identity federation, and audit mandates.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Card 1 -->
+        <div class="feature-card reveal bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Zero-footprint deployment</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">Run CivicLens as fully managed SaaS with nothing to install, or self-host the container on your own AWS or Azure. No agents on endpoints, no firewall exceptions for inbound traffic.</p>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Works with your Granicus</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">CivicLens reads from your existing Granicus view IDs, clip archive, and Legistar API. No migration, no data re-upload, no disruption to clerks or councilmembers. Same video source of truth.</p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">SSO-ready</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">SAML 2.0 federation with Okta, Azure AD / Microsoft Entra, Google Workspace, and any SAML-compliant IdP. Per-tenant IdP config, role-based access (admin / analyst / viewer), and email-domain restrictions.</p>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="feature-card reveal bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Audit-ready</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">Immutable append-only audit log with SHA-256 integrity hashes on every record. Every API call, query, and admin action is tracked with tenant, user, endpoint, and duration. Exportable as CSV for your auditors.</p>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Procurement-friendly</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">NASPO ValuePoint path in progress, Sourcewell and OMNIA Partners under review. We support purchase orders, multi-year contracts, COI, W-9, and complete vendor onboarding packets.</p>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 rounded-2xl p-7">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Open API</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">REST API with OpenAPI 3.0 schema, webhooks with HMAC signing, first-party Python and JavaScript SDKs, and an embeddable widget. Build anything you need on top — no lock-in.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== ARCHITECTURE DIAGRAM ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Architecture at a glance</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          CivicLens is a thin pipeline on top of the data you already own. Nothing new gets captured — we simply make existing public meetings intelligible.
+        </p>
+      </div>
+
+      <div class="reveal reveal-delay-2 bg-navy-950/60 border border-white/10 rounded-2xl p-8 md:p-12">
+        <!-- Horizontal flow (desktop) -->
+        <div class="hidden md:flex items-center justify-between gap-3">
+          <div class="arch-box">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Source</div>
+            <div class="font-display text-base text-white">Granicus</div>
+            <div class="text-[11px] text-navy-500 mt-1">Video + Legistar</div>
+          </div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-box">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Ingest</div>
+            <div class="font-display text-base text-white">CivicLens</div>
+            <div class="text-[11px] text-navy-500 mt-1">Scrape + download</div>
+          </div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-box">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">AI Pipeline</div>
+            <div class="font-display text-base text-white">Transcribe &middot; Extract &middot; Embed</div>
+            <div class="text-[11px] text-navy-500 mt-1">Whisper + GPT-4o + Claude</div>
+          </div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-box">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Surfaces</div>
+            <div class="font-display text-base text-white">Web &middot; API &middot; Widget</div>
+            <div class="text-[11px] text-navy-500 mt-1">Chat, search, RAG Q&amp;A</div>
+          </div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-box">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Users</div>
+            <div class="font-display text-base text-white">Residents &amp; Staff</div>
+            <div class="text-[11px] text-navy-500 mt-1">SSO + role-gated</div>
+          </div>
+        </div>
+
+        <!-- Vertical flow (mobile) -->
+        <div class="md:hidden flex flex-col items-center gap-3">
+          <div class="arch-box w-full">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Source</div>
+            <div class="font-display text-base text-white">Granicus</div>
+          </div>
+          <span class="arch-arrow">&darr;</span>
+          <div class="arch-box w-full">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Ingest</div>
+            <div class="font-display text-base text-white">CivicLens</div>
+          </div>
+          <span class="arch-arrow">&darr;</span>
+          <div class="arch-box w-full">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">AI Pipeline</div>
+            <div class="font-display text-base text-white">Transcribe &middot; Extract &middot; Embed</div>
+          </div>
+          <span class="arch-arrow">&darr;</span>
+          <div class="arch-box w-full">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Surfaces</div>
+            <div class="font-display text-base text-white">Web &middot; API &middot; Widget</div>
+          </div>
+          <span class="arch-arrow">&darr;</span>
+          <div class="arch-box w-full">
+            <div class="text-xs text-navy-400 uppercase tracking-wider mb-1">Users</div>
+            <div class="font-display text-base text-white">Residents &amp; Staff</div>
+          </div>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-white/5 grid md:grid-cols-3 gap-6 text-sm text-navy-300">
+          <div>
+            <span class="text-amber-400 font-semibold block mb-1">Read-only on your source.</span>
+            CivicLens never modifies Granicus content, video, or metadata.
+          </div>
+          <div>
+            <span class="text-amber-400 font-semibold block mb-1">Tenant-isolated.</span>
+            Every query, document, and embedding is scoped to your tenant ID.
+          </div>
+          <div>
+            <span class="text-amber-400 font-semibold block mb-1">Stateless surfaces.</span>
+            Web, API, and widget all talk to the same authenticated backend.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== COMPLIANCE TABLE ========== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Compliance alignment</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Honest status on the frameworks state and local IT most often ask about. If something is in progress, we say so.
+        </p>
+      </div>
+
+      <div class="reveal bg-navy-900/60 border border-white/10 rounded-2xl overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-navy-950/60 border-b border-white/10">
+            <tr>
+              <th class="px-6 py-4 text-xs uppercase tracking-wider text-navy-400 font-semibold">Requirement</th>
+              <th class="px-6 py-4 text-xs uppercase tracking-wider text-navy-400 font-semibold">CivicLens capability</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">SOC 2 alignment</div>
+                <div class="text-xs text-navy-500 mt-1">Trust Services Criteria</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                Controls aligned to SOC 2 Type II criteria. Type II audit window in progress. Full details in the <a href="/docs/SECURITY_WHITEPAPER.md" class="text-amber-400 hover:underline">security whitepaper</a>.
+              </td>
+            </tr>
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">FISMA / NIST 800-53</div>
+                <div class="text-xs text-navy-500 mt-1">Federal moderate baseline</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                Control mapping available. FedRAMP Moderate authorization is on the roadmap for 2026. We can complete your agency's NIST 800-53 questionnaire on request.
+              </td>
+            </tr>
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">FOIA / public records</div>
+                <div class="text-xs text-navy-500 mt-1">Open government law</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                Built-in FOIA request handler that searches the archive and packages responsive records as ZIP export. All CivicLens content is already publicly released government data.
+              </td>
+            </tr>
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">ADA / WCAG 2.1 AA</div>
+                <div class="text-xs text-navy-500 mt-1">Accessibility</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                Frontend built to WCAG 2.1 AA. Semantic HTML, keyboard navigation, screen reader announcers, and language support in en, es, zh, vi, ko. VPAT available on request.
+              </td>
+            </tr>
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">CJIS data considerations</div>
+                <div class="text-xs text-navy-500 mt-1">Criminal justice information</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                CivicLens processes publicly released council video and does not ingest CJIS-classified data. For jurisdictions with law enforcement oversight meetings, self-hosted deployment keeps all processing inside your CJIS-compliant environment.
+              </td>
+            </tr>
+            <tr class="compliance-row transition-colors">
+              <td class="px-6 py-5 align-top">
+                <div class="font-semibold text-white">State records retention</div>
+                <div class="text-xs text-navy-500 mt-1">Schedules &amp; holds</div>
+              </td>
+              <td class="px-6 py-5 text-sm text-navy-200">
+                Configurable retention per content type (audio, transcript, summary, embeddings). Legal hold API freezes deletion for named records. Exports align to common state retention schedules.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="text-center text-xs text-navy-500 mt-6 reveal reveal-delay-2">
+        Need a pre-answered security questionnaire (HECVAT, CAIQ, StateRAMP)? <a href="contact.html" class="text-amber-400 hover:underline">Ask us</a> and we will send one.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== INTEGRATION ECOSYSTEM ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Plugs into the tools you already run</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          CivicLens is designed to sit alongside your existing stack, not replace it. Here is what ships in the box.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <a href="#" class="feature-card reveal bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Granicus</div>
+          <div class="text-xs text-navy-400">Video + clip archive</div>
+        </a>
+        <a href="#" class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Legistar</div>
+          <div class="text-xs text-navy-400">Agenda + minutes API</div>
+        </a>
+        <a href="/docs/SLACK_INTEGRATION.md" class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Slack</div>
+          <div class="text-xs text-navy-400">Slash commands + bot</div>
+        </a>
+        <a href="/docs/TEAMS_INTEGRATION.md" class="feature-card reveal reveal-delay-3 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Microsoft Teams</div>
+          <div class="text-xs text-navy-400">Webhooks + cards</div>
+        </a>
+        <a href="/docs/ZAPIER_INTEGRATION.md" class="feature-card reveal bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Zapier</div>
+          <div class="text-xs text-navy-400">Triggers + actions</div>
+        </a>
+        <a href="/docs/SSO_SETUP.md" class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Okta</div>
+          <div class="text-xs text-navy-400">SAML 2.0 SSO</div>
+        </a>
+        <a href="/docs/SSO_SETUP.md" class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Azure AD / Entra</div>
+          <div class="text-xs text-navy-400">SAML 2.0 SSO</div>
+        </a>
+        <a href="/docs/SSO_SETUP.md" class="feature-card reveal reveal-delay-3 bg-navy-900/60 border border-white/5 rounded-xl p-6 text-center hover:border-amber-400/30">
+          <div class="font-display text-lg text-white mb-1">Google Workspace</div>
+          <div class="text-xs text-navy-400">SAML 2.0 SSO</div>
+        </a>
+      </div>
+
+      <p class="text-center text-sm text-navy-400 mt-10 reveal">
+        Need something else? <a href="developers.html" class="text-amber-400 hover:underline">Build on the REST API</a> or <a href="contact.html" class="text-amber-400 hover:underline">ask about a custom integration</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== DEPLOYMENT OPTIONS ========== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Deployment options</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Start in the cloud and move inside your perimeter later, or go self-hosted from day one. Same code, same API.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <!-- Managed SaaS -->
+        <div class="reveal feature-card bg-navy-900/60 border border-white/10 rounded-2xl p-8">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 text-xs font-semibold mb-5">
+            Fastest to deploy
+          </div>
+          <h3 class="font-display text-2xl mb-3">Managed SaaS</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-5">
+            CivicLens runs it. You get a tenant, an API key, and a branded web app. Standup in under an hour.
+          </p>
+          <ul class="space-y-2 text-sm text-navy-200">
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> US-region hosting</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> 99.9% uptime SLA</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Automatic updates</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Included in Starter &amp; Pro</li>
+          </ul>
+        </div>
+
+        <!-- Self-hosted -->
+        <div class="reveal reveal-delay-1 feature-card bg-navy-900/60 border border-white/10 rounded-2xl p-8">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-semibold mb-5">
+            Enterprise
+          </div>
+          <h3 class="font-display text-2xl mb-3">Self-hosted on your cloud</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-5">
+            Deploy CivicLens inside your own AWS or Azure tenancy. Your VPC, your KMS keys, your network policy.
+          </p>
+          <ul class="space-y-2 text-sm text-navy-200">
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Docker + Terraform modules</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> PostgreSQL backend</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Bring-your-own LLM keys</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> GovCloud compatible</li>
+          </ul>
+        </div>
+
+        <!-- Air-gapped -->
+        <div class="reveal reveal-delay-2 feature-card bg-navy-900/60 border border-white/10 rounded-2xl p-8">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-navy-500/20 border border-navy-400/40 text-navy-100 text-xs font-semibold mb-5">
+            Custom
+          </div>
+          <h3 class="font-display text-2xl mb-3">Air-gapped deployment</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-5">
+            For agencies that cannot route to the public internet. Fully offline with local LLM support.
+          </p>
+          <ul class="space-y-2 text-sm text-navy-200">
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Local Whisper transcription</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> On-prem LLM (Llama, Mistral)</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Offline update packages</li>
+            <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">&check;</span> Custom engagement required</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== WHAT YOUR RFP GETS ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <div class="glow-line w-24 mb-6"></div>
+          <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">What your RFP gets</h2>
+          <p class="text-lg text-navy-300 reveal reveal-delay-1 mb-6">
+            Procurement takes work. We package the materials your purchasing office actually asks for — so you are not copy-pasting from five different vendor PDFs the night before a deadline.
+          </p>
+          <a href="/procurement/" class="inline-flex items-center gap-2 text-amber-400 font-semibold hover:gap-3 transition-all reveal reveal-delay-2">
+            Browse procurement resources
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+        </div>
+
+        <div class="reveal reveal-delay-1 bg-navy-950/60 border border-white/10 rounded-2xl p-8">
+          <ul class="space-y-4">
+            <li class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              </div>
+              <div>
+                <div class="font-semibold text-white">RFP response template</div>
+                <div class="text-sm text-navy-400">Pre-written answers to the questions cities ask most. Drop in your requirements.</div>
+              </div>
+            </li>
+            <li class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              </div>
+              <div>
+                <div class="font-semibold text-white">Pre-answered security questionnaire</div>
+                <div class="text-sm text-navy-400">HECVAT Lite, CAIQ Lite, and a StateRAMP-style questionnaire ready to attach.</div>
+              </div>
+            </li>
+            <li class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+              </div>
+              <div>
+                <div class="font-semibold text-white">Vendor onboarding checklist</div>
+                <div class="text-sm text-navy-400">W-9, COI, insurance proof, data processing addendum, signature authority.</div>
+              </div>
+            </li>
+            <li class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+              </div>
+              <div>
+                <div class="font-semibold text-white">3-year TCO projections</div>
+                <div class="text-sm text-navy-400">Line-item cost worksheet including staff time savings for clerks and planners.</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PRICING CALLOUT ========== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-12">
+        <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Straightforward pricing</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Published tiers. No surprise add-ons. State cooperative contract pricing available for qualifying agencies.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+        <div class="pricing-highlight reveal">
+          <div class="bg-navy-900 border border-white/10 rounded-2xl p-8 h-full">
+            <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Pro</div>
+            <div class="flex items-baseline gap-1 mb-2">
+              <span class="font-display text-5xl">$799</span>
+              <span class="text-navy-400 text-sm">/month</span>
+            </div>
+            <p class="text-sm text-navy-400 mb-5">1,000 queries/mo, unlimited meetings, SSO, audit logs.</p>
+            <a href="pricing.html" class="inline-flex items-center gap-2 text-amber-400 font-semibold hover:gap-3 transition-all text-sm">
+              See full plan
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="reveal reveal-delay-1 bg-navy-900/60 border border-white/10 rounded-2xl p-8">
+          <div class="text-xs uppercase tracking-wider text-navy-300 font-semibold mb-2">Enterprise</div>
+          <div class="flex items-baseline gap-1 mb-2">
+            <span class="font-display text-5xl">$2,499</span>
+            <span class="text-navy-400 text-sm">/month</span>
+          </div>
+          <p class="text-sm text-navy-400 mb-5">Unlimited queries, self-hosted option, dedicated support, custom SLAs.</p>
+          <a href="pricing.html" class="inline-flex items-center gap-2 text-amber-400 font-semibold hover:gap-3 transition-all text-sm">
+            See full plan
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="text-center mt-10 reveal reveal-delay-2">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          State cooperative contract pricing available &mdash; ask us about NASPO, Sourcewell, and OMNIA paths.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FINAL CTA ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-t border-white/5">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <div class="glow-line w-32 mx-auto mb-8"></div>
+      <h2 class="font-display text-4xl md:text-5xl mb-5 reveal">Ready to pilot CivicLens?</h2>
+      <p class="text-lg text-navy-300 max-w-2xl mx-auto mb-10 reveal reveal-delay-1">
+        Most pilots stand up in under two weeks from first call. We will handle ingestion, you focus on evaluating the experience.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 reveal reveal-delay-2">
+        <a href="contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Schedule a Demo
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="contact.html?intent=pilot" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+          Start a Pilot
+        </a>
+      </div>
+      <p class="text-navy-400 text-sm mt-8 reveal reveal-delay-3">
+        or email <a href="mailto:gov@civiclens.io" class="text-amber-400 hover:underline">gov@civiclens.io</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-16">
+      <div class="grid md:grid-cols-5 gap-12 mb-12">
+        <div class="md:col-span-2">
+          <a href="index.html" class="flex items-center gap-2.5 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <span class="font-display text-xl tracking-tight">CivicLens</span>
+          </a>
+          <p class="text-navy-400 text-sm leading-relaxed max-w-xs">AI-powered city council meeting intelligence. Making local government transparent, searchable, and accountable.</p>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Product</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="index.html#features" class="hover:text-amber-400 transition-colors">Features</a></li>
+            <li><a href="demo.html" class="hover:text-amber-400 transition-colors">Live Demo</a></li>
+            <li><a href="pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a></li>
+            <li><a href="case-studies/" class="hover:text-amber-400 transition-colors">Case Studies</a></li>
+            <li><a href="developers.html" class="hover:text-amber-400 transition-colors">Developers</a></li>
+            <li><a href="govtech.html" class="hover:text-amber-400 transition-colors">GovTech</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Solutions</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="govtech.html" class="hover:text-amber-400 transition-colors">State &amp; Local Gov</a></li>
+            <li><a href="/procurement/" class="hover:text-amber-400 transition-colors">Procurement</a></li>
+            <li><a href="/docs/SECURITY_WHITEPAPER.md" class="hover:text-amber-400 transition-colors">Security Whitepaper</a></li>
+            <li><a href="contact.html" class="hover:text-amber-400 transition-colors">Contact Sales</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Legal</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Privacy Policy</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Terms of Service</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Security</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">VPAT (Accessibility)</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+        <div class="flex items-center gap-6">
+          <a href="#" aria-label="Twitter" class="text-navy-500 hover:text-navy-300 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/></svg>
+          </a>
+          <a href="#" aria-label="GitHub" class="text-navy-500 hover:text-navy-300 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          </a>
+          <a href="#" aria-label="LinkedIn" class="text-navy-500 hover:text-navy-300 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========== SCRIPTS ========== -->
+  <script>
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

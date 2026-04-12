@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Processing Agreement - CivicLens</title>
+    <style>
+        :root {
+            --navy: #1a2332;
+            --slate: #374151;
+            --blue: #2563eb;
+            --light-bg: #f8fafc;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.7;
+            background: #fff;
+        }
+
+        .header {
+            background: var(--navy);
+            color: #fff;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 4rem;
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            color: var(--navy);
+            margin-top: 2.5rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            color: var(--slate);
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p, li {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        li { margin-bottom: 0.4rem; }
+
+        .effective-date {
+            background: var(--light-bg);
+            border-left: 4px solid var(--blue);
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .highlight-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        .annex {
+            background: var(--light-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .annex h3 {
+            margin-top: 0;
+            color: var(--navy);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--light-bg);
+            font-weight: 600;
+            color: var(--navy);
+        }
+
+        a { color: var(--blue); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 1.5rem 1rem; }
+            .header { padding: 2rem 1rem; }
+            .header h1 { font-size: 1.5rem; }
+            table { font-size: 0.8rem; }
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>CivicLens Data Processing Agreement</h1>
+    <p>Last updated: April 8, 2026</p>
+</div>
+
+<div class="container">
+
+    <div class="effective-date">
+        This Data Processing Agreement ("DPA") forms part of the CivicLens Terms of Service (the "Agreement") between CivicLens, Inc. ("Processor," "CivicLens") and the entity identified in the applicable Order Form ("Controller," "Client"). This DPA applies to all processing of personal data by CivicLens on behalf of the Client in connection with the CivicLens platform.
+    </div>
+
+    <h2>1. Definitions</h2>
+    <ul>
+        <li><strong>"Personal Data"</strong> means any information relating to an identified or identifiable natural person that is processed by CivicLens on behalf of the Client.</li>
+        <li><strong>"Processing"</strong> means any operation performed on Personal Data, including collection, recording, storage, retrieval, use, disclosure, or deletion.</li>
+        <li><strong>"Sub-processor"</strong> means a third party engaged by CivicLens to process Personal Data on behalf of the Client.</li>
+        <li><strong>"Data Breach"</strong> means any unauthorized access to, or acquisition, disclosure, or loss of, Personal Data.</li>
+        <li><strong>"Applicable Data Protection Laws"</strong> means all laws and regulations applicable to the processing of Personal Data, including the California Consumer Privacy Act (CCPA) and any applicable state privacy laws.</li>
+    </ul>
+
+    <h2>2. Scope and Roles</h2>
+    <h3>2.1 Roles</h3>
+    <p>For the purposes of this DPA, the Client is the Controller (or "Business" under CCPA) and CivicLens is the Processor (or "Service Provider" under CCPA). CivicLens processes Personal Data only on behalf of and under the instructions of the Client.</p>
+
+    <h3>2.2 Scope of Processing</h3>
+    <p>The categories of data subjects, types of Personal Data, and purposes of processing are described in Annex A of this DPA.</p>
+
+    <h3>2.3 Public Record Data</h3>
+    <div class="highlight-box">
+        <p>The parties acknowledge that the majority of data processed by CivicLens consists of public government meeting records. Such data is publicly available and may include names, statements, and other information of individuals participating in or referenced during public meetings. This DPA applies to the extent that any such data constitutes Personal Data under Applicable Data Protection Laws.</p>
+    </div>
+
+    <h2>3. Processor Obligations</h2>
+    <h3>3.1 Instructions</h3>
+    <p>CivicLens shall process Personal Data only in accordance with the Client's documented instructions, as set forth in the Agreement and this DPA. If CivicLens believes an instruction violates Applicable Data Protection Laws, it will promptly notify the Client.</p>
+
+    <h3>3.2 Confidentiality</h3>
+    <p>CivicLens shall ensure that all personnel authorized to process Personal Data are bound by confidentiality obligations. Access to Personal Data is limited to personnel who require it to perform their duties.</p>
+
+    <h3>3.3 Security Measures</h3>
+    <p>CivicLens shall implement and maintain appropriate technical and organizational measures to protect Personal Data, including those described in Annex B of this DPA. These measures shall ensure a level of security appropriate to the risk, taking into account the state of the art, the costs of implementation, and the nature, scope, and purposes of processing.</p>
+
+    <h3>3.4 Data Minimization</h3>
+    <p>CivicLens shall process only the minimum Personal Data necessary to provide the Service. CivicLens shall not process Personal Data for any purpose other than as specified in this DPA and the Agreement.</p>
+
+    <h3>3.5 Assistance</h3>
+    <p>CivicLens shall assist the Client in fulfilling its obligations under Applicable Data Protection Laws, including:</p>
+    <ul>
+        <li>Responding to data subject access, correction, and deletion requests</li>
+        <li>Conducting data protection impact assessments where required</li>
+        <li>Cooperating with supervisory authorities</li>
+        <li>Complying with notification obligations in the event of a Data Breach</li>
+    </ul>
+
+    <h2>4. Sub-processors</h2>
+    <h3>4.1 Authorized Sub-processors</h3>
+    <p>The Client hereby authorizes CivicLens to engage the sub-processors listed in Annex C. CivicLens shall impose data protection obligations on each sub-processor that are no less protective than those in this DPA.</p>
+
+    <h3>4.2 Changes to Sub-processors</h3>
+    <p>CivicLens shall notify the Client at least <strong>30 days</strong> before engaging a new sub-processor or replacing an existing sub-processor. The notification will include the sub-processor's name, location, and the processing activities to be performed.</p>
+
+    <h3>4.3 Objection Right</h3>
+    <p>The Client may object to a new sub-processor by providing written notice within 15 days of receiving notification. If the Client objects on reasonable data protection grounds, CivicLens shall either:</p>
+    <ul>
+        <li>Not engage the sub-processor for processing the Client's data, or</li>
+        <li>Offer a commercially reasonable alternative, or</li>
+        <li>Allow the Client to terminate the affected portion of the Service without penalty</li>
+    </ul>
+
+    <h3>4.4 Liability</h3>
+    <p>CivicLens remains fully liable for the acts and omissions of its sub-processors with respect to the processing of Personal Data.</p>
+
+    <h2>5. Security Measures</h2>
+    <p>CivicLens maintains the following security measures (detailed in Annex B):</p>
+
+    <h3>5.1 Encryption</h3>
+    <ul>
+        <li><strong>In Transit:</strong> All data transmitted between clients and CivicLens is encrypted using TLS 1.2 or higher</li>
+        <li><strong>At Rest:</strong> All stored data is encrypted using AES-256 encryption</li>
+        <li><strong>API Keys:</strong> Stored using one-way cryptographic hashing (SHA-256 with salt)</li>
+    </ul>
+
+    <h3>5.2 Access Controls</h3>
+    <ul>
+        <li>Role-based access control (RBAC) for all internal systems</li>
+        <li>Multi-factor authentication required for all administrative access</li>
+        <li>API key authentication for all client-facing endpoints</li>
+        <li>Principle of least privilege enforced across all systems</li>
+    </ul>
+
+    <h3>5.3 Infrastructure Security</h3>
+    <ul>
+        <li>Cloud infrastructure hosted on AWS with SOC 2 Type II certification</li>
+        <li>Network-level isolation between tenants</li>
+        <li>Automated vulnerability scanning and patching</li>
+        <li>Web Application Firewall (WAF) protection</li>
+        <li>DDoS mitigation</li>
+    </ul>
+
+    <h3>5.4 Monitoring and Logging</h3>
+    <ul>
+        <li>Structured JSON logging of all API requests with request tracing</li>
+        <li>Security event monitoring and alerting</li>
+        <li>Audit trails for administrative actions</li>
+        <li>Log retention per the retention schedule in our Privacy Policy</li>
+    </ul>
+
+    <h2>6. Data Breach Notification</h2>
+    <h3>6.1 Notification Timeline</h3>
+    <p>In the event of a Data Breach affecting the Client's Personal Data, CivicLens shall:</p>
+    <ol>
+        <li>Notify the Client without undue delay, and in any event within <strong>48 hours</strong> of becoming aware of the breach</li>
+        <li>Provide initial notification via email to the Client's designated security contact</li>
+        <li>Follow up with a detailed written report within <strong>5 business days</strong></li>
+    </ol>
+
+    <h3>6.2 Notification Content</h3>
+    <p>Breach notifications shall include, to the extent known:</p>
+    <ul>
+        <li>Nature and scope of the breach, including categories and approximate number of affected data subjects and records</li>
+        <li>Description of the Personal Data involved</li>
+        <li>Likely consequences of the breach</li>
+        <li>Measures taken or proposed to address the breach and mitigate its effects</li>
+        <li>Contact details for CivicLens's incident response team</li>
+    </ul>
+
+    <h3>6.3 Cooperation</h3>
+    <p>CivicLens shall cooperate with the Client's investigation of the breach and shall provide reasonable assistance in the Client's efforts to comply with its own breach notification obligations under Applicable Data Protection Laws.</p>
+
+    <h3>6.4 Documentation</h3>
+    <p>CivicLens shall document all Data Breaches, including facts, effects, and remedial actions taken, and shall make this documentation available to the Client upon request.</p>
+
+    <h2>7. Data Deletion and Return</h2>
+    <h3>7.1 Upon Termination</h3>
+    <p>Upon termination of the Agreement, CivicLens shall, at the Client's election:</p>
+    <ul>
+        <li><strong>Return:</strong> Provide the Client with a complete export of all Personal Data in a structured, commonly used, machine-readable format (JSON), or</li>
+        <li><strong>Delete:</strong> Securely delete all Personal Data within 30 days of termination</li>
+    </ul>
+
+    <h3>7.2 Certification</h3>
+    <p>Upon request, CivicLens shall provide written certification that all Personal Data has been deleted or returned in accordance with this section.</p>
+
+    <h3>7.3 Retention Exceptions</h3>
+    <p>CivicLens may retain Personal Data to the extent required by Applicable Data Protection Laws, provided that CivicLens shall: (a) limit such processing to the purposes required by law; (b) maintain the confidentiality and security of such data; and (c) delete the data when the legal retention requirement expires.</p>
+
+    <h3>7.4 Ongoing Deletion Requests</h3>
+    <p>During the term of the Agreement, CivicLens shall promptly process data deletion requests forwarded by the Client on behalf of data subjects, within 30 days of receiving the request.</p>
+
+    <h2>8. Audit Rights</h2>
+    <h3>8.1 Information Access</h3>
+    <p>CivicLens shall make available to the Client all information necessary to demonstrate compliance with this DPA. This includes, upon request:</p>
+    <ul>
+        <li>Summary of current security measures and certifications</li>
+        <li>Results of most recent penetration test (executive summary)</li>
+        <li>SOC 2 Type II report (when available) or equivalent third-party audit report</li>
+        <li>Sub-processor list with processing descriptions</li>
+    </ul>
+
+    <h3>8.2 On-Site Audits</h3>
+    <p>The Client may conduct or commission an independent audit of CivicLens's processing activities, subject to the following conditions:</p>
+    <ul>
+        <li>Audits shall be conducted no more than once per year, unless a Data Breach has occurred</li>
+        <li>The Client shall provide at least 30 days written notice</li>
+        <li>Audits shall be conducted during normal business hours with minimal disruption</li>
+        <li>The auditor must execute a confidentiality agreement acceptable to CivicLens</li>
+        <li>The Client shall bear the costs of the audit</li>
+    </ul>
+
+    <h3>8.3 Third-Party Audits</h3>
+    <p>Where CivicLens has obtained a SOC 2 Type II report or equivalent certification, the Client agrees to accept such report as satisfaction of the audit right for the period covered, unless there are specific concerns that necessitate an additional audit.</p>
+
+    <h2>9. Data Transfers</h2>
+    <p>All Personal Data is processed and stored within the United States. If a transfer of Personal Data outside the United States becomes necessary, CivicLens shall: (a) notify the Client in advance; (b) implement appropriate safeguards; and (c) ensure that the transfer complies with Applicable Data Protection Laws.</p>
+
+    <h2>10. Term and Termination</h2>
+    <p>This DPA shall remain in effect for the duration of the Agreement. The obligations of CivicLens with respect to confidentiality, data deletion, and security shall survive termination.</p>
+
+    <h2>11. Liability</h2>
+    <p>Each party's liability under this DPA is subject to the limitations of liability set forth in the Agreement. This DPA does not create any additional liability beyond that established in the Agreement, except as required by Applicable Data Protection Laws.</p>
+
+    <hr style="margin: 3rem 0; border: none; border-top: 2px solid var(--border);">
+
+    <div class="annex">
+        <h3>Annex A: Description of Processing</h3>
+
+        <p><strong>Categories of Data Subjects:</strong></p>
+        <ul>
+            <li>Government officials and employees appearing in or conducting public meetings</li>
+            <li>Members of the public who participate in public comment periods</li>
+            <li>Individuals named in meeting agendas, minutes, or during meeting proceedings</li>
+            <li>Client's authorized administrators and API users</li>
+        </ul>
+
+        <p><strong>Types of Personal Data:</strong></p>
+        <ul>
+            <li>Names of meeting participants, speakers, and individuals referenced in proceedings</li>
+            <li>Voice recordings (as part of meeting audio)</li>
+            <li>Statements and opinions expressed during public meetings</li>
+            <li>Voting records of elected officials</li>
+            <li>Client administrator contact information (name, email)</li>
+            <li>API usage data (IP addresses, request logs)</li>
+        </ul>
+
+        <p><strong>Purposes of Processing:</strong></p>
+        <ul>
+            <li>Audio transcription of public meeting recordings</li>
+            <li>AI-powered summarization and structured data extraction</li>
+            <li>Indexing and search over meeting archives</li>
+            <li>Natural-language question answering (RAG)</li>
+            <li>Account management and billing</li>
+        </ul>
+
+        <p><strong>Duration:</strong> For the term of the Agreement plus the post-termination retention period.</p>
+    </div>
+
+    <div class="annex">
+        <h3>Annex B: Technical and Organizational Security Measures</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Measure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Encryption in Transit</td>
+                    <td>TLS 1.2+ for all external communications; HTTPS enforced via HSTS</td>
+                </tr>
+                <tr>
+                    <td>Encryption at Rest</td>
+                    <td>AES-256 for all stored data (AWS S3 SSE, EBS encryption)</td>
+                </tr>
+                <tr>
+                    <td>Authentication</td>
+                    <td>API key authentication (SHA-256 hashed); MFA for administrative access</td>
+                </tr>
+                <tr>
+                    <td>Authorization</td>
+                    <td>Role-based access control; principle of least privilege</td>
+                </tr>
+                <tr>
+                    <td>Tenant Isolation</td>
+                    <td>Logical data isolation per tenant; tenant-scoped API queries</td>
+                </tr>
+                <tr>
+                    <td>Network Security</td>
+                    <td>VPC isolation; security groups; WAF; DDoS protection</td>
+                </tr>
+                <tr>
+                    <td>Logging and Monitoring</td>
+                    <td>Structured JSON logging; request tracing; security alerting</td>
+                </tr>
+                <tr>
+                    <td>Vulnerability Management</td>
+                    <td>Automated dependency scanning; regular penetration testing</td>
+                </tr>
+                <tr>
+                    <td>Incident Response</td>
+                    <td>Documented IR plan; 48-hour breach notification; post-mortem process</td>
+                </tr>
+                <tr>
+                    <td>Personnel</td>
+                    <td>Background checks; security training; confidentiality agreements</td>
+                </tr>
+                <tr>
+                    <td>Physical Security</td>
+                    <td>AWS-managed data centers (SOC 2, ISO 27001 certified)</td>
+                </tr>
+                <tr>
+                    <td>Backup and Recovery</td>
+                    <td>Automated daily backups; tested recovery procedures; geographic redundancy</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="annex">
+        <h3>Annex C: Authorized Sub-processors</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Sub-processor</th>
+                    <th>Location</th>
+                    <th>Processing Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Amazon Web Services (AWS)</td>
+                    <td>United States</td>
+                    <td>Cloud infrastructure, compute, storage, and hosting</td>
+                </tr>
+                <tr>
+                    <td>OpenAI, LLC</td>
+                    <td>United States</td>
+                    <td>Audio transcription (Whisper API), text embeddings (text-embedding-3-small), AI summarization (GPT-4o)</td>
+                </tr>
+                <tr>
+                    <td>Anthropic, PBC</td>
+                    <td>United States</td>
+                    <td>AI narrative generation (Claude Sonnet) for meeting summary pass 2</td>
+                </tr>
+                <tr>
+                    <td>Stripe, Inc.</td>
+                    <td>United States</td>
+                    <td>Payment processing and billing management</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">
+            This list is current as of the effective date of this DPA. Updates are communicated per Section 4.2.
+            The current sub-processor list is also available at <a href="https://civiclens.ai/legal/sub-processors">civiclens.ai/legal/sub-processors</a>.
+        </p>
+    </div>
+
+    <h2>12. Contact</h2>
+    <p>For questions about this DPA or to exercise rights under this agreement:</p>
+    <p>
+        CivicLens, Inc.<br>
+        Data Protection Contact<br>
+        Email: <a href="mailto:dpa@civiclens.ai">dpa@civiclens.ai</a><br>
+        Web: <a href="https://civiclens.ai">civiclens.ai</a>
+    </p>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 CivicLens, Inc. All rights reserved.
+</div>
+
+</body>
+</html>

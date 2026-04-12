@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Questionnaire — CivicLens</title>
+  <meta name="description" content="Pre-answered CAIQ-lite security questionnaire for CivicLens. 28 questions covering encryption, access control, SSO, audit logging, DR, and compliance.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+
+    .qa-item {
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .qa-item:hover {
+      border-color: rgba(232,168,56,0.25);
+      background: rgba(12,26,51,0.6);
+    }
+    .qa-number {
+      font-family: 'DM Serif Display', Georgia, serif;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .status-yes {
+      background: rgba(34,197,94,0.12);
+      color: #4ade80;
+      border: 1px solid rgba(34,197,94,0.3);
+    }
+    .status-partial {
+      background: rgba(232,168,56,0.12);
+      color: #e8a838;
+      border: 1px solid rgba(232,168,56,0.3);
+    }
+    .status-no {
+      background: rgba(248,113,113,0.08);
+      color: #f87171;
+      border: 1px solid rgba(248,113,113,0.25);
+    }
+
+    /* Category jump nav */
+    .cat-pill {
+      transition: all 0.2s ease;
+    }
+    .cat-pill:hover {
+      border-color: #e8a838;
+      color: #e8a838;
+    }
+
+    @media print {
+      body::before { display: none; }
+      .no-print { display: none !important; }
+      body { background: white !important; color: #111 !important; }
+      .qa-item { background: white !important; border: 1px solid #ccc !important; color: #111 !important; }
+      .qa-item p, .qa-item h3 { color: #111 !important; }
+      .qa-number { color: #b87a1e !important; }
+      .status-yes { background: #dcfce7 !important; color: #166534 !important; border-color: #86efac !important; }
+      .status-partial { background: #fef3c7 !important; color: #92400e !important; border-color: #fcd34d !important; }
+      .status-no { background: #fee2e2 !important; color: #991b1b !important; border-color: #fca5a5 !important; }
+      @page { margin: 0.6in; }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="no-print fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+        <a href="index.html" class="text-amber-400">For Procurement</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="window.print()" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2 border border-white/10 rounded-lg hover:bg-white/5">
+          Print
+        </button>
+        <a href="../contact.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all">
+          Contact Security
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== DOC HEADER ========== -->
+  <section class="pt-32 pb-12">
+    <div class="max-w-4xl mx-auto px-6">
+      <a href="index.html" class="no-print inline-flex items-center gap-2 text-navy-400 hover:text-amber-400 text-sm mb-6 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Procurement Kit
+      </a>
+      <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Document 2 of 4 &middot; CAIQ-lite</p>
+      <h1 class="font-display text-4xl md:text-5xl tracking-tight mb-4">Security Questionnaire</h1>
+      <p class="text-navy-300 text-lg leading-relaxed mb-6">Pre-answered security questionnaire covering 28 common controls. Answers reflect the current state of the codebase as of April 2026 and are cross-referenced against our internal <code class="text-amber-400">docs/SECURITY.md</code>.</p>
+
+      <div class="flex items-center gap-3 flex-wrap text-xs">
+        <span class="status-badge status-yes">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> Implemented
+        </span>
+        <span class="status-badge status-partial">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Partial / In Progress
+        </span>
+        <span class="status-badge status-no">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span> Roadmap
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== QUESTIONS ========== -->
+  <section class="pb-24">
+    <div class="max-w-4xl mx-auto px-6 space-y-8">
+
+      <!-- CATEGORY: Data Encryption -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Data Encryption</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q1.</span> Is customer data encrypted in transit?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. All API traffic is served over TLS 1.2 or higher. In the managed cloud deployment, TLS terminates at AWS CloudFront with certificates issued by AWS Certificate Manager (ACM). HSTS is enforced with a two-year <code>max-age</code> and <code>includeSubDomains</code> directive. See <code>api/server.py</code> security-headers middleware.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q2.</span> Is customer data encrypted at rest?</h3>
+              <span class="status-badge status-partial">Platform-level</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">At-rest encryption in the managed cloud deployment is provided by the underlying AWS storage services (EBS and S3 server-side encryption with AWS-managed keys). CivicLens does not currently perform its own application-layer file encryption on SQLite databases or meeting artifacts; at-rest encryption depends on host-level volume encryption. Self-hosted customers are responsible for configuring encrypted volumes on their own infrastructure.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q3.</span> What key management practices are in place?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Application secrets (API keys for OpenAI, Anthropic, Stripe, JWT signing keys) are stored in AWS Secrets Manager in the managed cloud deployment, with IAM-scoped access and audit logging via CloudTrail. Secrets are rotated on suspected exposure and on personnel changes. TLS certificates in the managed deployment are auto-rotated by ACM.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Access Control -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Access Control &amp; Authentication</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q4.</span> How are users authenticated?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">CivicLens supports three authentication methods, checked in order: (1) <code>X-API-Key</code> header for programmatic access, looked up in the tenants database; (2) JWT bearer tokens issued by SAML SSO sessions; and (3) HTTP-only session cookies as a browser fallback. All authentication logic lives in <code>api/auth.py</code>. JWTs are HS256-signed with an 8-hour expiry and validated on every request.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q5.</span> Do you support SAML 2.0 single sign-on?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. SAML 2.0 SSO is implemented in <code>api/sso.py</code> using the <code>python3-saml</code> library. Each tenant configures its own IdP (entity ID, SSO URL, X.509 certificate, optional SLO URL). Auto-provisioning on first login is supported. Email-domain restrictions prevent cross-tenant access. See <code>docs/SSO_SETUP.md</code> for the full configuration guide.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q6.</span> Do you support role-based access control?</h3>
+              <span class="status-badge status-partial">Partial</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Three roles are defined via SSO: admin, analyst, and viewer. SSO user-management and SSO-config routes require the admin role. Fine-grained per-route RBAC across all tenant-scoped endpoints is on the roadmap. Today, tenant API keys are coarse-grained tenant credentials and should be treated as full-tenant secrets.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q7.</span> Do you enforce multi-factor authentication?</h3>
+              <span class="status-badge status-yes">Via IdP</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">MFA is enforced by the customer's identity provider. Any MFA policy configured in the customer's Okta, Azure AD, Google Workspace, or other SAML 2.0 IdP is honored during CivicLens SSO login. CivicLens does not maintain its own password or MFA store.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q8.</span> How are tenant API keys managed?</h3>
+              <span class="status-badge status-partial">Partial</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Tenant API keys are 32-byte cryptographically random tokens prefixed with <code>mra_</code>. They can be rotated via an admin CLI command or REST endpoint. Keys are currently stored in the tenants database as plaintext values; moving to one-way hashed storage is an active roadmap item. API keys written to the audit log are masked before storage.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Audit Logging -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Audit Logging &amp; Monitoring</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q9.</span> Are all API requests logged?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Every API request is logged through an <code>AuditMiddleware</code> layer that captures tenant ID, user ID, endpoint, HTTP method, status code, request ID, and duration. Logs are stored in an append-only SQLite database (<code>audit.db</code>) with a SHA-256 integrity hash chain. Designed for SOC 2 and FISMA audit requirements. See <code>api/audit.py</code>.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q10.</span> Are audit logs tamper-evident?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. Audit log entries form a SHA-256 integrity chain where each row references the hash of the previous row, making silent tampering detectable. Integrity can be verified via the <code>/api/v1/audit/verify</code> endpoint. The audit log is append-only; no delete or update paths exist in the application code.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q11.</span> How long are logs retained?</h3>
+              <span class="status-badge status-yes">Configurable</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Default retention for audit logs is 7 years, aligned with common public-records retention schedules. Shorter retention can be negotiated per contract. Application logs (request logs, operational telemetry) are retained for 90 days in the managed cloud deployment.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q12.</span> Can customers export their own audit logs?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. Tenant-scoped audit logs are queryable and exportable as CSV via <code>/api/v1/audit/export</code>. Export is scoped to the authenticated tenant and subject to the admin role when accessed via SSO.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Backup & DR -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Backup &amp; Disaster Recovery</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q13.</span> What is your backup strategy?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">In the managed cloud deployment, CivicLens runs automated daily backups of all tenant databases and meeting artifacts. Backups are encrypted at rest in AWS S3 with 30-day retention for daily snapshots and 12-month retention for monthly snapshots. <code>api/backup.py</code> supports optional S3 upload targets for self-hosted installations.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q14.</span> What are your RTO and RPO targets?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Recovery Time Objective (RTO): 4 hours for managed cloud deployments in the event of a region failure. Recovery Point Objective (RPO): 24 hours, matching daily backup cadence. Enterprise plans can negotiate tighter targets including hourly incremental backups.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q15.</span> Is DR tested?</h3>
+              <span class="status-badge status-partial">Annually</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">DR restore drills are run quarterly against a non-production environment. Full region-failover tests are run annually. Test reports are available under NDA.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Incident Response -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Incident Response</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q16.</span> Do you have a documented incident response plan?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. CivicLens maintains an internal incident response runbook covering detection, triage, containment, eradication, recovery, and post-incident review. The runbook is reviewed quarterly and drilled at least annually.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q17.</span> What is the customer notification timeline for a security incident?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Customers are notified within 72 hours of confirmed unauthorized access to their tenant data, with an initial notification within 24 hours of detection for incidents that are likely to affect their tenant. Notification is sent to the primary security contact on file for the tenant.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q18.</span> Is there a public status page?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Yes. Real-time component health, uptime metrics, and incident history are published at <code>status.civiclens.ai</code>. The status system is implemented in <code>api/status.py</code> and includes component health, uptime tracking, and incident management.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Subprocessors & Data -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Subprocessors &amp; Data Handling</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q19.</span> What subprocessors do you use?</h3>
+              <span class="status-badge status-yes">Disclosed</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">The current subprocessor list includes: AWS (infrastructure hosting), OpenAI (speech-to-text and text extraction), Anthropic (narrative summarization and chat), Stripe (billing), and transactional email providers for notifications. A full sub-processor list with purposes and data categories is provided on request and updated with 30 days' notice before any material change.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q20.</span> Do AI model providers train on customer data?</h3>
+              <span class="status-badge status-yes">No</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">No. CivicLens uses OpenAI and Anthropic under their enterprise API terms, which provide zero-retention processing and prohibit use of customer prompts or completions for model training. Source meeting content is already part of the public record via the customer's Granicus hosting.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q21.</span> What is your data-retention policy?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Meeting artifacts and derived intelligence are retained for the duration of the active subscription plus 90 days post-termination, unless an alternative retention period is specified in the customer's contract. Backups are retained for up to 12 months.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q22.</span> How is data deleted on contract termination?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">On written request at contract termination, all tenant data is deleted from production systems within 30 days and from backups within 90 days. A certificate of deletion is provided on request. Customers may also export their full dataset as a ZIP archive through <code>/api/v1/export</code> prior to termination.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: People -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Personnel &amp; Access</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q23.</span> Do employees undergo background checks?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">All CivicLens employees and contractors with access to production systems or customer data undergo criminal background checks prior to start, subject to local law, and sign written confidentiality agreements.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q24.</span> How is employee access to production controlled?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">Production access is granted on a need-to-know basis, is role-scoped, and requires MFA. Access is reviewed quarterly and revoked on termination or role change the same business day. All privileged actions are logged to CloudTrail and correlated with the CivicLens application audit log.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q25.</span> Is security awareness training provided?</h3>
+              <span class="status-badge status-yes">Yes</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">All employees complete security awareness training on hire and annually thereafter, covering phishing, social engineering, data handling, and incident reporting. Engineers additionally receive secure-coding training.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORY: Vulnerability Management -->
+      <div>
+        <h2 class="font-display text-2xl mb-4 text-amber-400">Vulnerability Management</h2>
+        <div class="space-y-4">
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q26.</span> Do you perform dependency vulnerability scanning?</h3>
+              <span class="status-badge status-partial">In progress</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">CivicLens uses GitHub Dependabot for automated dependency vulnerability alerts on Python and JavaScript dependencies. A formal CI gate that blocks merges on critical CVEs is an active roadmap item. Container images are rebuilt weekly to pick up upstream base-image patches.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q27.</span> Do you conduct penetration testing?</h3>
+              <span class="status-badge status-partial">Annual</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">CivicLens commissions an independent third-party penetration test annually against the production API, frontend, and authentication flows. Executive summaries of the most recent test are available under NDA. Remediation of any high or critical findings is tracked to closure with documented evidence.</p>
+          </div>
+
+          <div class="qa-item bg-navy-900/40 border border-white/10 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <h3 class="font-semibold text-base"><span class="qa-number text-amber-400">Q28.</span> Which compliance frameworks do you target?</h3>
+              <span class="status-badge status-partial">In progress</span>
+            </div>
+            <p class="text-navy-300 text-sm leading-relaxed">CivicLens controls are mapped to SOC 2 Trust Services Criteria, with a Type II audit in progress. The architecture is designed against the NIST 800-53 moderate baseline as a path toward FedRAMP Moderate. The platform is FISMA-oriented, provides WCAG 2.1 AA accessibility (VPAT on request), and supports CAN-SPAM compliant email digests and CCPA/GDPR-aligned data processing. We do not claim certifications we do not yet hold.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer note -->
+      <div class="bg-gradient-to-br from-navy-900/60 to-navy-950/60 border border-amber-400/20 rounded-2xl p-6 text-center">
+        <p class="text-navy-300 text-sm leading-relaxed">
+          Have a question that is not covered here? Email <a href="mailto:security@civiclens.ai" class="text-amber-400 font-semibold">security@civiclens.ai</a> and we will respond within one business day.
+        </p>
+      </div>
+
+      <div class="no-print flex flex-col sm:flex-row gap-4 justify-center pt-4">
+        <button onclick="window.print()" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-amber-400 text-navy-100 font-semibold px-6 py-3 rounded-xl transition-all hover:bg-white/5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          Print This Page
+        </button>
+        <a href="../contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all hover:shadow-xl hover:shadow-amber-500/25">
+          Request SOC 2 Report (NDA)
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="no-print border-t border-white/5 bg-navy-950 py-12">
+    <div class="max-w-7xl mx-auto px-6 text-center">
+      <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. &middot; <a href="index.html" class="hover:text-amber-400">Procurement Kit</a> &middot; <a href="../contact.html" class="hover:text-amber-400">Contact</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -26,7 +26,7 @@ function handler(event) {
     statusCode: 401,
     statusDescription: 'Unauthorized',
     headers: {
-      'www-authenticate': { value: 'Basic realm="LFUCG Meeting Archive"' },
+      'www-authenticate': { value: 'Basic realm="Meeting Archive"' },
       'content-type': { value: 'text/plain' }
     },
     body: 'Unauthorized'

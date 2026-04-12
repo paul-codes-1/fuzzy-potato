@@ -1,0 +1,46 @@
+{
+  "name": "@civiclens/sdk",
+  "version": "1.0.0",
+  "description": "JavaScript/Node SDK for the CivicLens local government meeting intelligence API",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.cjs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/client.test.js",
+    "build:cjs": "node -e \"const fs=require('fs');let src=fs.readFileSync('index.js','utf8');src=src.replace(/^export\\s*\\{[^}]*\\};?\\s*$/gm,'');src=src.replace(/^export\\s+default\\s+\\w+;?\\s*$/gm,'');src+='\\nmodule.exports={CivicLensClient,CivicLensError,AuthenticationError,RateLimitError,NotFoundError,RateLimitInfo};\\nmodule.exports.default=CivicLensClient;\\n';fs.writeFileSync('index.cjs',src);\"",
+    "prepublishOnly": "npm run build:cjs"
+  },
+  "keywords": [
+    "civiclens",
+    "government",
+    "meetings",
+    "api",
+    "sdk",
+    "rag",
+    "civic-tech"
+  ],
+  "author": "CivicLens <support@civiclens.ai>",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://docs.civiclens.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/civiclens/civiclens-js"
+  },
+  "bugs": {
+    "url": "https://github.com/civiclens/civiclens-js/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

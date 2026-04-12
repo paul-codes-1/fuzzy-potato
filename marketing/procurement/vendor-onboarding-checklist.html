@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vendor Onboarding Checklist — CivicLens</title>
+  <meta name="description" content="Step-by-step checklist for buying and deploying CivicLens. NDA, W-9, MSA, DPA, SSO setup, API keys, pilot scope, and go-live criteria.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+
+    /* Phase styling */
+    .phase-card {
+      position: relative;
+    }
+    .phase-number {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 3rem;
+      line-height: 1;
+      background: linear-gradient(135deg, #e8a838 0%, rgba(232,168,56,0.3) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Checkbox styling */
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.85rem;
+      padding: 0.85rem 1rem;
+      border-radius: 0.5rem;
+      transition: background 0.15s ease;
+      cursor: pointer;
+    }
+    .check-item:hover {
+      background: rgba(232,168,56,0.05);
+    }
+    .check-item input[type="checkbox"] {
+      appearance: none;
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 2px solid #3d5f94;
+      border-radius: 0.35rem;
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+      background: rgba(12,26,51,0.5);
+    }
+    .check-item input[type="checkbox"]:hover {
+      border-color: #e8a838;
+    }
+    .check-item input[type="checkbox"]:checked {
+      background: #e8a838;
+      border-color: #e8a838;
+    }
+    .check-item input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 0.35rem;
+      top: 0.08rem;
+      width: 0.35rem;
+      height: 0.65rem;
+      border: solid #0c1a33;
+      border-width: 0 3px 3px 0;
+      transform: rotate(45deg);
+    }
+    .check-item input[type="checkbox"]:checked ~ .check-content .check-title {
+      text-decoration: line-through;
+      opacity: 0.5;
+    }
+    .check-content { flex: 1; }
+    .check-title { font-weight: 600; font-size: 0.95rem; color: #dce3ef; transition: all 0.2s ease; }
+    .check-desc { font-size: 0.85rem; color: #8ba3c8; margin-top: 0.2rem; line-height: 1.5; }
+    .check-owner {
+      display: inline-block;
+      margin-top: 0.4rem;
+      padding: 0.15rem 0.55rem;
+      background: rgba(232,168,56,0.1);
+      color: #e8a838;
+      border: 1px solid rgba(232,168,56,0.25);
+      border-radius: 9999px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .check-owner.civiclens {
+      background: rgba(61,95,148,0.15);
+      color: #8ba3c8;
+      border-color: rgba(61,95,148,0.3);
+    }
+
+    @media print {
+      body::before { display: none; }
+      .no-print { display: none !important; }
+      body { background: white !important; color: #111 !important; }
+      .phase-card { background: white !important; border: 1px solid #ccc !important; page-break-inside: avoid; break-inside: avoid; margin-bottom: 1.25rem !important; }
+      .phase-number { background: none !important; -webkit-text-fill-color: #b87a1e !important; color: #b87a1e !important; }
+      .check-item { border-bottom: 1px dashed #ddd; }
+      .check-title { color: #111 !important; }
+      .check-desc { color: #555 !important; }
+      .check-item input[type="checkbox"] {
+        border-color: #888 !important;
+        background: white !important;
+      }
+      .check-item input[type="checkbox"]:checked { background: #b87a1e !important; border-color: #b87a1e !important; }
+      .check-owner, .check-owner.civiclens { background: #f5f5f5 !important; color: #555 !important; border-color: #ddd !important; }
+      h1, h2, h3 { color: #0c1a33 !important; }
+      p { color: #333 !important; }
+      .print-header { display: block !important; text-align: center; padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 2px solid #0c1a33; }
+      @page { margin: 0.6in; }
+    }
+    .print-header { display: none; }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="no-print fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+        <a href="index.html" class="text-amber-400">For Procurement</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="window.print()" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2 border border-white/10 rounded-lg hover:bg-white/5">
+          Print Checklist
+        </button>
+        <a href="../contact.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all">
+          Start Onboarding
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HEADER ========== -->
+  <section class="pt-32 pb-12">
+    <div class="max-w-4xl mx-auto px-6">
+      <a href="index.html" class="no-print inline-flex items-center gap-2 text-navy-400 hover:text-amber-400 text-sm mb-6 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Procurement Kit
+      </a>
+      <div class="print-header">
+        <h1 style="font-size: 2rem; font-family: 'DM Serif Display', Georgia, serif;">CivicLens Vendor Onboarding Checklist</h1>
+        <p style="margin-top: 0.5rem;">Customer name: ________________________________ &nbsp; | &nbsp; Start date: _______________</p>
+      </div>
+      <p class="no-print text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Document 3 of 4</p>
+      <h1 class="no-print font-display text-4xl md:text-5xl tracking-tight mb-4">Vendor Onboarding Checklist</h1>
+      <p class="no-print text-navy-300 text-lg leading-relaxed">Everything from NDA to go-live, in order. Average time from contract signature to production: 10 to 15 business days. Tick off each item as you complete it. Items are tagged with the responsible party.</p>
+    </div>
+  </section>
+
+  <!-- ========== CHECKLIST PHASES ========== -->
+  <section class="pb-24">
+    <div class="max-w-4xl mx-auto px-6 space-y-8">
+
+      <!-- PHASE 1: Legal & Contracts -->
+      <div class="phase-card bg-navy-900/40 border border-white/10 rounded-2xl p-8">
+        <div class="flex items-start gap-6 mb-6">
+          <div class="phase-number">01</div>
+          <div class="flex-1 pt-2">
+            <h2 class="font-display text-2xl mb-1">Legal &amp; Contracts</h2>
+            <p class="text-navy-400 text-sm">Days 1-5 &middot; Typically handled by procurement and legal</p>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Sign mutual NDA</div>
+              <div class="check-desc">A mutual NDA enables sharing of sensitive information including the penetration test executive summary, SOC 2 report, and reference customer details.</div>
+              <span class="check-owner">Buyer + CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Receive W-9 and Certificate of Insurance</div>
+              <div class="check-desc">CivicLens provides its current W-9 and COI (General Liability, Professional Liability / E&amp;O, Cyber Liability) within one business day of request.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Review Master Services Agreement (MSA)</div>
+              <div class="check-desc">CivicLens provides a standard MSA or can work from the buyer's paper. Redlines on the standard MSA are welcome; we aim for one round of redlines within five business days.</div>
+              <span class="check-owner">Buyer Legal</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Execute Data Processing Agreement (DPA)</div>
+              <div class="check-desc">The CivicLens DPA aligns with CCPA and GDPR principles. See <a href="../legal/data-processing-agreement.html" class="text-amber-400 hover:underline">the DPA template</a> for the standard text.</div>
+              <span class="check-owner">Buyer Legal + CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Execute Business Associate Agreement (BAA) if applicable</div>
+              <div class="check-desc">Only required if the tenant will knowingly process HIPAA-adjacent health information (e.g. public-health department meetings with protected content). Skip if not applicable.</div>
+              <span class="check-owner">Buyer Legal (if applicable)</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Confirm pricing tier and term</div>
+              <div class="check-desc">Select Starter, Pro, or Enterprise plan. Confirm annual or multi-year commitment and payment terms (NET-30 / NET-45 / PO-based).</div>
+              <span class="check-owner">Buyer + CivicLens Sales</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Issue purchase order or contract signature</div>
+              <div class="check-desc">Final signature kicks off provisioning. CivicLens will not provision the production tenant until the signed agreement is on file.</div>
+              <span class="check-owner">Buyer Procurement</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- PHASE 2: Security Review -->
+      <div class="phase-card bg-navy-900/40 border border-white/10 rounded-2xl p-8">
+        <div class="flex items-start gap-6 mb-6">
+          <div class="phase-number">02</div>
+          <div class="flex-1 pt-2">
+            <h2 class="font-display text-2xl mb-1">Security Review</h2>
+            <p class="text-navy-400 text-sm">Days 3-7 &middot; Handled by IT / CISO, runs in parallel with Legal</p>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Review pre-answered Security Questionnaire</div>
+              <div class="check-desc">Read <a href="security-questionnaire.html" class="text-amber-400 hover:underline">the 28-question CAIQ-lite response</a>. Flag any gaps for a follow-up call with security@civiclens.ai.</div>
+              <span class="check-owner">Buyer IT / CISO</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Request SOC 2 report (Type II in progress) or bridge letter</div>
+              <div class="check-desc">A bridge letter is available today; the Type II report will be available as soon as the audit closes. Delivered under NDA.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Request most-recent penetration test summary</div>
+              <div class="check-desc">Executive summary of the most recent third-party pen test is provided under NDA, including remediation status for any findings.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Confirm data residency and retention requirements</div>
+              <div class="check-desc">Default is U.S.-based hosting with 7-year audit-log retention. Deviations should be captured in the MSA's data-handling exhibit.</div>
+              <span class="check-owner">Buyer IT + CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Accessibility review (VPAT 2.4)</div>
+              <div class="check-desc">Request the VPAT 2.4 accessibility conformance report. Review with the buyer's ADA coordinator or equivalent.</div>
+              <span class="check-owner">Buyer ADA Coordinator</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- PHASE 3: Technical Setup -->
+      <div class="phase-card bg-navy-900/40 border border-white/10 rounded-2xl p-8">
+        <div class="flex items-start gap-6 mb-6">
+          <div class="phase-number">03</div>
+          <div class="flex-1 pt-2">
+            <h2 class="font-display text-2xl mb-1">Technical Setup</h2>
+            <p class="text-navy-400 text-sm">Days 5-10 &middot; Handled by IT + CivicLens onboarding engineer</p>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Provision tenant in CivicLens</div>
+              <div class="check-desc">CivicLens creates the tenant record with the customer's Granicus hostname and view ID. Tenant ID format: <code>city-state</code> (e.g. <code>elk-grove-ca</code>).</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Issue initial API key</div>
+              <div class="check-desc">A 32-byte <code>mra_</code>-prefixed API key is generated and delivered via an encrypted channel (encrypted email or secure-share link with 24-hour TTL).</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Configure SAML 2.0 SSO with buyer's IdP</div>
+              <div class="check-desc">Buyer provides IdP metadata (Okta, Azure AD, Google Workspace, ADFS, etc.). CivicLens generates SP metadata. See <code>docs/SSO_SETUP.md</code>.</div>
+              <span class="check-owner">Buyer IT + CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Create initial user accounts and role assignments</div>
+              <div class="check-desc">Assign admin, analyst, and viewer roles. Admin = full control. Analyst = query and export. Viewer = read-only Q&amp;A.</div>
+              <span class="check-owner">Buyer Admin</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Configure tenant branding (logo, colors, welcome message)</div>
+              <div class="check-desc">Optional but recommended. Pro and Enterprise plans can customize logo, color palette, and the welcome banner shown to end-users.</div>
+              <span class="check-owner">Buyer Comms</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Run initial meeting ingestion against historical archive</div>
+              <div class="check-desc">CivicLens runs the pipeline against the buyer's full historical Granicus archive. Processing time scales with archive size; typical archives complete in 12-48 hours.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Enable scheduled ingestion for new meetings</div>
+              <div class="check-desc">Configure the per-tenant cron (daily by default) to automatically process newly uploaded Granicus clips. Pro and Enterprise plans only.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- PHASE 4: Pilot -->
+      <div class="phase-card bg-navy-900/40 border border-white/10 rounded-2xl p-8">
+        <div class="flex items-start gap-6 mb-6">
+          <div class="phase-number">04</div>
+          <div class="flex-1 pt-2">
+            <h2 class="font-display text-2xl mb-1">Pilot Scope &amp; Validation</h2>
+            <p class="text-navy-400 text-sm">Days 8-13 &middot; Handled by Clerk's office and primary end users</p>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Define pilot user group</div>
+              <div class="check-desc">Pick a small group (3-10) of power users: city clerk, records analyst, council liaison, communications staff. Expand after go-live.</div>
+              <span class="check-owner">Buyer Lead</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Define 5 success questions</div>
+              <div class="check-desc">Write down 5 real questions the buyer wants to answer against their archive (e.g. "When was the last vote on short-term rentals?"). These become the acceptance criteria.</div>
+              <span class="check-owner">Buyer Lead</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Validate answers against the archive</div>
+              <div class="check-desc">Walk through each success question with the pilot group. Verify that answers cite correct clips, timestamps, and agenda items.</div>
+              <span class="check-owner">Buyer Lead + CivicLens CSM</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Test data export and audit log access</div>
+              <div class="check-desc">Run a sample tenant-scoped export and an audit log query. Confirm the results match expectations for FOIA / public-records workflows.</div>
+              <span class="check-owner">Buyer Records Officer</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Configure integrations (Slack / Teams / Zapier) if desired</div>
+              <div class="check-desc">Optional. Enable Slack slash commands, Teams outgoing webhooks, or Zapier triggers as part of the pilot scope.</div>
+              <span class="check-owner">Buyer IT</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- PHASE 5: Go-Live -->
+      <div class="phase-card bg-navy-900/40 border border-white/10 rounded-2xl p-8">
+        <div class="flex items-start gap-6 mb-6">
+          <div class="phase-number">05</div>
+          <div class="flex-1 pt-2">
+            <h2 class="font-display text-2xl mb-1">Go-Live Criteria</h2>
+            <p class="text-navy-400 text-sm">Days 13-15 &middot; Joint sign-off before opening access to end-users</p>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">All 5 success questions return acceptable answers</div>
+              <div class="check-desc">Documented sign-off from the buyer lead that each success question returns an accurate, cited answer.</div>
+              <span class="check-owner">Buyer Lead</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">SSO login works for all pilot users</div>
+              <div class="check-desc">Every pilot user has successfully logged in at least once via the buyer's IdP.</div>
+              <span class="check-owner">Buyer IT</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Historical archive fully ingested</div>
+              <div class="check-desc">CivicLens confirms pipeline completion with a summary report (count of clips processed, failures, and any clips that could not be transcribed).</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Support contact and escalation path documented</div>
+              <div class="check-desc">Buyer has primary and secondary support contacts on file. CivicLens has the buyer's security contact, technical contact, and billing contact on file.</div>
+              <span class="check-owner">Both</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Training session delivered to end users</div>
+              <div class="check-desc">30-60 minute live walkthrough of the frontend, chat interface, vote tracker, and export flow. Recording provided for future reference.</div>
+              <span class="check-owner civiclens">CivicLens</span>
+            </div>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox">
+            <div class="check-content">
+              <div class="check-title">Joint go-live sign-off</div>
+              <div class="check-desc">Buyer lead and CivicLens CSM sign off on go-live. Subscription meter starts. You are live.</div>
+              <span class="check-owner">Both</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="bg-gradient-to-br from-navy-900/60 to-navy-950/60 border border-amber-400/20 rounded-2xl p-6 text-center">
+        <h3 class="font-display text-xl mb-2">Ready to start?</h3>
+        <p class="text-navy-300 text-sm leading-relaxed mb-4">Reach out and we will run this checklist with you. Most cities complete all five phases in 10 to 15 business days.</p>
+        <a href="../contact.html" class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all">
+          Kick off onboarding
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
+      </div>
+
+      <div class="no-print flex flex-col sm:flex-row gap-4 justify-center pt-4">
+        <button onclick="window.print()" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-amber-400 text-navy-100 font-semibold px-6 py-3 rounded-xl transition-all hover:bg-white/5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          Print Checklist
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="no-print border-t border-white/5 bg-navy-950 py-12">
+    <div class="max-w-7xl mx-auto px-6 text-center">
+      <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. &middot; <a href="index.html" class="hover:text-amber-400">Procurement Kit</a> &middot; <a href="../contact.html" class="hover:text-amber-400">Contact</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - CivicLens</title>
+    <style>
+        :root {
+            --navy: #1a2332;
+            --slate: #374151;
+            --blue: #2563eb;
+            --light-bg: #f8fafc;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.7;
+            background: #fff;
+        }
+
+        .header {
+            background: var(--navy);
+            color: #fff;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 4rem;
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            color: var(--navy);
+            margin-top: 2.5rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            color: var(--slate);
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p, li {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        li { margin-bottom: 0.4rem; }
+
+        .effective-date {
+            background: var(--light-bg);
+            border-left: 4px solid var(--blue);
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .highlight-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        a { color: var(--blue); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 1.5rem 1rem; }
+            .header { padding: 2rem 1rem; }
+            .header h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>CivicLens Terms of Service</h1>
+    <p>Last updated: April 8, 2026</p>
+</div>
+
+<div class="container">
+
+    <div class="effective-date">
+        <strong>Effective Date:</strong> April 8, 2026. These Terms of Service ("Terms") constitute a binding agreement between you ("Client," "you") and CivicLens, Inc. ("CivicLens," "we," "us"). By accessing or using the CivicLens platform, you agree to be bound by these Terms.
+    </div>
+
+    <h2>1. Service Description</h2>
+    <p>CivicLens provides a cloud-based software-as-a-service ("SaaS") platform that enables local governments, municipalities, and authorized organizations to:</p>
+    <ul>
+        <li>Automatically download, transcribe, and summarize public meeting recordings from Granicus and other government media platforms</li>
+        <li>Generate structured, searchable archives of meeting content including agendas, minutes, votes, and financial actions</li>
+        <li>Provide natural-language question-and-answer capabilities over meeting archives via retrieval-augmented generation (RAG)</li>
+        <li>Publish a public-facing web interface for constituents to browse and search meeting records</li>
+        <li>Access meeting data programmatically via authenticated REST APIs</li>
+    </ul>
+
+    <h2>2. Account Registration and Access</h2>
+    <h3>2.1 Eligibility</h3>
+    <p>CivicLens is designed for use by government entities, government contractors, civic organizations, media organizations, and other entities with a legitimate interest in public meeting records. By registering, you represent that you have authority to bind your organization to these Terms.</p>
+
+    <h3>2.2 API Keys</h3>
+    <p>Access to the CivicLens API requires an API key issued upon account creation. You are responsible for safeguarding your API key and must not share it with unauthorized parties. You must notify us immediately at <a href="mailto:support@civiclens.ai">support@civiclens.ai</a> if you believe your API key has been compromised. We reserve the right to revoke or rotate API keys at any time for security purposes.</p>
+
+    <h3>2.3 Account Security</h3>
+    <p>You are responsible for all activity that occurs under your account. You agree to maintain reasonable security measures and to promptly report any unauthorized access.</p>
+
+    <h2>3. Acceptable Use</h2>
+    <p>You agree not to:</p>
+    <ul>
+        <li>Use the Service for any unlawful purpose or in violation of any applicable law or regulation</li>
+        <li>Attempt to reverse-engineer, decompile, or disassemble any portion of the Service</li>
+        <li>Interfere with or disrupt the integrity or performance of the Service or its infrastructure</li>
+        <li>Circumvent or disable any security features, rate limits, or access controls</li>
+        <li>Use the Service to generate or distribute misleading, fabricated, or deceptive content that misrepresents the proceedings of government meetings</li>
+        <li>Resell, sublicense, or redistribute the Service or API access without prior written consent</li>
+        <li>Submit automated queries at a rate exceeding your plan's rate limits</li>
+        <li>Use the Service to scrape, harvest, or collect data for purposes unrelated to public meeting transparency</li>
+    </ul>
+
+    <h2>4. API Usage Terms</h2>
+    <h3>4.1 Rate Limits</h3>
+    <p>API access is subject to the rate limits and query quotas associated with your subscription plan. Current plan limits are available in your account dashboard and via the <code>/api/v1/admin/plans</code> endpoint. Exceeding rate limits may result in temporary throttling or suspension of API access.</p>
+
+    <h3>4.2 API Versioning</h3>
+    <p>We will make reasonable efforts to maintain backward compatibility for versioned API endpoints (e.g., <code>/api/v1/</code>). Deprecated endpoints will receive at least 90 days notice before removal. Breaking changes will be introduced under a new API version.</p>
+
+    <h3>4.3 Permitted API Use</h3>
+    <p>You may use the API to integrate meeting data into your own applications, dashboards, and workflows. Attribution to CivicLens is appreciated but not required for the underlying public record data.</p>
+
+    <h2>5. Data Ownership</h2>
+    <div class="highlight-box">
+        <p><strong>Your Data Remains Yours.</strong> CivicLens does not claim ownership of any data you provide to or generate through the Service. All meeting recordings, transcripts, summaries, and derived content associated with your account belong to you (or to the public domain where applicable).</p>
+    </div>
+
+    <h3>5.1 Client Data</h3>
+    <p>You retain all rights, title, and interest in your data. We will not access, use, or disclose your data except as necessary to provide the Service, comply with law, or as otherwise authorized by you.</p>
+
+    <h3>5.2 Public Record Data</h3>
+    <p>Much of the data processed by CivicLens originates from public government meetings and constitutes public record. CivicLens does not restrict your use of public record data obtained through the Service. However, AI-generated summaries and structured extractions are derivative works provided as part of the Service.</p>
+
+    <h3>5.3 License to CivicLens</h3>
+    <p>You grant CivicLens a limited, non-exclusive license to process, store, and transmit your data solely for the purpose of providing and improving the Service. This license terminates upon deletion of your data or termination of your account.</p>
+
+    <h3>5.4 Aggregated and Anonymous Data</h3>
+    <p>We may use aggregated, de-identified data derived from Service usage for analytics, benchmarking, and product improvement. Such data will not identify you or any individual.</p>
+
+    <h2>6. Service Level Agreement</h2>
+    <h3>6.1 Uptime Commitment</h3>
+    <p>CivicLens commits to <strong>99.5% monthly uptime</strong> for the API and web application, measured as the percentage of total minutes in a calendar month during which the Service is available. Scheduled maintenance windows (announced at least 48 hours in advance) are excluded from uptime calculations.</p>
+
+    <h3>6.2 Service Credits</h3>
+    <p>If monthly uptime falls below 99.5%, you are eligible for a service credit applied to the following month's invoice:</p>
+    <ul>
+        <li>99.0% - 99.5% uptime: 10% credit</li>
+        <li>95.0% - 99.0% uptime: 25% credit</li>
+        <li>Below 95.0% uptime: 50% credit</li>
+    </ul>
+    <p>Service credits must be requested within 30 days of the affected month and are the sole remedy for failure to meet the uptime commitment. Credits do not exceed 50% of the monthly fee for the affected period.</p>
+
+    <h3>6.3 Exclusions</h3>
+    <p>The uptime commitment does not apply to outages caused by: (a) force majeure events; (b) your equipment, software, or network connectivity; (c) third-party service failures outside our reasonable control (e.g., Granicus platform outages); or (d) abuse or misuse of the Service.</p>
+
+    <h2>7. Payment Terms</h2>
+    <h3>7.1 Subscription Fees</h3>
+    <p>Fees are based on your selected subscription plan and are billed monthly or annually in advance. Current pricing is available at <a href="https://civiclens.ai/pricing">civiclens.ai/pricing</a>. All fees are quoted in U.S. dollars.</p>
+
+    <h3>7.2 Payment Method</h3>
+    <p>Payment is processed via Stripe. You authorize us to charge your designated payment method for all applicable fees. You are responsible for keeping your payment information current.</p>
+
+    <h3>7.3 Late Payments</h3>
+    <p>Invoices are due within 30 days of issuance. Late payments may accrue interest at the lesser of 1.5% per month or the maximum rate permitted by law. We reserve the right to suspend access after 15 days of non-payment following written notice.</p>
+
+    <h3>7.4 Taxes</h3>
+    <p>Fees are exclusive of all taxes, levies, and duties. You are responsible for all applicable taxes, except for taxes based on CivicLens's net income. Government entities may provide a tax exemption certificate.</p>
+
+    <h3>7.5 Government Purchase Orders</h3>
+    <p>We accept purchase orders from government entities. Net-30 and Net-60 payment terms are available for government accounts upon request.</p>
+
+    <h2>8. Cancellation and Termination</h2>
+    <h3>8.1 Cancellation by Client</h3>
+    <p>You may cancel your subscription at any time via your account dashboard or by contacting <a href="mailto:support@civiclens.ai">support@civiclens.ai</a>. Cancellation takes effect at the end of the current billing period. No refunds are provided for partial billing periods.</p>
+
+    <h3>8.2 Termination by CivicLens</h3>
+    <p>We may suspend or terminate your access immediately if you: (a) violate these Terms; (b) fail to pay fees after notice; (c) engage in activity that threatens the security or integrity of the Service; or (d) become subject to bankruptcy or insolvency proceedings.</p>
+
+    <h3>8.3 Effect of Termination</h3>
+    <p>Upon termination, your access to the Service and API will be revoked. You may request an export of your data within 30 days of termination. After 30 days, we will delete your data in accordance with our data retention policy, unless retention is required by law.</p>
+
+    <h2>9. Limitation of Liability</h2>
+    <h3>9.1 AI-Generated Content Disclaimer</h3>
+    <div class="highlight-box">
+        <p>CivicLens uses artificial intelligence to generate transcripts, summaries, and structured data from meeting recordings. <strong>AI-generated content may contain errors, omissions, or inaccuracies.</strong> AI-generated content is not a substitute for official meeting records, minutes, or legal documents. You should verify any critical information against official sources.</p>
+    </div>
+
+    <h3>9.2 Limitation</h3>
+    <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, CIVICLENS'S TOTAL LIABILITY ARISING FROM OR RELATED TO THESE TERMS OR THE SERVICE SHALL NOT EXCEED THE FEES PAID BY YOU DURING THE TWELVE (12) MONTHS PRECEDING THE CLAIM.</p>
+
+    <h3>9.3 Exclusion of Consequential Damages</h3>
+    <p>IN NO EVENT SHALL CIVICLENS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF REVENUE, DATA, OR BUSINESS OPPORTUNITY, REGARDLESS OF THE CAUSE OF ACTION OR THEORY OF LIABILITY.</p>
+
+    <h3>9.4 Exceptions</h3>
+    <p>The limitations in this section do not apply to: (a) breaches of confidentiality obligations; (b) indemnification obligations; or (c) liability that cannot be limited under applicable law.</p>
+
+    <h2>10. Data Processing</h2>
+    <p>CivicLens processes data on your behalf as a data processor. Our data processing practices are governed by our <a href="privacy-policy.html">Privacy Policy</a> and, for enterprise clients, our <a href="data-processing-agreement.html">Data Processing Agreement</a>.</p>
+
+    <h3>10.1 Sub-processors</h3>
+    <p>We use the following third-party sub-processors to deliver the Service:</p>
+    <ul>
+        <li><strong>OpenAI</strong> - Audio transcription (Whisper), text embedding, and AI summarization</li>
+        <li><strong>Anthropic</strong> - AI narrative generation (Claude)</li>
+        <li><strong>Amazon Web Services (AWS)</strong> - Cloud infrastructure, compute, and storage</li>
+        <li><strong>Stripe</strong> - Payment processing</li>
+        <li><strong>Granicus</strong> - Source video platform (accessed on your behalf)</li>
+    </ul>
+    <p>We will notify you at least 30 days before engaging a new sub-processor that processes your data.</p>
+
+    <h3>10.2 Data Location</h3>
+    <p>Your data is processed and stored in the United States. If you require data residency in a specific jurisdiction, please contact us to discuss options.</p>
+
+    <h2>11. Government-Specific Clauses</h2>
+    <h3>11.1 Government Rights</h3>
+    <p>If you are a U.S. government entity, the Service is provided as "commercial computer software" and "commercial computer software documentation" as defined in FAR 12.212 and DFARS 227.7202. Use, duplication, and disclosure are subject to the terms of this agreement.</p>
+
+    <h3>11.2 Compliance</h3>
+    <p>CivicLens is committed to compliance with laws applicable to government technology procurement, including applicable provisions of state and local procurement codes. We will cooperate with reasonable compliance inquiries.</p>
+
+    <h3>11.3 Public Records</h3>
+    <p>We acknowledge that communications and records related to government accounts may be subject to public records requests under applicable Freedom of Information or Open Records laws. We will cooperate with your compliance obligations, provided that we may redact our proprietary information and trade secrets to the extent permitted by law.</p>
+
+    <h3>11.4 Accessibility</h3>
+    <p>CivicLens is committed to compliance with Section 508 of the Rehabilitation Act and WCAG 2.1 Level AA. Our current accessibility conformance report (VPAT) is available upon request.</p>
+
+    <h3>11.5 Appropriations</h3>
+    <p>We understand that government contracts may be subject to annual appropriations. If funding is not appropriated for a renewal period, the government entity may terminate without penalty upon written notice.</p>
+
+    <h2>12. Intellectual Property</h2>
+    <p>CivicLens retains all rights in the Service, including its software, algorithms, models, interfaces, documentation, and branding. Nothing in these Terms transfers any intellectual property rights to you except the limited right to use the Service during your subscription term.</p>
+
+    <h2>13. Indemnification</h2>
+    <p>CivicLens will defend, indemnify, and hold you harmless from third-party claims alleging that the Service infringes a valid U.S. patent or copyright, provided you give us prompt notice and reasonable cooperation. This obligation does not apply to claims arising from your modifications, misuse, or combination of the Service with other products.</p>
+
+    <h2>14. Confidentiality</h2>
+    <p>Each party agrees to protect the other's confidential information with at least the same degree of care it uses for its own confidential information, but no less than reasonable care. Confidential information does not include information that is publicly available, independently developed, or rightfully received from a third party without restriction.</p>
+
+    <h2>15. Modifications to Terms</h2>
+    <p>We may update these Terms from time to time. Material changes will be communicated via email at least 30 days before taking effect. Continued use of the Service after the effective date constitutes acceptance of the updated Terms. If you do not agree with the changes, you may terminate your account before the effective date.</p>
+
+    <h2>16. Governing Law and Dispute Resolution</h2>
+    <p>These Terms are governed by the laws of the State of Delaware without regard to conflict of laws principles. Any disputes arising under these Terms shall be resolved by binding arbitration under the rules of the American Arbitration Association, conducted in Lexington, Kentucky, except that either party may seek injunctive relief in a court of competent jurisdiction. Government entities may elect to resolve disputes in their local jurisdiction to the extent required by law.</p>
+
+    <h2>17. General Provisions</h2>
+    <ul>
+        <li><strong>Entire Agreement.</strong> These Terms, together with any applicable Order Form, DPA, and Privacy Policy, constitute the entire agreement between the parties.</li>
+        <li><strong>Severability.</strong> If any provision is held unenforceable, the remaining provisions remain in full force.</li>
+        <li><strong>Waiver.</strong> Failure to enforce a provision does not constitute a waiver.</li>
+        <li><strong>Assignment.</strong> You may not assign these Terms without our consent, except in connection with a merger or acquisition. We may assign these Terms freely.</li>
+        <li><strong>Force Majeure.</strong> Neither party is liable for delays or failures due to causes beyond reasonable control.</li>
+        <li><strong>Notices.</strong> Notices must be sent to <a href="mailto:legal@civiclens.ai">legal@civiclens.ai</a> or to the email on file for your account.</li>
+    </ul>
+
+    <h2>18. Contact</h2>
+    <p>For questions about these Terms, contact us at:</p>
+    <p>
+        CivicLens, Inc.<br>
+        Email: <a href="mailto:legal@civiclens.ai">legal@civiclens.ai</a><br>
+        Web: <a href="https://civiclens.ai">civiclens.ai</a>
+    </p>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 CivicLens, Inc. All rights reserved.
+</div>
+
+</body>
+</html>

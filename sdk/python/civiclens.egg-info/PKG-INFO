@@ -1,0 +1,206 @@
+Metadata-Version: 2.4
+Name: civiclens
+Version: 1.0.0
+Summary: Python SDK for the CivicLens local government meeting intelligence API
+Home-page: https://github.com/civiclens/civiclens-python
+Author: CivicLens
+Author-email: support@civiclens.ai
+Project-URL: Documentation, https://docs.civiclens.ai
+Project-URL: API Reference, https://api.civiclens.ai/docs
+Project-URL: Changelog, https://github.com/civiclens/civiclens-python/blob/main/CHANGELOG.md
+Keywords: civiclens government meetings api sdk
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: Other/Proprietary License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Typing :: Typed
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.24.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21; extra == "dev"
+Requires-Dist: respx>=0.20; extra == "dev"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: project-url
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# CivicLens Python SDK
+
+Official Python client for the [CivicLens API](https://docs.civiclens.ai) -- turn local government meeting archives into a searchable, queryable knowledge base.
+
+## Installation
+
+```bash
+pip install civiclens
+```
+
+## Quick Start
+
+```python
+import asyncio
+from civiclens import CivicLensClient
+
+async def main():
+    async with CivicLensClient(api_key="cl_your_key_here") as cl:
+        # Ask a question about meetings
+        result = await cl.ask("What has the city done about short-term rentals?")
+        print(result["answer"])
+        for source in result["sources"]:
+            print(f"  - Clip {source['clip_id']}: {source['title']}")
+
+        # Multi-turn chat
+        chat_result = await cl.chat([
+            {"role": "user", "content": "Tell me about the parks budget"},
+            {"role": "assistant", "content": "The parks department budget..."},
+            {"role": "user", "content": "How does that compare to last year?"},
+        ])
+
+        # Search votes
+        votes = await cl.search_votes(member="Smith", outcome="passed")
+
+        # Search financial items
+        financials = await cl.search_financial(min_amount=100000)
+
+        # Create a policy alert
+        alert = await cl.create_alert(
+            name="Zoning changes",
+            alert_type="keyword",
+            config={"keywords": ["zoning", "rezoning", "land use"]},
+        )
+
+asyncio.run(main())
+```
+
+## Features
+
+- **Async-first** -- built on `httpx` for non-blocking I/O
+- **Automatic retry** -- exponential backoff on transient failures (429, 5xx)
+- **Rate limit awareness** -- parses `X-RateLimit-*` headers; available via `client.last_rate_limit`
+- **Typed exceptions** -- `AuthenticationError`, `RateLimitError`, `NotFoundError`
+- **Full API coverage** -- Q&A, chat, votes, financial, alerts, export, FOIA, analytics, audit, billing, webhooks, scheduler, branding, status
+
+## Configuration
+
+```python
+client = CivicLensClient(
+    api_key="cl_...",
+    base_url="https://api.civiclens.ai",  # default
+    timeout=60.0,                          # seconds
+    max_retries=3,                         # retry on transient errors
+    backoff_base=1.0,                      # exponential backoff base
+)
+```
+
+## Available Methods
+
+### Q&A
+| Method | Description |
+|---|---|
+| `ask(question, ...)` | Single-turn RAG question answering |
+| `chat(messages, ...)` | Multi-turn conversational Q&A |
+
+### Votes & Financial
+| Method | Description |
+|---|---|
+| `search_votes(...)` | Search extracted votes |
+| `get_member_voting_record(name)` | Full voting record for a member |
+| `get_vote_stats()` | Aggregate vote statistics |
+| `search_financial(...)` | Search financial items |
+| `get_financial_summary()` | Aggregate financial summary |
+
+### Alerts
+| Method | Description |
+|---|---|
+| `create_alert(name, type, config)` | Create a policy alert |
+| `list_alerts()` | List all alerts |
+| `update_alert(id, ...)` | Update an alert |
+| `delete_alert(id)` | Delete an alert |
+| `get_alert_matches(id)` | Get alert matches |
+
+### Export & FOIA
+| Method | Description |
+|---|---|
+| `start_export(format, filters)` | Start async data export |
+| `get_export_status(job_id)` | Check export status |
+| `download_export(job_id)` | Download completed export |
+| `foia_search(query)` | FOIA-style search |
+
+### Analytics & Audit
+| Method | Description |
+|---|---|
+| `get_usage(period)` | Usage summary |
+| `get_query_volume(period)` | Query volume over time |
+| `get_popular_topics(period)` | Popular topics |
+| `search_audit_log(...)` | Search audit log |
+| `verify_audit_integrity()` | Verify audit hash chain |
+
+### Billing
+| Method | Description |
+|---|---|
+| `create_checkout(...)` | Stripe checkout session |
+| `create_billing_portal(...)` | Stripe billing portal |
+| `get_billing_usage()` | Current billing usage |
+
+### Webhooks
+| Method | Description |
+|---|---|
+| `register_webhook(url, events)` | Register a webhook |
+| `list_webhooks()` | List webhooks |
+| `delete_webhook(id)` | Delete a webhook |
+| `test_webhook(id)` | Send test event |
+
+### Scheduler
+| Method | Description |
+|---|---|
+| `get_schedule()` | Get ingestion schedule |
+| `update_schedule(...)` | Update schedule |
+| `trigger_run_now()` | Trigger immediate run |
+
+### Status & Health
+| Method | Description |
+|---|---|
+| `get_status()` | System status |
+| `get_uptime()` | Uptime percentages |
+| `health()` | Health check (no auth) |
+
+## Error Handling
+
+```python
+from civiclens.client import (
+    CivicLensError,
+    AuthenticationError,
+    RateLimitError,
+    NotFoundError,
+)
+
+try:
+    result = await client.ask("...")
+except AuthenticationError:
+    print("Invalid API key")
+except RateLimitError as e:
+    print(f"Rate limited. Retry after {e.retry_after}s")
+except NotFoundError:
+    print("Resource not found")
+except CivicLensError as e:
+    print(f"API error {e.status_code}: {e}")
+```
+
+## License
+
+Proprietary. See [Terms of Service](https://civiclens.ai/terms).

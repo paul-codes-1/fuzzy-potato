@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Press &amp; Media — CivicLens</title>
+  <meta name="description" content="CivicLens press center: media inquiries, press releases, brand assets, company facts, and pre-approved quotes for journalists, bloggers, and partners covering AI-powered civic meeting intelligence.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Press &amp; Media — CivicLens">
+  <meta property="og:description" content="Media kit, releases, brand assets, and spokesperson quotes for CivicLens — AI-powered city council meeting intelligence.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://civiclens.ai/press/">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+
+    .hero-line {
+      opacity: 0;
+      transform: translateY(40px);
+      animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .hero-line:nth-child(1) { animation-delay: 0.15s; }
+    .hero-line:nth-child(2) { animation-delay: 0.3s; }
+    .hero-line:nth-child(3) { animation-delay: 0.5s; }
+    .hero-line:nth-child(4) { animation-delay: 0.65s; }
+    @keyframes heroReveal { to { opacity: 1; transform: translateY(0); } }
+
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+
+    .feature-card {
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px -15px rgba(0,0,0,0.4);
+    }
+
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(61,95,148,0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 80% at 80% 20%, rgba(232,168,56,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 60% 80%, rgba(61,95,148,0.2) 0%, transparent 60%);
+      animation: meshShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes meshShift {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+      100% { background-position: 20% 20%, 80% 10%, 40% 80%; }
+    }
+
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #e8a838;
+      color: #060e1d;
+      padding: 0.75rem 1.25rem;
+      z-index: 10000;
+      font-weight: 600;
+    }
+    .skip-link:focus { left: 1rem; top: 1rem; }
+
+    .fact-card {
+      background: linear-gradient(180deg, rgba(20,38,71,0.6), rgba(12,26,51,0.9));
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: border-color 0.3s ease, transform 0.3s ease;
+    }
+    .fact-card:hover {
+      border-color: rgba(232,168,56,0.35);
+      transform: translateY(-2px);
+    }
+
+    .quote-card {
+      border-left: 3px solid #e8a838;
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased overflow-x-hidden">
+
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5" aria-label="Primary navigation">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group" aria-label="CivicLens home">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="../index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="../govtech.html" class="hover:text-amber-400 transition-colors">GovTech</a>
+        <a href="../case-studies/" class="hover:text-amber-400 transition-colors">Case Studies</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="index.html" class="text-amber-400" aria-current="page">Press</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="mailto:press@civiclens.io" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2">
+          press@civiclens.io
+        </a>
+        <a href="kit.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Download Press Kit
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">
+
+  <!-- ========== HERO ========== -->
+  <section class="relative min-h-[70vh] flex items-center pt-16" aria-labelledby="press-hero-heading">
+    <div class="hero-mesh absolute inset-0" aria-hidden="true"></div>
+    <div class="absolute inset-0 opacity-[0.03]" aria-hidden="true" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+
+    <div class="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
+      <div class="max-w-4xl">
+        <div class="hero-line inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm font-medium mb-8">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          Press &amp; Media Center
+        </div>
+        <h1 id="press-hero-heading" class="hero-line font-display text-5xl md:text-6xl lg:text-7xl leading-[1.05] tracking-tight mb-6">
+          Press &amp; <span class="text-amber-400">Media</span>
+        </h1>
+        <p class="hero-line text-lg md:text-xl text-navy-200 leading-relaxed max-w-3xl mb-10">
+          CivicLens is building the intelligence layer for local democracy. Journalists, researchers, and bloggers covering civic tech, AI, government transparency, or local accountability are welcome here. Grab what you need — releases, brand assets, facts, and pre-approved quotes — or reach out directly.
+        </p>
+        <div class="hero-line flex flex-col sm:flex-row gap-4">
+          <a href="mailto:press@civiclens.io" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+            Contact Press Team
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+          <a href="kit.html" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            Full Press Kit
+          </a>
+        </div>
+        <div class="hero-line mt-8 flex flex-wrap items-center gap-6 text-xs text-navy-400">
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Response SLA: 24 business hours</span>
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Spokesperson interviews available</span>
+          <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Product demos on request</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== LATEST NEWS ========== -->
+  <section class="py-24 md:py-32" aria-labelledby="latest-news-heading">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 id="latest-news-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">Latest news</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          CivicLens is in early launch. These are our first announcements — more will follow as pilot deployments expand.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <a href="release-launch.html" class="feature-card reveal bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">Press release &middot; Apr 10, 2026</div>
+          <h3 class="font-display text-xl mb-3 leading-snug">CivicLens Launches to Make City Council Meetings Searchable and Accountable</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-4">Early-stage civic-tech platform converts hours of Granicus-hosted meeting video into structured, cited, AI-queryable knowledge.</p>
+          <span class="text-amber-400 text-sm font-semibold inline-flex items-center gap-1">Read release <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg></span>
+        </a>
+
+        <a href="release-granicus-integration.html" class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">Press release &middot; Apr 10, 2026</div>
+          <h3 class="font-display text-xl mb-3 leading-snug">CivicLens Extends Granicus Integration with Real-Time Vote Tracking and AI Search</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-4">New roll-call extraction, financial item surfacing, and RAG-backed cross-meeting Q&amp;A layer on top of the existing Granicus stack.</p>
+          <span class="text-amber-400 text-sm font-semibold inline-flex items-center gap-1">Read release <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg></span>
+        </a>
+
+        <a href="release-nonprofit-program.html" class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">Press release &middot; Apr 10, 2026</div>
+          <h3 class="font-display text-xl mb-3 leading-snug">CivicLens Launches 30% Nonprofit Discount for Advocacy Organizations</h3>
+          <p class="text-sm text-navy-300 leading-relaxed mb-4">Verified 501(c)(3) advocacy groups can access meeting intelligence, vote tracking, and topic alerts at a sustained nonprofit rate.</p>
+          <span class="text-amber-400 text-sm font-semibold inline-flex items-center gap-1">Read release <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg></span>
+        </a>
+      </div>
+
+      <p class="text-center text-xs text-navy-500 mt-8 reveal reveal-delay-3">
+        These are sample / inaugural press releases. As an early-stage company, CivicLens has not yet issued additional public announcements.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== ABOUT CIVICLENS (BOILERPLATE) ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5" aria-labelledby="about-heading">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="mb-10">
+        <div class="glow-line w-32 mb-8"></div>
+        <h2 id="about-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">About CivicLens</h2>
+        <p class="text-sm uppercase tracking-wider text-navy-400 reveal reveal-delay-1">Company boilerplate &middot; Paste into articles verbatim</p>
+      </div>
+      <div class="reveal reveal-delay-2 bg-navy-950/60 border border-white/10 rounded-2xl p-8 md:p-10">
+        <p class="text-lg text-navy-100 leading-relaxed mb-6">
+          CivicLens is a SaaS platform that transforms city council meeting videos into structured, searchable intelligence. By ingesting Granicus-hosted meeting recordings, the platform delivers AI-powered transcription, two-pass summarization, vote tracking, financial item extraction, and natural language Q&amp;A — all within minutes of a meeting ending. CivicLens is built for city clerks, journalists, advocacy organizations, and engaged residents who need to know exactly what local government is doing without watching hours of video. Learn more at civiclens.ai.
+        </p>
+        <div class="flex flex-wrap gap-3 pt-4 border-t border-white/5">
+          <button onclick="navigator.clipboard.writeText(document.getElementById('boilerplate-text').innerText); this.innerText='Copied';" class="text-sm font-semibold bg-amber-400/10 border border-amber-400/30 text-amber-400 hover:bg-amber-400/20 px-4 py-2 rounded-lg transition-all">
+            Copy boilerplate
+          </button>
+          <span id="boilerplate-text" class="sr-only">CivicLens is a SaaS platform that transforms city council meeting videos into structured, searchable intelligence. By ingesting Granicus-hosted meeting recordings, the platform delivers AI-powered transcription, two-pass summarization, vote tracking, financial item extraction, and natural language Q&amp;A — all within minutes of a meeting ending. CivicLens is built for city clerks, journalists, advocacy organizations, and engaged residents who need to know exactly what local government is doing without watching hours of video. Learn more at civiclens.ai.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== KEY FACTS ========== -->
+  <section class="py-24 md:py-32" aria-labelledby="key-facts-heading">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 id="key-facts-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">Key facts</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Everything a reporter needs on one page. All figures are publicly claimable.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="fact-card reveal rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Founded</div>
+          <div class="font-display text-3xl mb-1">2026</div>
+          <div class="text-sm text-navy-400">Launched as a standalone platform following a civic-tech pilot in 2025.</div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-1 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Headquarters</div>
+          <div class="font-display text-3xl mb-1">[City, State]</div>
+          <div class="text-sm text-navy-400"><em>HQ location to be confirmed at formal launch.</em></div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-2 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Team</div>
+          <div class="font-display text-3xl mb-1">Early-stage</div>
+          <div class="text-sm text-navy-400">Founding engineering and product team. Hiring in sales, ML, and customer success.</div>
+        </div>
+
+        <div class="fact-card reveal rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Customers</div>
+          <div class="font-display text-3xl mb-1">Pilot deployments</div>
+          <div class="text-sm text-navy-400">Pilot customers across multiple US cities, including reference deployments in Elk Grove, CA and Lexington-Fayette, KY.</div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-1 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Integrations</div>
+          <div class="font-display text-3xl mb-1">10+</div>
+          <div class="text-sm text-navy-400">Granicus, Legistar, Slack, Microsoft Teams, Zapier, SAML 2.0 SSO, Stripe, Webhooks, Web Push, SMTP, and REST / JS / Python SDKs.</div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-2 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Open-source stack</div>
+          <div class="font-display text-3xl mb-1">FastAPI &middot; React &middot; Chroma</div>
+          <div class="text-sm text-navy-400">Built on FastAPI, React 18, ChromaDB, pdfplumber, APScheduler, FlexSearch, Tailwind, and Vite.</div>
+        </div>
+
+        <div class="fact-card reveal rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">AI providers</div>
+          <div class="font-display text-3xl mb-1">OpenAI + Anthropic</div>
+          <div class="text-sm text-navy-400">OpenAI Whisper and GPT-4o for transcription and structured extraction; Anthropic Claude for narrative summarization.</div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-1 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Compliance posture</div>
+          <div class="font-display text-3xl mb-1">SOC 2 in progress</div>
+          <div class="text-sm text-navy-400">Controls mapped to Trust Services Criteria; WCAG 2.1 AA targeting; audit log with SHA-256 integrity hashes.</div>
+        </div>
+
+        <div class="fact-card reveal reveal-delay-2 rounded-2xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-2">Category</div>
+          <div class="font-display text-3xl mb-1">GovTech + AI</div>
+          <div class="text-sm text-navy-400">Intersection of government meeting management, civic engagement, and applied large-language-model infrastructure.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PRESS RELEASES LIST ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5" aria-labelledby="releases-list-heading">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="mb-12">
+        <div class="glow-line w-32 mb-8"></div>
+        <h2 id="releases-list-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">Press releases</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">Chronological archive of official CivicLens announcements.</p>
+      </div>
+
+      <ul class="space-y-4" aria-label="Press release archive">
+        <li class="reveal">
+          <a href="release-launch.html" class="feature-card group block bg-navy-950/60 border border-white/5 hover:border-amber-400/40 rounded-xl p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <div class="text-xs uppercase tracking-wider text-navy-400 mb-1">April 10, 2026</div>
+                <h3 class="font-display text-xl text-white group-hover:text-amber-400 transition-colors">CivicLens Launches to Make City Council Meetings Searchable and Accountable</h3>
+              </div>
+              <span class="text-amber-400 text-sm font-semibold whitespace-nowrap">Read &rarr;</span>
+            </div>
+          </a>
+        </li>
+        <li class="reveal reveal-delay-1">
+          <a href="release-granicus-integration.html" class="feature-card group block bg-navy-950/60 border border-white/5 hover:border-amber-400/40 rounded-xl p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <div class="text-xs uppercase tracking-wider text-navy-400 mb-1">April 10, 2026</div>
+                <h3 class="font-display text-xl text-white group-hover:text-amber-400 transition-colors">CivicLens Extends Granicus Integration with Real-Time Vote Tracking and AI Search</h3>
+              </div>
+              <span class="text-amber-400 text-sm font-semibold whitespace-nowrap">Read &rarr;</span>
+            </div>
+          </a>
+        </li>
+        <li class="reveal reveal-delay-2">
+          <a href="release-nonprofit-program.html" class="feature-card group block bg-navy-950/60 border border-white/5 hover:border-amber-400/40 rounded-xl p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <div class="text-xs uppercase tracking-wider text-navy-400 mb-1">April 10, 2026</div>
+                <h3 class="font-display text-xl text-white group-hover:text-amber-400 transition-colors">CivicLens Launches 30% Nonprofit Discount for Advocacy Organizations</h3>
+              </div>
+              <span class="text-amber-400 text-sm font-semibold whitespace-nowrap">Read &rarr;</span>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ========== BRAND ASSETS ========== -->
+  <section class="py-24 md:py-32" aria-labelledby="brand-heading">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 id="brand-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">Brand assets</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Logos, color palette, typography, and usage guidelines. Current brand is in active refinement — please check back before going to print with a high-visibility piece.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <a href="brand-assets.html" class="feature-card reveal bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Logos</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">Primary, white, dark, and icon-only variants. SVG and PNG formats.</p>
+        </a>
+
+        <a href="brand-assets.html#colors" class="feature-card reveal reveal-delay-1 bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Colors</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">Navy and amber palette with HEX, RGB, and Pantone approximations.</p>
+        </a>
+
+        <a href="brand-assets.html#typography" class="feature-card reveal reveal-delay-2 bg-navy-900/60 border border-white/5 hover:border-amber-400/40 rounded-2xl p-7 block">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/></svg>
+          </div>
+          <h3 class="font-display text-xl mb-2">Typography</h3>
+          <p class="text-sm text-navy-300 leading-relaxed">DM Serif Display, Instrument Sans, and JetBrains Mono with usage guidance.</p>
+        </a>
+      </div>
+
+      <div class="mt-10 text-center">
+        <a href="brand-assets.html" class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-7 py-3.5 rounded-xl transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Full brand guide
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== QUOTES & SOUNDBITES ========== -->
+  <section class="py-24 md:py-32 bg-navy-900/40 border-y border-white/5" aria-labelledby="quotes-heading">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 id="quotes-heading" class="font-display text-4xl md:text-5xl mb-5 reveal">Quotes &amp; soundbites</h2>
+        <p class="text-lg text-navy-300 reveal reveal-delay-1">
+          Pre-approved statements from the CivicLens spokesperson. Use verbatim. For tailored quotes, contact <a href="mailto:press@civiclens.io" class="text-amber-400 hover:underline">press@civiclens.io</a>.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <figure class="quote-card reveal bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On AI for civic engagement</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "The goal of AI in local government isn't to replace humans — it's to make the existing record legible. Every council meeting is already public. CivicLens just finally makes that record usable by the people it's for."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal reveal-delay-1 bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On government transparency</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "Transparency doesn't mean posting a four-hour video and walking away. Real transparency means someone can answer 'what did the council decide on housing?' in under ten seconds, with a citation. That's the bar we're building to."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On why meeting archives matter</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "Council archives are the original source of truth for local democracy — every rezoning, every budget line, every grant. We treat them as primary documents worthy of the same rigor journalists bring to court filings."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal reveal-delay-1 bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On the FOIA backlog problem</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "Most public-records requests are essentially 'help me find something a computer could find.' If self-serve search across the archive eliminates even a fraction of that backlog, we've given clerks' offices thousands of hours back — and given residents faster answers."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On the Granicus-first integration philosophy</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "Granicus is already the system of record for thousands of cities. We're not asking anyone to rip and replace anything. CivicLens reads from what you already have and adds an intelligence layer on top. That's the only posture that respects how government IT actually works."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal reveal-delay-1 bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On nonprofit and advocacy use</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "Local advocacy groups are doing the work professional newsrooms no longer have the capacity for. Giving a community coalition the same monitoring tools that a paid lobbyist has is one of the most leverage-heavy things we can do."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On data privacy and security</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "We only process what's already public. No private communications, no personnel data, no constituent PII beyond what's spoken aloud in an open meeting. That constraint isn't a limitation — it's the entire product thesis."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+
+        <figure class="quote-card reveal reveal-delay-1 bg-navy-950/60 rounded-xl p-7">
+          <div class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-3">On the future of civic technology</div>
+          <blockquote class="text-navy-100 text-lg leading-relaxed italic mb-4">
+            "The last generation of civic tech was about posting documents to websites. The next generation is about answering questions. We're betting the difference is how many residents actually engage with what their government is doing."
+          </blockquote>
+          <figcaption class="text-sm text-navy-400">— <em>[CEO / Spokesperson placeholder]</em>, CivicLens</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== MEDIA CONTACT ========== -->
+  <section class="py-24 md:py-32" aria-labelledby="contact-heading">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="reveal bg-gradient-to-br from-navy-900/80 to-navy-950 border border-amber-400/20 rounded-2xl p-10 md:p-14 text-center">
+        <div class="glow-line w-32 mx-auto mb-8"></div>
+        <h2 id="contact-heading" class="font-display text-4xl md:text-5xl mb-5">Media contact</h2>
+        <p class="text-lg text-navy-200 leading-relaxed mb-8 max-w-2xl mx-auto">
+          For interviews, background briefings, product demos, fact-checking, or data requests, reach out directly. We respond to media inquiries within one business day.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <a href="mailto:press@civiclens.io" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            press@civiclens.io
+          </a>
+          <a href="kit.html" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+            Download full press kit
+          </a>
+        </div>
+        <div class="mt-8 pt-6 border-t border-white/10 text-sm text-navy-400 grid sm:grid-cols-3 gap-4">
+          <div>
+            <div class="text-amber-400 font-semibold mb-1">Response SLA</div>
+            <div>24 business hours</div>
+          </div>
+          <div>
+            <div class="text-amber-400 font-semibold mb-1">Available for</div>
+            <div>Interviews, demos, fact-checks</div>
+          </div>
+          <div>
+            <div class="text-amber-400 font-semibold mb-1">Time zone</div>
+            <div>US Pacific (UTC-7/8)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-navy-500">
+        <p>&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+        <div class="flex items-center gap-6">
+          <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+          <a href="index.html" class="hover:text-amber-400 transition-colors">Press</a>
+          <a href="kit.html" class="hover:text-amber-400 transition-colors">Press Kit</a>
+          <a href="mailto:press@civiclens.io" class="hover:text-amber-400 transition-colors">press@civiclens.io</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

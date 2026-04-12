@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - CivicLens</title>
+    <style>
+        :root {
+            --navy: #1a2332;
+            --slate: #374151;
+            --blue: #2563eb;
+            --light-bg: #f8fafc;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.7;
+            background: #fff;
+        }
+
+        .header {
+            background: var(--navy);
+            color: #fff;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 4rem;
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            color: var(--navy);
+            margin-top: 2.5rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            color: var(--slate);
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p, li {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        li { margin-bottom: 0.4rem; }
+
+        .effective-date {
+            background: var(--light-bg);
+            border-left: 4px solid var(--blue);
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .highlight-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--light-bg);
+            font-weight: 600;
+            color: var(--navy);
+        }
+
+        a { color: var(--blue); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 1.5rem 1rem; }
+            .header { padding: 2rem 1rem; }
+            .header h1 { font-size: 1.5rem; }
+            table { font-size: 0.8rem; }
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>CivicLens Privacy Policy</h1>
+    <p>Last updated: April 8, 2026</p>
+</div>
+
+<div class="container">
+
+    <div class="effective-date">
+        <strong>Effective Date:</strong> April 8, 2026. This Privacy Policy describes how CivicLens, Inc. ("CivicLens," "we," "us") collects, uses, and protects information when you use the CivicLens platform and related services.
+    </div>
+
+    <h2>1. Overview</h2>
+    <p>CivicLens provides AI-powered meeting transparency tools for local governments. Our platform processes public meeting recordings to generate transcripts, summaries, and searchable archives. We are committed to handling all data responsibly and transparently.</p>
+
+    <div class="highlight-box">
+        <p><strong>Important Note on Public Records:</strong> The primary data processed by CivicLens -- government meeting recordings, agendas, minutes, and related documents -- is public record. This data is already publicly available through government sources such as Granicus. CivicLens processes this data to make it more accessible and searchable, but does not change its public nature.</p>
+    </div>
+
+    <h2>2. Information We Collect</h2>
+
+    <h3>2.1 Account Information</h3>
+    <p>When you create a CivicLens account, we collect:</p>
+    <ul>
+        <li>Organization name and contact information</li>
+        <li>Administrator name and email address</li>
+        <li>Billing information (processed and stored by Stripe; we do not store full payment card numbers)</li>
+        <li>Granicus configuration details (host URL, view ID)</li>
+        <li>Subscription plan selection</li>
+    </ul>
+
+    <h3>2.2 Meeting Data</h3>
+    <p>When processing meetings on your behalf, CivicLens accesses and stores:</p>
+    <ul>
+        <li>Meeting video/audio recordings (sourced from Granicus or other public platforms)</li>
+        <li>AI-generated transcripts of meeting audio</li>
+        <li>AI-generated summaries, structured extractions, and topic classifications</li>
+        <li>Meeting agendas and official minutes (sourced from public government systems)</li>
+        <li>Meeting metadata (date, body/committee, clip identifiers)</li>
+    </ul>
+
+    <h3>2.3 Usage Data</h3>
+    <p>We automatically collect:</p>
+    <ul>
+        <li>API request logs (endpoint, timestamp, response status, response time)</li>
+        <li>Search queries submitted through the Q&A interface</li>
+        <li>Feature usage patterns and frequency</li>
+        <li>Error logs and diagnostic information</li>
+    </ul>
+
+    <h3>2.4 Technical Data</h3>
+    <ul>
+        <li>IP addresses</li>
+        <li>Browser type and version (for web interface users)</li>
+        <li>Device information</li>
+        <li>Referring URLs</li>
+    </ul>
+
+    <h2>3. How We Use Information</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Purpose</th>
+                <th>Data Used</th>
+                <th>Legal Basis</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Provide the Service (transcription, summarization, search)</td>
+                <td>Meeting data, account info</td>
+                <td>Contract performance</td>
+            </tr>
+            <tr>
+                <td>Process payments</td>
+                <td>Billing information</td>
+                <td>Contract performance</td>
+            </tr>
+            <tr>
+                <td>Maintain security and prevent abuse</td>
+                <td>Usage data, IP addresses, API logs</td>
+                <td>Legitimate interest</td>
+            </tr>
+            <tr>
+                <td>Improve AI accuracy and Service quality</td>
+                <td>Aggregated usage patterns, error logs</td>
+                <td>Legitimate interest</td>
+            </tr>
+            <tr>
+                <td>Communicate about Service updates</td>
+                <td>Contact information</td>
+                <td>Legitimate interest / consent</td>
+            </tr>
+            <tr>
+                <td>Comply with legal obligations</td>
+                <td>As required</td>
+                <td>Legal obligation</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>4. Third-Party Processors</h2>
+    <p>We share data with the following third-party service providers who process data on our behalf:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Provider</th>
+                <th>Purpose</th>
+                <th>Data Shared</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>OpenAI</strong></td>
+                <td>Audio transcription (Whisper API), text embeddings, AI summarization</td>
+                <td>Meeting audio, transcript text, meeting content for summarization</td>
+            </tr>
+            <tr>
+                <td><strong>Anthropic</strong></td>
+                <td>AI narrative generation (Claude)</td>
+                <td>Extracted facts and meeting content for narrative summary generation</td>
+            </tr>
+            <tr>
+                <td><strong>Stripe</strong></td>
+                <td>Payment processing</td>
+                <td>Billing name, email, payment card details</td>
+            </tr>
+            <tr>
+                <td><strong>Amazon Web Services (AWS)</strong></td>
+                <td>Cloud hosting, storage, compute</td>
+                <td>All Service data (encrypted at rest and in transit)</td>
+            </tr>
+            <tr>
+                <td><strong>Granicus</strong></td>
+                <td>Source video platform</td>
+                <td>We access publicly available meeting content from Granicus on your behalf</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>4.1 AI Provider Data Practices</h3>
+    <p>Both OpenAI and Anthropic process data sent via their APIs under their respective data processing terms. As of the date of this policy:</p>
+    <ul>
+        <li>OpenAI's API data is not used to train their models (per their <a href="https://openai.com/enterprise-privacy" target="_blank" rel="noopener">Enterprise Privacy</a> commitment)</li>
+        <li>Anthropic does not train on data submitted via their API (per their <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">commercial terms</a>)</li>
+    </ul>
+    <p>We will update this policy if these practices change. Since the underlying meeting data is public record, the privacy risk of AI processing is limited; however, we take our role as a data processor seriously.</p>
+
+    <h2>5. Data Retention</h2>
+    <h3>5.1 Active Accounts</h3>
+    <p>We retain your data for the duration of your subscription plus 30 days after cancellation, during which you may request a data export.</p>
+
+    <h3>5.2 After Termination</h3>
+    <p>After the 30-day post-termination period, we will delete your account data, including processed meeting content, API keys, and usage logs. Aggregated, de-identified data may be retained indefinitely.</p>
+
+    <h3>5.3 Specific Retention Periods</h3>
+    <ul>
+        <li><strong>API request logs:</strong> 90 days</li>
+        <li><strong>Search query logs:</strong> 90 days (then aggregated/anonymized)</li>
+        <li><strong>Billing records:</strong> 7 years (legal/tax requirement)</li>
+        <li><strong>Security incident logs:</strong> 3 years</li>
+    </ul>
+
+    <h3>5.4 Public Record Data</h3>
+    <p>Meeting data derived from public records may persist in public-facing archives that you have published. CivicLens is not responsible for copies of public record data that have been distributed, cached, or archived by third parties.</p>
+
+    <h2>6. Government Records Handling</h2>
+    <p>We understand the special considerations involved in handling government data:</p>
+    <ul>
+        <li><strong>Public Records Requests:</strong> We will cooperate with your obligations under applicable Freedom of Information and Open Records laws</li>
+        <li><strong>Records Retention:</strong> Government clients may have specific records retention requirements. We will work with you to ensure compliance with your jurisdiction's retention schedules</li>
+        <li><strong>Data Sovereignty:</strong> All data is currently processed and stored in the United States. We can discuss specific data residency requirements for government clients</li>
+        <li><strong>CJIS / Sensitive Data:</strong> CivicLens is designed for public meeting data and is not intended for processing Criminal Justice Information (CJIS), Protected Health Information (PHI), or classified information</li>
+    </ul>
+
+    <h2>7. Cookies and Tracking</h2>
+    <h3>7.1 Cookies We Use</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Cookie</th>
+                <th>Type</th>
+                <th>Purpose</th>
+                <th>Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Session ID</td>
+                <td>Strictly necessary</td>
+                <td>Maintain authenticated session</td>
+                <td>Session</td>
+            </tr>
+            <tr>
+                <td>Preferences</td>
+                <td>Functional</td>
+                <td>Remember UI settings (theme, filters)</td>
+                <td>1 year</td>
+            </tr>
+            <tr>
+                <td>Analytics</td>
+                <td>Performance</td>
+                <td>Understand usage patterns (self-hosted analytics)</td>
+                <td>30 days</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>7.2 No Third-Party Advertising Trackers</h3>
+    <p>CivicLens does not use third-party advertising cookies or trackers. We do not sell your data to advertisers or data brokers. We do not engage in behavioral advertising.</p>
+
+    <h3>7.3 Managing Cookies</h3>
+    <p>You can control cookies through your browser settings. Disabling strictly necessary cookies may affect Service functionality.</p>
+
+    <h2>8. Data Security</h2>
+    <p>We implement industry-standard security measures to protect your data:</p>
+    <ul>
+        <li>Encryption in transit (TLS 1.2+) for all API and web traffic</li>
+        <li>Encryption at rest (AES-256) for stored data</li>
+        <li>API key authentication with secure hashing</li>
+        <li>Rate limiting and abuse detection</li>
+        <li>Tenant data isolation</li>
+        <li>Regular security assessments</li>
+        <li>Access controls and audit logging for internal systems</li>
+    </ul>
+    <p>For more details, see our <a href="../../docs/SECURITY.md">Security Practices</a> document.</p>
+
+    <h2>9. Your Rights</h2>
+    <h3>9.1 All Users</h3>
+    <p>You have the right to:</p>
+    <ul>
+        <li>Access the personal information we hold about you</li>
+        <li>Request correction of inaccurate information</li>
+        <li>Request deletion of your account and associated data</li>
+        <li>Export your data in a machine-readable format</li>
+        <li>Object to processing based on legitimate interest</li>
+    </ul>
+
+    <h3>9.2 California Residents (CCPA)</h3>
+    <p>If you are a California resident, you have additional rights under the California Consumer Privacy Act (CCPA):</p>
+    <ul>
+        <li><strong>Right to Know:</strong> You may request disclosure of the categories and specific pieces of personal information we have collected about you</li>
+        <li><strong>Right to Delete:</strong> You may request deletion of your personal information, subject to certain exceptions</li>
+        <li><strong>Right to Opt-Out of Sale:</strong> CivicLens does not sell personal information. We do not share personal information for cross-context behavioral advertising</li>
+        <li><strong>Right to Non-Discrimination:</strong> We will not discriminate against you for exercising your CCPA rights</li>
+    </ul>
+    <p>To exercise your CCPA rights, contact us at <a href="mailto:privacy@civiclens.ai">privacy@civiclens.ai</a> or call our toll-free number. We will respond within 45 days.</p>
+
+    <h3>9.3 Verification</h3>
+    <p>To protect your privacy, we may verify your identity before fulfilling data requests. For organizational accounts, requests must come from an authorized administrator.</p>
+
+    <h2>10. Data Disclosure</h2>
+    <p>We may disclose your information in the following circumstances:</p>
+    <ul>
+        <li><strong>With your consent:</strong> When you direct us to share data with third parties</li>
+        <li><strong>Service providers:</strong> To our sub-processors as described in Section 4</li>
+        <li><strong>Legal requirements:</strong> When required by law, subpoena, court order, or government request</li>
+        <li><strong>Safety:</strong> To prevent fraud, security threats, or harm</li>
+        <li><strong>Business transfers:</strong> In connection with a merger, acquisition, or sale of assets (you will be notified)</li>
+    </ul>
+
+    <h2>11. Children's Privacy</h2>
+    <p>CivicLens is a business-to-government and business-to-business service. We do not knowingly collect personal information from children under 13. If you believe a child has provided us with personal information, please contact us and we will promptly delete it.</p>
+
+    <h2>12. International Data Transfers</h2>
+    <p>CivicLens currently processes all data in the United States. If we transfer data internationally in the future, we will implement appropriate safeguards and update this policy accordingly.</p>
+
+    <h2>13. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. Material changes will be communicated via email at least 30 days before taking effect. The "Last updated" date at the top indicates the most recent revision.</p>
+
+    <h2>14. Contact Us</h2>
+    <p>For privacy inquiries, data requests, or concerns:</p>
+    <p>
+        CivicLens, Inc.<br>
+        Privacy Officer<br>
+        Email: <a href="mailto:privacy@civiclens.ai">privacy@civiclens.ai</a><br>
+        Web: <a href="https://civiclens.ai">civiclens.ai</a>
+    </p>
+    <p>For CCPA requests, you may also reach us toll-free at: <strong>1-800-CIVIC-AI</strong> (placeholder)</p>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 CivicLens, Inc. All rights reserved.
+</div>
+
+</body>
+</html>

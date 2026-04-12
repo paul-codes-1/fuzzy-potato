@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Tour — CivicLens</title>
+  <meta name="description" content="A 3-minute guided tour of CivicLens. See browsing, meeting detail, Q&A, chat, vote tracking, and alerts in action — no signup required.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(61,95,148,0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 80% at 80% 20%, rgba(232,168,56,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 60% 80%, rgba(61,95,148,0.2) 0%, transparent 60%);
+      animation: meshShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes meshShift {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+      100% { background-position: 20% 20%, 80% 10%, 40% 80%; }
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+
+    /* Progress bar */
+    .tour-progress {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+    .tour-step-btn {
+      transition: color 0.3s ease, background-color 0.3s ease;
+    }
+    .tour-step-btn[aria-current="step"] .tour-step-num {
+      background: #e8a838;
+      color: #060e1d;
+      box-shadow: 0 0 0 4px rgba(232,168,56,0.2);
+    }
+    .tour-step-btn[aria-current="step"] .tour-step-label {
+      color: #e8a838;
+    }
+    .tour-step-num {
+      transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    /* Section spacing so sticky progress bar doesn't overlap headings */
+    .tour-step {
+      scroll-margin-top: 160px;
+    }
+
+    /* Simulated UI card */
+    .sim-card {
+      background: linear-gradient(180deg, rgba(20,38,71,0.7) 0%, rgba(12,26,51,0.85) 100%);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 1rem;
+      box-shadow: 0 30px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03) inset;
+      overflow: hidden;
+    }
+    .sim-chrome {
+      background: rgba(6,14,29,0.8);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Annotation callouts */
+    .annotation {
+      position: relative;
+      background: rgba(232,168,56,0.08);
+      border: 1px solid rgba(232,168,56,0.35);
+      border-radius: 0.75rem;
+      padding: 0.875rem 1rem;
+      color: #f4d690;
+      font-size: 0.8125rem;
+      line-height: 1.45;
+    }
+    .annotation::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: 0.875rem;
+      width: 3px;
+      height: 1.25rem;
+      background: #e8a838;
+      border-radius: 3px;
+    }
+    .annotation-title {
+      font-weight: 600;
+      color: #e8a838;
+      display: block;
+      margin-bottom: 0.125rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* Pulse ring for "click here" hints */
+    .pulse-ring {
+      position: absolute;
+      inset: -6px;
+      border: 2px solid #e8a838;
+      border-radius: inherit;
+      animation: pulseRing 2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+      pointer-events: none;
+    }
+    @keyframes pulseRing {
+      0% { opacity: 0.9; transform: scale(1); }
+      70% { opacity: 0; transform: scale(1.08); }
+      100% { opacity: 0; transform: scale(1.08); }
+    }
+
+    /* Typing cursor */
+    .type-cursor::after {
+      content: '';
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: #e8a838;
+      vertical-align: text-bottom;
+      margin-left: 2px;
+      animation: blinkCursor 1s steps(2, end) infinite;
+    }
+    @keyframes blinkCursor {
+      50% { opacity: 0; }
+    }
+
+    /* Citation chip */
+    .cite {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.125rem 0.5rem;
+      background: rgba(61,95,148,0.25);
+      color: #8ba3c8;
+      border: 1px solid rgba(139,163,200,0.25);
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      font-family: 'Instrument Sans', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .cite:hover {
+      background: rgba(232,168,56,0.15);
+      color: #e8a838;
+      border-color: rgba(232,168,56,0.4);
+    }
+
+    /* Timestamp link */
+    .ts-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.0625rem 0.375rem;
+      background: rgba(34,211,238,0.1);
+      color: #67e8f9;
+      border: 1px solid rgba(34,211,238,0.25);
+      border-radius: 0.25rem;
+      font-family: 'SF Mono', ui-monospace, monospace;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .ts-link:hover {
+      background: rgba(34,211,238,0.2);
+    }
+
+    /* Reveal on scroll */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Tab button active state */
+    .tab-btn[aria-selected="true"] {
+      color: #e8a838;
+      border-bottom-color: #e8a838;
+    }
+
+    /* Tab panel visibility */
+    .tab-panel[hidden] { display: none; }
+
+    /* Mini chart bars */
+    .bar {
+      background: linear-gradient(180deg, #e8a838 0%, #d4922a 100%);
+      border-radius: 2px 2px 0 0;
+      transition: height 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Focus-visible for keyboard accessibility */
+    :focus-visible {
+      outline: 2px solid #e8a838;
+      outline-offset: 3px;
+      border-radius: 4px;
+    }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .hero-mesh { animation: none; }
+      .pulse-ring { animation: none; opacity: 0.4; }
+      .type-cursor::after { animation: none; }
+    }
+
+    /* Screen-reader only */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* Fade-in for streamed content */
+    .fade-in {
+      animation: fadeIn 0.3s ease forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- Live region for screen reader step announcements -->
+  <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="product-tour.html" class="text-amber-400 transition-colors">Product Tour</a>
+        <a href="index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="pricing.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Start Free Trial
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="relative pt-32 pb-20 overflow-hidden">
+    <div class="hero-mesh absolute inset-0"></div>
+    <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+    <div class="relative max-w-4xl mx-auto px-6 text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm font-medium mb-8">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+        Interactive walkthrough
+      </div>
+      <h1 class="font-display text-5xl md:text-6xl lg:text-7xl leading-[1.05] tracking-tight mb-6">
+        See CivicLens <span class="text-amber-400">in action</span>
+      </h1>
+      <p class="text-lg md:text-xl text-navy-200 leading-relaxed max-w-2xl mx-auto mb-10">
+        A 3-minute guided tour of the six workflows that save city clerks, council members, and engaged residents hours every week. No signup required.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#step-1" id="start-tour" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Start Tour
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+        </a>
+        <a href="contact.html" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+          Schedule a Demo
+        </a>
+      </div>
+      <p class="text-xs text-navy-400 mt-6">
+        Use <kbd class="px-1.5 py-0.5 bg-navy-800 border border-white/10 rounded text-[11px]">&larr;</kbd>
+        <kbd class="px-1.5 py-0.5 bg-navy-800 border border-white/10 rounded text-[11px]">&rarr;</kbd>
+        to navigate &middot;
+        <kbd class="px-1.5 py-0.5 bg-navy-800 border border-white/10 rounded text-[11px]">Esc</kbd>
+        to exit
+      </p>
+    </div>
+  </section>
+
+  <!-- ========== STICKY PROGRESS BAR ========== -->
+  <div id="tour-progress" class="tour-progress sticky top-16 z-40 bg-navy-950/75 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-4 py-3">
+      <nav aria-label="Tour progress" class="flex items-center justify-between gap-2 overflow-x-auto">
+        <button type="button" data-step="1" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0" aria-current="step">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">1</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Browse</span>
+        </button>
+        <span class="h-px w-6 md:w-10 bg-white/10 flex-shrink-0"></span>
+        <button type="button" data-step="2" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">2</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Detail</span>
+        </button>
+        <span class="h-px w-6 md:w-10 bg-white/10 flex-shrink-0"></span>
+        <button type="button" data-step="3" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">3</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Ask</span>
+        </button>
+        <span class="h-px w-6 md:w-10 bg-white/10 flex-shrink-0"></span>
+        <button type="button" data-step="4" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">4</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Chat</span>
+        </button>
+        <span class="h-px w-6 md:w-10 bg-white/10 flex-shrink-0"></span>
+        <button type="button" data-step="5" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">5</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Votes</span>
+        </button>
+        <span class="h-px w-6 md:w-10 bg-white/10 flex-shrink-0"></span>
+        <button type="button" data-step="6" class="tour-step-btn flex items-center gap-2 px-2 py-1.5 flex-shrink-0">
+          <span class="tour-step-num w-7 h-7 rounded-full bg-navy-800 text-navy-300 flex items-center justify-center text-xs font-bold">6</span>
+          <span class="tour-step-label text-xs md:text-sm text-navy-300 font-medium whitespace-nowrap">Alerts</span>
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ========== TOUR STEPS WRAPPER ========== -->
+  <main id="tour-main">
+
+    <!-- ===== STEP 1: BROWSE MEETINGS ===== -->
+    <section id="step-1" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="1" aria-labelledby="step-1-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 1 of 6</p>
+          <h2 id="step-1-heading" class="font-display text-4xl md:text-5xl mb-4">Browse every meeting, instantly</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">Every session from City Council, Planning Commission, and the Budget Committee lives on a single searchable index. Filter by body, date, or topic, or jump straight to a keyword.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <!-- Simulated browse UI -->
+          <figure class="sim-card" role="img" aria-label="Simulated CivicLens meeting browser showing a search bar, topic filters, and four meeting cards.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / meetings</span>
+            </div>
+            <div class="p-6 md:p-8">
+              <!-- Search bar -->
+              <div class="relative mb-5">
+                <div class="flex items-center gap-3 bg-navy-900/80 border border-white/10 rounded-xl px-4 py-3">
+                  <svg class="w-5 h-5 text-navy-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
+                  </svg>
+                  <span class="text-white flex-1">short-term rental<span class="type-cursor" aria-hidden="true"></span></span>
+                  <span class="text-xs text-navy-500">87 results</span>
+                </div>
+              </div>
+              <!-- Topic chips -->
+              <div class="flex flex-wrap gap-2 mb-6">
+                <span class="px-3 py-1 text-xs font-medium bg-amber-400/15 text-amber-400 border border-amber-400/30 rounded-full">Zoning</span>
+                <span class="px-3 py-1 text-xs font-medium bg-navy-800 text-navy-300 border border-white/10 rounded-full">Budget</span>
+                <span class="px-3 py-1 text-xs font-medium bg-navy-800 text-navy-300 border border-white/10 rounded-full">Housing</span>
+                <span class="px-3 py-1 text-xs font-medium bg-navy-800 text-navy-300 border border-white/10 rounded-full">Public Safety</span>
+                <span class="px-3 py-1 text-xs font-medium bg-navy-800 text-navy-300 border border-white/10 rounded-full">Parks &amp; Rec</span>
+                <span class="px-3 py-1 text-xs font-medium bg-navy-800 text-navy-300 border border-white/10 rounded-full">+12 more</span>
+              </div>
+              <!-- Meeting cards -->
+              <ul class="grid sm:grid-cols-2 gap-4" role="list">
+                <li class="relative group">
+                  <div class="relative bg-navy-900/60 border border-amber-400/40 rounded-xl p-5 hover:border-amber-400 transition-colors cursor-pointer">
+                    <div class="pulse-ring rounded-xl" aria-hidden="true"></div>
+                    <div class="flex items-start justify-between mb-2">
+                      <span class="text-xs text-amber-400 font-semibold">Mar 24, 2026</span>
+                      <span class="text-[10px] text-navy-500">~2h 45m</span>
+                    </div>
+                    <h3 class="font-display text-base leading-snug mb-1 text-white">Urban County Council Regular Session</h3>
+                    <p class="text-xs text-navy-400 mb-3">Council Chambers &middot; Mayor Gorton presiding</p>
+                    <div class="flex gap-1.5">
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Zoning</span>
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Bonds</span>
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">STR</span>
+                    </div>
+                    <p class="mt-3 text-xs text-navy-300 border-t border-white/5 pt-3">
+                      <span class="text-navy-500">Match:</span> &hellip;first reading of the <mark class="bg-amber-400/30 text-amber-200 px-0.5 rounded">short-term rental</mark> ordinance passed 9-6&hellip;
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <div class="bg-navy-900/60 border border-white/10 rounded-xl p-5">
+                    <div class="flex items-start justify-between mb-2">
+                      <span class="text-xs text-navy-300 font-semibold">Mar 10, 2026</span>
+                      <span class="text-[10px] text-navy-500">~1h 50m</span>
+                    </div>
+                    <h3 class="font-display text-base leading-snug mb-1 text-white">Planning Commission</h3>
+                    <p class="text-xs text-navy-400 mb-3">STR regulation working session</p>
+                    <div class="flex gap-1.5">
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Zoning</span>
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Housing</span>
+                    </div>
+                  </div>
+                </li>
+                <li>
+                  <div class="bg-navy-900/60 border border-white/10 rounded-xl p-5">
+                    <div class="flex items-start justify-between mb-2">
+                      <span class="text-xs text-navy-300 font-semibold">Feb 24, 2026</span>
+                      <span class="text-[10px] text-navy-500">~3h 10m</span>
+                    </div>
+                    <h3 class="font-display text-base leading-snug mb-1 text-white">Budget Committee Hearing</h3>
+                    <p class="text-xs text-navy-400 mb-3">FY2027 department presentations</p>
+                    <div class="flex gap-1.5">
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Budget</span>
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Infra</span>
+                    </div>
+                  </div>
+                </li>
+                <li>
+                  <div class="bg-navy-900/60 border border-white/10 rounded-xl p-5">
+                    <div class="flex items-start justify-between mb-2">
+                      <span class="text-xs text-navy-300 font-semibold">Feb 10, 2026</span>
+                      <span class="text-[10px] text-navy-500">~2h 20m</span>
+                    </div>
+                    <h3 class="font-display text-base leading-snug mb-1 text-white">Urban County Council Regular Session</h3>
+                    <p class="text-xs text-navy-400 mb-3">Jacobson Park trail appropriation</p>
+                    <div class="flex gap-1.5">
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Parks</span>
+                      <span class="px-2 py-0.5 text-[10px] bg-navy-800 text-navy-300 rounded">Budget</span>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <figcaption class="sr-only">Simulated meeting list from March 2026 Urban County Council archive.</figcaption>
+          </figure>
+
+          <!-- Annotations -->
+          <aside class="space-y-3" aria-label="Step 1 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Full-text search</span>
+              Every spoken word, agenda PDF, and minutes document is indexed. Partial matches highlight in context.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Topic chips</span>
+              Meetings are auto-tagged by GPT-4o-mini into 3&ndash;8 topics &mdash; no manual tagging required.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Pulsing card</span>
+              The highlighted card is what you'd click in the real app to drill into a meeting. That's step 2.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 2: MEETING DETAIL ===== -->
+    <section id="step-2" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="2" aria-labelledby="step-2-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 2 of 6</p>
+          <h2 id="step-2-heading" class="font-display text-4xl md:text-5xl mb-4">Skim 3 hours in 30 seconds</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">Every meeting gets a structured overview: votes, financial items, public comments, and contentious agenda items &mdash; all linked to the exact moment in the video.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <figure class="sim-card" role="img" aria-label="Simulated meeting detail view with tabs for Overview, Transcript, Agenda, and Minutes.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / meeting / 6742</span>
+            </div>
+            <div class="p-6 md:p-8">
+              <!-- Meeting header -->
+              <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+                <div>
+                  <h3 class="font-display text-2xl md:text-3xl mb-1">March 24, 2026 &middot; Urban County Council Regular Session</h3>
+                  <p class="text-sm text-navy-300">Mayor Linda Gorton presiding &middot; Council Chambers &middot; 14,820 words transcribed</p>
+                </div>
+                <button class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                  </svg>
+                  Ask about this meeting
+                </button>
+              </div>
+
+              <!-- Tabs -->
+              <div class="border-b border-white/10 mb-6">
+                <div role="tablist" aria-label="Meeting sections" class="flex gap-6 text-sm font-medium">
+                  <button role="tab" aria-selected="true" aria-controls="tab-overview" id="tabbtn-overview" class="tab-btn py-3 border-b-2 border-transparent text-navy-300 hover:text-white transition-colors">Overview</button>
+                  <button role="tab" aria-selected="false" aria-controls="tab-transcript" id="tabbtn-transcript" class="tab-btn py-3 border-b-2 border-transparent text-navy-300 hover:text-white transition-colors">Transcript</button>
+                  <button role="tab" aria-selected="false" aria-controls="tab-agenda" id="tabbtn-agenda" class="tab-btn py-3 border-b-2 border-transparent text-navy-300 hover:text-white transition-colors">Agenda</button>
+                  <button role="tab" aria-selected="false" aria-controls="tab-minutes" id="tabbtn-minutes" class="tab-btn py-3 border-b-2 border-transparent text-navy-300 hover:text-white transition-colors">Minutes</button>
+                </div>
+              </div>
+
+              <!-- Tab panels -->
+              <div>
+                <div role="tabpanel" id="tab-overview" aria-labelledby="tabbtn-overview" class="tab-panel space-y-5">
+                  <p class="text-navy-100 leading-relaxed">
+                    The council opened with a moment of silence before Mayor Gorton gaveled the session into order. The evening's dominant issue was the long-debated short-term rental ordinance, which cleared its first reading on a split
+                    <button class="ts-link" type="button">9&ndash;6 vote <span class="text-cyan-300">1:18:45</span></button>
+                    after more than 40 minutes of public comment.
+                  </p>
+                  <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                    <h4 class="text-xs font-semibold text-amber-400 tracking-wider uppercase mb-3">Key votes</h4>
+                    <ul class="space-y-3 text-sm">
+                      <li class="flex items-start gap-3">
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">PASSED 11-4</span>
+                        <div class="flex-1">
+                          <p class="text-white"><strong>Ordinance 0089-26</strong> &mdash; Tates Creek Road rezoning (42 acres) for 180 homes with 15% affordable requirement.</p>
+                          <button class="ts-link mt-1" type="button">25:15</button>
+                        </div>
+                      </li>
+                      <li class="flex items-start gap-3">
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">PASSED 15-0</span>
+                        <div class="flex-1">
+                          <p class="text-white"><strong>Resolution 0212-26</strong> &mdash; $4.2M appropriation for Veteran's Park Phase II (splash pad, ADA playground).</p>
+                          <button class="ts-link mt-1" type="button">52:30</button>
+                        </div>
+                      </li>
+                      <li class="flex items-start gap-3">
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded">PASSED 9-6</span>
+                        <div class="flex-1">
+                          <p class="text-white"><strong>Ordinance 0091-26</strong> &mdash; First reading of short-term rental regulation (annual permits, 300ft notification).</p>
+                          <button class="ts-link mt-1" type="button">1:18:45</button>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                    <h4 class="text-xs font-semibold text-amber-400 tracking-wider uppercase mb-3">Public comment</h4>
+                    <blockquote class="border-l-2 border-amber-400/40 pl-3 text-sm text-navy-200">
+                      &ldquo;I operate two STR properties and they bring real tourism revenue, but the 300-foot notification radius is overly broad. Reduce it to 200 feet and most neighbors can live with this.&rdquo;
+                      <footer class="text-xs text-navy-400 mt-2">&mdash; Maria Santos, public comment
+                        <button class="ts-link ml-1" type="button">1:05:20</button>
+                      </footer>
+                    </blockquote>
+                  </div>
+                </div>
+                <div role="tabpanel" id="tab-transcript" aria-labelledby="tabbtn-transcript" class="tab-panel" hidden>
+                  <p class="text-navy-300 text-sm">Full searchable transcript with segment timestamps &mdash; every line links to the video at that exact second.</p>
+                </div>
+                <div role="tabpanel" id="tab-agenda" aria-labelledby="tabbtn-agenda" class="tab-panel" hidden>
+                  <p class="text-navy-300 text-sm">Official agenda PDF extracted and indexed, with OCR fallback for scanned documents.</p>
+                </div>
+                <div role="tabpanel" id="tab-minutes" aria-labelledby="tabbtn-minutes" class="tab-panel" hidden>
+                  <p class="text-navy-300 text-sm">Official minutes (PDF or HTML) parsed into searchable structured text.</p>
+                </div>
+              </div>
+            </div>
+          </figure>
+
+          <aside class="space-y-3" aria-label="Step 2 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Tabbed view</span>
+              Overview, Transcript, Agenda, Minutes &mdash; pick your level of detail.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Timestamp deep-links</span>
+              Every cyan chip jumps the embedded video to that exact second. No more scrubbing.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">One-click Q&amp;A</span>
+              Scope a question to just this meeting &mdash; or zoom out to the whole archive.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 3: ASK A QUESTION ===== -->
+    <section id="step-3" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="3" aria-labelledby="step-3-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 3 of 6</p>
+          <h2 id="step-3-heading" class="font-display text-4xl md:text-5xl mb-4">Ask in plain English</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">RAG-powered Q&amp;A searches every meeting summary, transcript, agenda, and minutes document in your archive. Every answer comes with citations you can click back to the source.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <figure class="sim-card" role="img" aria-label="Simulated Ask a Question interface with a typed question and streaming AI answer with citations.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / ask</span>
+            </div>
+            <div class="p-6 md:p-8">
+              <!-- Question input -->
+              <div class="mb-5">
+                <label class="block text-xs font-semibold text-navy-400 uppercase tracking-wider mb-2">Your question</label>
+                <div class="bg-navy-900/80 border border-white/10 rounded-xl p-4">
+                  <p class="text-white">What's happening with the downtown parking garage and Town Branch Commons infrastructure?</p>
+                </div>
+                <div class="flex items-center justify-between mt-3 gap-3">
+                  <div class="flex gap-2 text-xs text-navy-400">
+                    <span class="px-2 py-1 bg-navy-800 rounded">Body: All</span>
+                    <span class="px-2 py-1 bg-navy-800 rounded">After: Jan 1, 2026</span>
+                  </div>
+                  <button id="ask-play-btn" type="button" class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                    </svg>
+                    <span id="ask-play-label">Play answer</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Answer area -->
+              <div class="bg-navy-900/50 border border-white/5 rounded-xl p-5">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-6 h-6 rounded bg-amber-400/20 border border-amber-400/40 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                  </div>
+                  <span class="text-xs font-semibold text-amber-400 uppercase tracking-wider">CivicLens</span>
+                  <span class="ml-auto text-[11px] text-navy-500">Searched 912 chunks across 14 meetings &middot; 2.4s</span>
+                </div>
+                <div id="ask-answer-text" class="text-navy-100 leading-relaxed text-[15px] min-h-[140px]" aria-live="polite"></div>
+                <div id="ask-citations" class="flex flex-wrap gap-2 mt-4 opacity-0 transition-opacity duration-500">
+                  <button class="cite" type="button"><span>1</span> Mar 24 Council &middot; 1:42:10</button>
+                  <button class="cite" type="button"><span>2</span> Mar 24 Council &middot; 1:35:40</button>
+                  <button class="cite" type="button"><span>3</span> Feb 24 Council &middot; 55:20</button>
+                  <button class="cite" type="button"><span>4</span> Feb 5 Public Works &middot; 8:30</button>
+                </div>
+              </div>
+            </div>
+          </figure>
+
+          <aside class="space-y-3" aria-label="Step 3 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Retrieval-augmented</span>
+              Questions search a vector index built from summaries, facts, transcripts, agendas, and minutes &mdash; five chunk types per meeting.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Every claim is sourced</span>
+              Numbered citation chips at the bottom link straight to the clip and timestamp that backs each fact.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Scoped filters</span>
+              Narrow by body (Council, Planning, Budget) or date range &mdash; great for topic-specific research.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 4: MULTI-TURN CHAT ===== -->
+    <section id="step-4" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="4" aria-labelledby="step-4-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 4 of 6</p>
+          <h2 id="step-4-heading" class="font-display text-4xl md:text-5xl mb-4">Follow the thread across meetings</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">Multi-turn chat remembers context. Start broad, then drill in. Switch models mid-conversation between OpenAI and Anthropic. All citations persist across turns.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <figure class="sim-card" role="img" aria-label="Simulated chat interface with a three-turn conversation about the budget.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / chat</span>
+              <span class="ml-auto text-[11px] text-navy-400 bg-navy-800/50 border border-white/5 px-2 py-0.5 rounded">Model: Claude Sonnet</span>
+            </div>
+            <div class="p-6 md:p-8">
+              <div class="flex items-center justify-end mb-4">
+                <button id="chat-play-btn" type="button" class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                  </svg>
+                  <span id="chat-play-label">Play conversation</span>
+                </button>
+              </div>
+              <div id="chat-thread" class="space-y-4" aria-live="polite"></div>
+            </div>
+          </figure>
+
+          <aside class="space-y-3" aria-label="Step 4 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Conversational memory</span>
+              "Who voted against it?" in turn 2 resolves to the ordinance from turn 1 &mdash; no re-typing.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Cross-meeting context</span>
+              Answers pull from multiple sessions at once, so you can follow a policy thread across months.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Pick your model</span>
+              Switch between GPT-4o and Claude Sonnet mid-thread. Your chat history carries over.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 5: VOTE TRACKER ===== -->
+    <section id="step-5" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="5" aria-labelledby="step-5-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 5 of 6</p>
+          <h2 id="step-5-heading" class="font-display text-4xl md:text-5xl mb-4">Track every vote, set every alert</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">Search votes by ordinance, member, topic, or date. Set alert rules to get notified the moment council takes action on the issues you care about.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <figure class="sim-card" role="img" aria-label="Simulated vote tracker with a results table and a policy alert form.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / votes</span>
+            </div>
+            <div class="p-6 md:p-8 space-y-6">
+              <!-- Vote table -->
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="font-display text-lg">Recent votes</h3>
+                  <span class="text-xs text-navy-400">42 votes &middot; Q1 2026</span>
+                </div>
+                <div class="overflow-hidden rounded-lg border border-white/10">
+                  <table class="w-full text-sm">
+                    <thead class="bg-navy-900/80 text-xs text-navy-400 uppercase tracking-wider">
+                      <tr>
+                        <th class="text-left px-4 py-2.5 font-semibold">Item</th>
+                        <th class="text-left px-4 py-2.5 font-semibold hidden md:table-cell">Date</th>
+                        <th class="text-left px-4 py-2.5 font-semibold">Result</th>
+                        <th class="text-left px-4 py-2.5 font-semibold hidden md:table-cell">Breakdown</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5 bg-navy-950/40">
+                      <tr class="hover:bg-navy-900/40">
+                        <td class="px-4 py-3">
+                          <p class="text-white font-medium">Ord. 0091-26 &middot; Short-Term Rental Regulation</p>
+                          <p class="text-xs text-navy-400">First reading</p>
+                        </td>
+                        <td class="px-4 py-3 text-navy-300 hidden md:table-cell">Mar 24</td>
+                        <td class="px-4 py-3">
+                          <span class="px-2 py-0.5 text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded">9-6</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-navy-300 hidden md:table-cell">
+                          <span class="text-emerald-400">9 aye</span> &middot; <span class="text-rose-400">6 nay</span>
+                        </td>
+                      </tr>
+                      <tr class="hover:bg-navy-900/40">
+                        <td class="px-4 py-3">
+                          <p class="text-white font-medium">Res. 0215-26 &middot; Town Branch Commons Bonds</p>
+                          <p class="text-xs text-navy-400">$18.04M authorization</p>
+                        </td>
+                        <td class="px-4 py-3 text-navy-300 hidden md:table-cell">Mar 24</td>
+                        <td class="px-4 py-3">
+                          <span class="px-2 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">13-2</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-navy-300 hidden md:table-cell">Moloney, Plomin dissenting</td>
+                      </tr>
+                      <tr class="hover:bg-navy-900/40">
+                        <td class="px-4 py-3">
+                          <p class="text-white font-medium">Res. 0212-26 &middot; Veteran's Park Phase II</p>
+                          <p class="text-xs text-navy-400">$4.2M appropriation</p>
+                        </td>
+                        <td class="px-4 py-3 text-navy-300 hidden md:table-cell">Mar 24</td>
+                        <td class="px-4 py-3">
+                          <span class="px-2 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">15-0</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-navy-300 hidden md:table-cell">Unanimous</td>
+                      </tr>
+                      <tr class="hover:bg-navy-900/40">
+                        <td class="px-4 py-3">
+                          <p class="text-white font-medium">Ord. 0089-26 &middot; Tates Creek Rezoning</p>
+                          <p class="text-xs text-navy-400">42 acres, A-R to R-1N</p>
+                        </td>
+                        <td class="px-4 py-3 text-navy-300 hidden md:table-cell">Mar 24</td>
+                        <td class="px-4 py-3">
+                          <span class="px-2 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">11-4</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-navy-300 hidden md:table-cell">15% affordable required</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Alert form -->
+              <div class="bg-navy-900/50 border border-amber-400/20 rounded-xl p-5">
+                <div class="flex items-center gap-2 mb-3">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                  </svg>
+                  <h4 class="font-semibold text-sm">Create a policy alert</h4>
+                </div>
+                <div class="grid sm:grid-cols-[1fr_auto] gap-3">
+                  <div class="bg-navy-950/60 border border-white/10 rounded-lg px-4 py-3 text-sm text-white">
+                    Alert me when <span class="px-2 py-0.5 bg-amber-400/15 text-amber-400 rounded text-xs font-semibold border border-amber-400/30">City Council</span> votes on <span class="px-2 py-0.5 bg-amber-400/15 text-amber-400 rounded text-xs font-semibold border border-amber-400/30">"affordable housing"</span>
+                  </div>
+                  <button class="bg-amber-400 hover:bg-amber-500 text-navy-950 font-semibold text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap">Save alert</button>
+                </div>
+                <p class="text-xs text-navy-400 mt-3">Delivery: email + Slack #council-watch &middot; Trigger: keyword + body match</p>
+              </div>
+            </div>
+          </figure>
+
+          <aside class="space-y-3" aria-label="Step 5 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Structured roll calls</span>
+              Every vote is extracted into structured data: ayes, nays, abstentions, and individual member votes.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Flexible alerts</span>
+              Trigger on keywords, specific members, financial thresholds, or any combination. Delivery to email, Slack, Teams, or webhooks.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Historical member data</span>
+              Click any member to see their complete voting history across every meeting in the archive.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 6: ANALYTICS & ALERTS ===== -->
+    <section id="step-6" class="tour-step py-24 border-b border-white/5 reveal" data-step-index="6" aria-labelledby="step-6-heading">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="mb-10 max-w-3xl">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.18em] uppercase mb-3">Step 6 of 6</p>
+          <h2 id="step-6-heading" class="font-display text-4xl md:text-5xl mb-4">Analytics and admin, at a glance</h2>
+          <p class="text-navy-200 text-lg leading-relaxed">See how your team is using CivicLens: query volume, top questions, triggered alerts, and API usage &mdash; all in one dashboard.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+          <figure class="sim-card" role="img" aria-label="Simulated analytics dashboard with query volume chart, top questions, and triggered alerts.">
+            <div class="sim-chrome flex items-center gap-2 px-4 py-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-amber-400/70"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-400/70"></div>
+              <span class="ml-3 text-xs text-navy-400 font-mono">civiclens.app / admin / analytics</span>
+            </div>
+            <div class="p-6 md:p-8 space-y-6">
+              <!-- Top stats row -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                  <p class="text-[11px] text-navy-400 uppercase tracking-wider mb-1">Queries (30d)</p>
+                  <p class="font-display text-2xl text-amber-400">1,284</p>
+                  <p class="text-[11px] text-emerald-400">&uarr; 23%</p>
+                </div>
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                  <p class="text-[11px] text-navy-400 uppercase tracking-wider mb-1">Meetings indexed</p>
+                  <p class="font-display text-2xl text-white">347</p>
+                  <p class="text-[11px] text-navy-500">Since Jan 2023</p>
+                </div>
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                  <p class="text-[11px] text-navy-400 uppercase tracking-wider mb-1">Active users</p>
+                  <p class="font-display text-2xl text-white">48</p>
+                  <p class="text-[11px] text-emerald-400">&uarr; 12%</p>
+                </div>
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-4">
+                  <p class="text-[11px] text-navy-400 uppercase tracking-wider mb-1">Alerts fired</p>
+                  <p class="font-display text-2xl text-white">17</p>
+                  <p class="text-[11px] text-navy-500">This week</p>
+                </div>
+              </div>
+
+              <!-- Chart -->
+              <div class="bg-navy-900/50 border border-white/5 rounded-lg p-5">
+                <div class="flex items-center justify-between mb-4">
+                  <h4 class="text-sm font-semibold">Queries over time</h4>
+                  <span class="text-xs text-navy-400">Last 14 days</span>
+                </div>
+                <div class="flex items-end gap-1.5 h-28" role="img" aria-label="Bar chart showing queries per day trending upward from about 40 to 130 over 14 days.">
+                  <div class="bar flex-1" style="height: 30%"></div>
+                  <div class="bar flex-1" style="height: 42%"></div>
+                  <div class="bar flex-1" style="height: 35%"></div>
+                  <div class="bar flex-1" style="height: 50%"></div>
+                  <div class="bar flex-1" style="height: 58%"></div>
+                  <div class="bar flex-1" style="height: 48%"></div>
+                  <div class="bar flex-1" style="height: 62%"></div>
+                  <div class="bar flex-1" style="height: 71%"></div>
+                  <div class="bar flex-1" style="height: 65%"></div>
+                  <div class="bar flex-1" style="height: 78%"></div>
+                  <div class="bar flex-1" style="height: 85%"></div>
+                  <div class="bar flex-1" style="height: 74%"></div>
+                  <div class="bar flex-1" style="height: 92%"></div>
+                  <div class="bar flex-1" style="height: 100%"></div>
+                </div>
+              </div>
+
+              <!-- Top questions + alerts -->
+              <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-5">
+                  <h4 class="text-sm font-semibold mb-3">Top questions this week</h4>
+                  <ol class="space-y-2.5 text-sm text-navy-200">
+                    <li class="flex items-start gap-2">
+                      <span class="text-[11px] text-amber-400 font-bold w-4 flex-shrink-0">1.</span>
+                      <span class="flex-1">How did council vote on the STR ordinance?</span>
+                      <span class="text-[11px] text-navy-500">47</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="text-[11px] text-amber-400 font-bold w-4 flex-shrink-0">2.</span>
+                      <span class="flex-1">What was spent on parks this quarter?</span>
+                      <span class="text-[11px] text-navy-500">31</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="text-[11px] text-amber-400 font-bold w-4 flex-shrink-0">3.</span>
+                      <span class="flex-1">Tates Creek rezoning public comment</span>
+                      <span class="text-[11px] text-navy-500">28</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="text-[11px] text-amber-400 font-bold w-4 flex-shrink-0">4.</span>
+                      <span class="flex-1">Town Branch bond debt service</span>
+                      <span class="text-[11px] text-navy-500">22</span>
+                    </li>
+                  </ol>
+                </div>
+                <div class="bg-navy-900/50 border border-white/5 rounded-lg p-5">
+                  <h4 class="text-sm font-semibold mb-3">Recent alerts</h4>
+                  <ul class="space-y-2.5 text-sm">
+                    <li class="flex items-start gap-2">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mt-2 flex-shrink-0"></span>
+                      <div class="flex-1">
+                        <p class="text-white text-xs">Affordable housing vote detected</p>
+                        <p class="text-[11px] text-navy-400">Ord. 0089-26 &middot; 15% requirement &middot; 2h ago</p>
+                      </div>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mt-2 flex-shrink-0"></span>
+                      <div class="flex-1">
+                        <p class="text-white text-xs">Bond &gt; $10M threshold</p>
+                        <p class="text-[11px] text-navy-400">$18.04M Town Branch &middot; 2h ago</p>
+                      </div>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="w-1.5 h-1.5 rounded-full bg-navy-500 mt-2 flex-shrink-0"></span>
+                      <div class="flex-1">
+                        <p class="text-navy-300 text-xs">Short-term rental mention</p>
+                        <p class="text-[11px] text-navy-500">Planning Commission &middot; 2d ago</p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </figure>
+
+          <aside class="space-y-3" aria-label="Step 6 annotations">
+            <div class="annotation">
+              <span class="annotation-title">Usage insights</span>
+              See who's asking what. Trends help you spot topics worth publishing proactively.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Alert history</span>
+              Every triggered alert is logged with source citations, so you can trace why it fired.
+            </div>
+            <div class="annotation">
+              <span class="annotation-title">Export anytime</span>
+              Download analytics as CSV or pipe to your BI tool via the REST API.
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========== FINAL CTA ========== -->
+  <section class="relative py-24 overflow-hidden">
+    <div class="hero-mesh absolute inset-0 opacity-60"></div>
+    <div class="relative max-w-4xl mx-auto px-6 text-center">
+      <h2 class="font-display text-4xl md:text-5xl lg:text-6xl leading-tight mb-6">
+        Ready to try it with <span class="text-amber-400">your own meetings?</span>
+      </h2>
+      <p class="text-lg md:text-xl text-navy-200 leading-relaxed max-w-2xl mx-auto mb-10">
+        Every workflow you just saw runs today on real meeting archives for cities from 15,000 to 300,000 residents. We'll have you live in under a week.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Schedule a Demo
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="pricing.html" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+          Start Free Trial
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <a href="index.html" class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+            <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+          <span class="font-display text-xl tracking-tight">CivicLens</span>
+        </a>
+        <div class="flex gap-6 text-sm text-navy-400">
+          <a href="index.html" class="hover:text-amber-400 transition-colors">Home</a>
+          <a href="demo.html" class="hover:text-amber-400 transition-colors">Demo</a>
+          <a href="pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+          <a href="contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+        </div>
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========== TOUR SCRIPTS ========== -->
+  <script>
+  (function(){
+    'use strict';
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const liveRegion = document.getElementById('live-region');
+
+    // ---------- Reveal on scroll ----------
+    const revealEls = document.querySelectorAll('.reveal');
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          revealObserver.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -10% 0px', threshold: 0.05 });
+    revealEls.forEach(el => revealObserver.observe(el));
+
+    // ---------- Progress bar step tracking ----------
+    const stepSections = Array.from(document.querySelectorAll('.tour-step'));
+    const stepButtons = Array.from(document.querySelectorAll('.tour-step-btn'));
+    const stepLabels = {
+      1: 'Step 1: Browse Meetings',
+      2: 'Step 2: Meeting Detail',
+      3: 'Step 3: Ask a Question',
+      4: 'Step 4: Multi-turn Chat',
+      5: 'Step 5: Vote Tracker',
+      6: 'Step 6: Analytics and Alerts'
+    };
+    let currentStep = 1;
+
+    function setCurrentStep(n, announce){
+      if (n === currentStep) return;
+      currentStep = n;
+      stepButtons.forEach(btn => {
+        const i = parseInt(btn.dataset.step, 10);
+        if (i === n) {
+          btn.setAttribute('aria-current', 'step');
+        } else {
+          btn.removeAttribute('aria-current');
+        }
+      });
+      if (announce && liveRegion) {
+        liveRegion.textContent = 'Now viewing ' + stepLabels[n];
+      }
+    }
+
+    const stepObserver = new IntersectionObserver((entries) => {
+      // Pick the entry closest to the top of viewport that is intersecting
+      let best = null;
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          if (!best || entry.boundingClientRect.top < best.boundingClientRect.top) {
+            best = entry;
+          }
+        }
+      });
+      if (best) {
+        const idx = parseInt(best.target.dataset.stepIndex, 10);
+        setCurrentStep(idx, true);
+      }
+    }, { rootMargin: '-180px 0px -55% 0px', threshold: 0 });
+    stepSections.forEach(s => stepObserver.observe(s));
+
+    // Click on progress bar jumps to step
+    stepButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const n = parseInt(btn.dataset.step, 10);
+        const target = document.getElementById('step-' + n);
+        if (target) target.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+      });
+    });
+
+    // ---------- Keyboard navigation ----------
+    document.addEventListener('keydown', (e) => {
+      // Ignore if typing in an input
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = Math.min(6, currentStep + 1);
+        document.getElementById('step-' + next)?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = Math.max(1, currentStep - 1);
+        document.getElementById('step-' + prev)?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+      } else if (e.key === 'Escape') {
+        window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+        if (liveRegion) liveRegion.textContent = 'Exited tour';
+      }
+    });
+
+    // ---------- Start Tour button ----------
+    document.getElementById('start-tour')?.addEventListener('click', (e) => {
+      // default anchor behavior handles scroll
+      if (liveRegion) liveRegion.textContent = 'Starting tour. ' + stepLabels[1];
+    });
+
+    // ---------- Step 2: Tab switching ----------
+    const tabButtons = document.querySelectorAll('#step-2 [role="tab"]');
+    const tabPanels = document.querySelectorAll('#step-2 [role="tabpanel"]');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach(b => b.setAttribute('aria-selected', 'false'));
+        tabPanels.forEach(p => p.hidden = true);
+        btn.setAttribute('aria-selected', 'true');
+        const panelId = btn.getAttribute('aria-controls');
+        document.getElementById(panelId).hidden = false;
+      });
+      btn.addEventListener('keydown', (e) => {
+        const all = Array.from(tabButtons);
+        const idx = all.indexOf(btn);
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          all[(idx + 1) % all.length].focus();
+          all[(idx + 1) % all.length].click();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          all[(idx - 1 + all.length) % all.length].focus();
+          all[(idx - 1 + all.length) % all.length].click();
+        }
+      });
+    });
+
+    // ---------- Typing effect helper ----------
+    // Supports HTML by typing character by character through text nodes.
+    function typeHTML(targetEl, html, opts){
+      opts = opts || {};
+      const speed = opts.speed || 14;
+      const state = { cancelled: false, done: false };
+
+      // Put the full html in a hidden div to walk
+      const source = document.createElement('div');
+      source.innerHTML = html;
+
+      // We'll build up the output by walking nodes and appending characters
+      targetEl.innerHTML = '';
+      targetEl.classList.add('type-cursor');
+
+      // Flatten to a sequence of operations: either opening tag, closing tag, or character
+      const ops = [];
+      function walk(node, parentPath){
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent;
+          for (let i = 0; i < text.length; i++) {
+            ops.push({ type: 'char', char: text[i], path: parentPath });
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = node.tagName.toLowerCase();
+          const attrs = {};
+          for (const a of node.attributes) attrs[a.name] = a.value;
+          ops.push({ type: 'open', tag, attrs });
+          node.childNodes.forEach(child => walk(child));
+          ops.push({ type: 'close' });
+        }
+      }
+      source.childNodes.forEach(n => walk(n));
+
+      // Play ops
+      let stack = [targetEl];
+      let i = 0;
+      return new Promise((resolve) => {
+        function step(){
+          if (state.cancelled) { finalize(); resolve(state); return; }
+          if (i >= ops.length) { finalize(); resolve(state); return; }
+          // Process multiple ops per tick for whitespace / tags
+          let burst = 0;
+          while (i < ops.length && burst < 200) {
+            const op = ops[i++];
+            if (op.type === 'open') {
+              const el = document.createElement(op.tag);
+              for (const k in op.attrs) el.setAttribute(k, op.attrs[k]);
+              stack[stack.length - 1].appendChild(el);
+              stack.push(el);
+            } else if (op.type === 'close') {
+              stack.pop();
+            } else if (op.type === 'char') {
+              stack[stack.length - 1].appendChild(document.createTextNode(op.char));
+              burst++;
+              // break after a single char so we can wait
+              break;
+            }
+          }
+          setTimeout(step, speed);
+        }
+        function finalize(){
+          if (state.cancelled) {
+            // Instantly show remainder
+            targetEl.innerHTML = html;
+          }
+          targetEl.classList.remove('type-cursor');
+          state.done = true;
+        }
+        state.skip = () => { state.cancelled = true; };
+        step();
+      }).then(() => state);
+    }
+
+    // ---------- Step 3: Ask Q&A playback ----------
+    const askAnswer = document.getElementById('ask-answer-text');
+    const askCites = document.getElementById('ask-citations');
+    const askBtn = document.getElementById('ask-play-btn');
+    const askLabel = document.getElementById('ask-play-label');
+
+    const askHTML = `The council has advanced two major infrastructure items tied to the downtown corridor this quarter:
+      <br><br>
+      <strong>1. Town Branch Commons GO Bonds</strong> &mdash; On March 24, council authorized <strong class="text-amber-400">$18,040,000</strong> in general obligation bonds for Town Branch Commons infrastructure improvements (Resolution 0215-26, passed 13&ndash;2). Councilmembers Moloney and Plomin voted against, citing debt service costs at current interest rates.
+      <br><br>
+      <strong>2. Downtown parking garage</strong> &mdash; The garage is on the April 14 agenda as part of the second reading package alongside the STR ordinance. No vote has been taken yet, but the Public Works committee discussed a preliminary $6.2M repair estimate on February 5.
+      <br><br>
+      Public commenter Patricia O'Brien asked for a full debt service breakdown for the Town Branch bonds, which the Finance Commissioner committed to provide before second reading.`;
+
+    let askState = null;
+    askBtn?.addEventListener('click', async () => {
+      if (askState && !askState.done) {
+        // Skip
+        askState.skip();
+        askLabel.textContent = 'Replay answer';
+        askCites.style.opacity = '1';
+        return;
+      }
+      askAnswer.innerHTML = '';
+      askCites.style.opacity = '0';
+      askLabel.textContent = 'Skip';
+      askState = await typeHTML(askAnswer, askHTML, { speed: prefersReducedMotion ? 0 : 10 });
+      askLabel.textContent = 'Replay answer';
+      askCites.style.opacity = '1';
+    });
+
+    // Auto-play when scrolled into view (once), unless reduced motion
+    const step3Section = document.getElementById('step-3');
+    const askAutoObserver = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          askAutoObserver.unobserve(step3Section);
+          if (!prefersReducedMotion && askAnswer.innerHTML === '') {
+            askBtn.click();
+          } else if (prefersReducedMotion) {
+            askAnswer.innerHTML = askHTML;
+            askCites.style.opacity = '1';
+            askLabel.textContent = 'Replay answer';
+          }
+        }
+      });
+    }, { threshold: 0.35 });
+    askAutoObserver.observe(step3Section);
+
+    // ---------- Step 4: Chat playback ----------
+    const chatThread = document.getElementById('chat-thread');
+    const chatBtn = document.getElementById('chat-play-btn');
+    const chatLabel = document.getElementById('chat-play-label');
+
+    const chatTurns = [
+      {
+        role: 'user',
+        text: 'How much has council approved in parks appropriations so far this year?'
+      },
+      {
+        role: 'assistant',
+        text: 'Approximately <strong class="text-amber-400">$6.8M across three appropriations</strong> in Q1 2026: Veteran\'s Park Phase II ($4.2M, Res. 0212-26), Jacobson Park trail extension ($1.45M, Res. 0178-26), and community center HVAC ($850K, Contract 2026-0098). Councilmember Ellinger sponsored three of the four.',
+        cites: ['Mar 24 &middot; 52:30', 'Feb 10 &middot; 38:15']
+      },
+      {
+        role: 'user',
+        text: 'Who voted against any of them?'
+      },
+      {
+        role: 'assistant',
+        text: 'Only one dissent across all three: <strong>Councilmember Plomin</strong> voted against the Jacobson Park trail extension on February 10 (14&ndash;1). He cited concerns about ongoing maintenance costs in his prepared remarks. The Veteran\'s Park and HVAC items passed unanimously.',
+        cites: ['Feb 10 &middot; 39:02']
+      },
+      {
+        role: 'user',
+        text: 'Any of them overlap with the Town Branch bond money?'
+      },
+      {
+        role: 'assistant',
+        text: 'No direct overlap. The $18.04M Town Branch Commons bond (Res. 0215-26) is earmarked for linear park hardscape, stormwater, and streetscape work along the Town Branch corridor &mdash; separate from the three neighborhood park appropriations. Both budgets sit under the Parks & Rec umbrella but have distinct line items.',
+        cites: ['Mar 24 &middot; 1:42:10', 'Feb 5 &middot; 8:30']
+      }
+    ];
+
+    let chatPlaying = false;
+    let chatStop = false;
+
+    function renderChatUserBubble(text){
+      const wrap = document.createElement('div');
+      wrap.className = 'flex justify-end fade-in';
+      wrap.innerHTML = `<div class="max-w-[80%] bg-amber-400/15 border border-amber-400/30 text-white rounded-2xl rounded-br-md px-4 py-3 text-sm">${text}</div>`;
+      chatThread.appendChild(wrap);
+      return wrap;
+    }
+    function renderChatAssistantBubble(){
+      const wrap = document.createElement('div');
+      wrap.className = 'flex justify-start fade-in';
+      wrap.innerHTML = `
+        <div class="flex gap-3 max-w-[85%]">
+          <div class="w-7 h-7 rounded bg-amber-400/20 border border-amber-400/40 flex items-center justify-center flex-shrink-0">
+            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div class="bg-navy-900/70 border border-white/10 text-white rounded-2xl rounded-tl-md px-4 py-3 text-sm">
+            <div class="answer-body leading-relaxed"></div>
+            <div class="cites mt-3 flex flex-wrap gap-2"></div>
+          </div>
+        </div>`;
+      chatThread.appendChild(wrap);
+      return wrap;
+    }
+
+    async function playChat(){
+      chatThread.innerHTML = '';
+      chatPlaying = true;
+      chatStop = false;
+      chatLabel.textContent = 'Skip';
+      for (let i = 0; i < chatTurns.length; i++) {
+        if (chatStop) break;
+        const turn = chatTurns[i];
+        if (turn.role === 'user') {
+          renderChatUserBubble(turn.text);
+          await wait(600);
+        } else {
+          const bubble = renderChatAssistantBubble();
+          const body = bubble.querySelector('.answer-body');
+          const cites = bubble.querySelector('.cites');
+          await typeHTML(body, turn.text, { speed: prefersReducedMotion ? 0 : 9 });
+          if (chatStop) {
+            body.innerHTML = turn.text;
+          }
+          (turn.cites || []).forEach((c, idx) => {
+            const chip = document.createElement('button');
+            chip.className = 'cite';
+            chip.type = 'button';
+            chip.innerHTML = `<span>${idx + 1}</span> ${c}`;
+            cites.appendChild(chip);
+          });
+          await wait(500);
+        }
+      }
+      chatPlaying = false;
+      chatLabel.textContent = 'Replay conversation';
+    }
+
+    function wait(ms){
+      return new Promise(resolve => {
+        if (chatStop) { resolve(); return; }
+        setTimeout(resolve, prefersReducedMotion ? 0 : ms);
+      });
+    }
+
+    chatBtn?.addEventListener('click', () => {
+      if (chatPlaying) {
+        // Skip: render everything instantly
+        chatStop = true;
+        chatThread.innerHTML = '';
+        chatTurns.forEach((turn, i) => {
+          if (turn.role === 'user') {
+            renderChatUserBubble(turn.text);
+          } else {
+            const bubble = renderChatAssistantBubble();
+            bubble.querySelector('.answer-body').innerHTML = turn.text;
+            const cites = bubble.querySelector('.cites');
+            (turn.cites || []).forEach((c, idx) => {
+              const chip = document.createElement('button');
+              chip.className = 'cite';
+              chip.type = 'button';
+              chip.innerHTML = `<span>${idx + 1}</span> ${c}`;
+              cites.appendChild(chip);
+            });
+          }
+        });
+        chatPlaying = false;
+        chatLabel.textContent = 'Replay conversation';
+      } else {
+        playChat();
+      }
+    });
+
+    // Auto-play chat on scroll into view
+    const step4Section = document.getElementById('step-4');
+    const chatAutoObserver = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          chatAutoObserver.unobserve(step4Section);
+          if (!prefersReducedMotion && chatThread.children.length === 0) {
+            playChat();
+          } else if (prefersReducedMotion) {
+            chatBtn.click(); // will render all instantly
+            chatStop = true;
+          }
+        }
+      });
+    }, { threshold: 0.3 });
+    chatAutoObserver.observe(step4Section);
+
+  })();
+  </script>
+</body>
+</html>

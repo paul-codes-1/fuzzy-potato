@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CivicLens - Investor Pitch Deck</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --slide-transition: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0a0f;
+    color: #e2e8f0;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    cursor: default;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 4rem 6rem;
+    opacity: 0;
+    transform: translateX(60px);
+    transition: opacity var(--slide-transition), transform var(--slide-transition);
+    pointer-events: none;
+    will-change: opacity, transform;
+  }
+
+  .slide.active {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .slide.exit-left {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+
+  /* Progress bar */
+  #progress-track {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    z-index: 100;
+  }
+  #progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+    transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  }
+
+  /* Slide counter */
+  #slide-counter {
+    position: fixed;
+    bottom: 2rem;
+    right: 3rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.25);
+    z-index: 100;
+    letter-spacing: 0.1em;
+  }
+
+  /* Navigation dots */
+  #nav-dots {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+  }
+  .nav-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    transition: all 0.4s ease;
+    cursor: pointer;
+    border: none;
+    padding: 0;
+  }
+  .nav-dot.active {
+    background: #8b5cf6;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+    width: 24px;
+    border-radius: 3px;
+  }
+
+  /* Arrow nav */
+  .nav-arrow {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    background: none;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.3);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+    backdrop-filter: blur(8px);
+  }
+  .nav-arrow:hover {
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #a78bfa;
+    background: rgba(139, 92, 246, 0.08);
+  }
+  .nav-arrow.left { left: 1.5rem; }
+  .nav-arrow.right { right: 1.5rem; }
+
+  /* Typography */
+  .display { font-size: clamp(2.5rem, 5vw, 4.5rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }
+  .headline { font-size: clamp(1.8rem, 3.5vw, 3rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+  .subhead { font-size: clamp(1rem, 1.5vw, 1.25rem); font-weight: 400; line-height: 1.6; color: #94a3b8; }
+  .label { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Gradient text */
+  .grad-text {
+    background: linear-gradient(135deg, #c7d2fe 0%, #a78bfa 40%, #8b5cf6 70%, #7c3aed 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .grad-text-warm {
+    background: linear-gradient(135deg, #fde68a 0%, #f59e0b 50%, #ef4444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .grad-text-green {
+    background: linear-gradient(135deg, #6ee7b7 0%, #34d399 50%, #059669 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glass card */
+  .glass {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+  }
+  .glass-sm {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+  }
+
+  /* Animated gradient bg */
+  .bg-glow {
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.12;
+    pointer-events: none;
+  }
+
+  /* Stat card */
+  .stat-value {
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  /* Stagger animations */
+  .slide.active .stagger { animation: staggerIn 0.6s ease both; }
+  .slide.active .stagger:nth-child(1) { animation-delay: 0.05s; }
+  .slide.active .stagger:nth-child(2) { animation-delay: 0.12s; }
+  .slide.active .stagger:nth-child(3) { animation-delay: 0.19s; }
+  .slide.active .stagger:nth-child(4) { animation-delay: 0.26s; }
+  .slide.active .stagger:nth-child(5) { animation-delay: 0.33s; }
+  .slide.active .stagger:nth-child(6) { animation-delay: 0.40s; }
+  .slide.active .stagger:nth-child(7) { animation-delay: 0.47s; }
+  .slide.active .stagger:nth-child(8) { animation-delay: 0.54s; }
+
+  @keyframes staggerIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.15); opacity: 0.1; }
+    100% { transform: scale(1); opacity: 0.3; }
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* Pipeline flow animation */
+  .flow-line {
+    stroke-dasharray: 8 4;
+    animation: flowDash 1.5s linear infinite;
+  }
+  @keyframes flowDash {
+    to { stroke-dashoffset: -24; }
+  }
+
+  /* Concentric circle animation */
+  .market-ring {
+    transition: all 0.5s ease;
+  }
+  .market-ring:hover {
+    filter: brightness(1.3);
+  }
+
+  /* Competitive matrix quadrant highlight */
+  .quadrant-highlight {
+    animation: quadrantPulse 3s ease-in-out infinite;
+  }
+  @keyframes quadrantPulse {
+    0%, 100% { opacity: 0.08; }
+    50% { opacity: 0.15; }
+  }
+
+  /* Bar chart animation */
+  .chart-bar {
+    transform-origin: bottom;
+    transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .slide.active .chart-bar { transform: scaleY(1); }
+
+  /* Logo */
+  .logo-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Keyboard hint */
+  #keyboard-hint {
+    position: fixed;
+    bottom: 2rem;
+    left: 3rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.15);
+    z-index: 100;
+    transition: opacity 1s ease;
+  }
+  kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: inherit;
+    background: rgba(255,255,255,0.04);
+  }
+
+  /* Tier card hover */
+  .tier-card {
+    transition: all 0.3s ease;
+  }
+  .tier-card:hover {
+    border-color: rgba(139, 92, 246, 0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.1);
+  }
+  .tier-featured {
+    border-color: rgba(139, 92, 246, 0.3) !important;
+    background: rgba(139, 92, 246, 0.06) !important;
+  }
+</style>
+</head>
+<body>
+
+<!-- Progress Bar -->
+<div id="progress-track"><div id="progress-fill" style="width: 0%"></div></div>
+
+<!-- Navigation -->
+<button class="nav-arrow left" onclick="prevSlide()" aria-label="Previous slide">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+</button>
+<button class="nav-arrow right" onclick="nextSlide()" aria-label="Next slide">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+</button>
+
+<!-- Slide counter -->
+<div id="slide-counter">01 / 14</div>
+
+<!-- Navigation dots -->
+<div id="nav-dots"></div>
+
+<!-- Keyboard hint -->
+<div id="keyboard-hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>Space</kbd> to navigate</div>
+
+
+<!-- ==================== SLIDE 1: TITLE ==================== -->
+<div class="slide active" data-slide="0">
+  <div class="bg-glow" style="background: #7c3aed; top: -200px; right: -100px;"></div>
+  <div class="bg-glow" style="background: #4f46e5; bottom: -200px; left: -100px;"></div>
+
+  <div class="text-center max-w-4xl relative">
+    <!-- Logo -->
+    <div class="stagger mb-10">
+      <div class="inline-flex items-center gap-3">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <rect width="48" height="48" rx="12" fill="url(#logoGrad)"/>
+          <path d="M14 24C14 18.48 18.48 14 24 14C29.52 14 34 18.48 34 24" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M18 24C18 20.69 20.69 18 24 18C27.31 18 30 20.69 30 24" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+          <circle cx="24" cy="24" r="2.5" fill="white"/>
+          <path d="M24 27V34" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M20 34H28" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#4f46e5"/></linearGradient></defs>
+        </svg>
+        <span class="text-2xl font-bold tracking-tight">CivicLens</span>
+      </div>
+    </div>
+
+    <h1 class="stagger display grad-text mb-6">AI-Powered<br>Civic Intelligence</h1>
+
+    <p class="stagger subhead max-w-2xl mx-auto mb-12">
+      Transforming city council meetings from hours of unwatched video into structured, searchable, actionable intelligence -- in minutes.
+    </p>
+
+    <div class="stagger flex items-center justify-center gap-6 text-sm">
+      <span class="label text-violet-400/70">Seed Round</span>
+      <span class="w-px h-4 bg-white/10"></span>
+      <span class="label text-violet-400/70">$1.5M</span>
+      <span class="w-px h-4 bg-white/10"></span>
+      <span class="label text-violet-400/70">April 2026</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 2: PROBLEM ==================== -->
+<div class="slide" data-slide="1">
+  <div class="bg-glow" style="background: #ef4444; top: -100px; left: 50%; transform: translateX(-50%);"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-red-400/60 mb-4">The Problem</div>
+    <h2 class="stagger headline mb-3">Local government is transparent<br>in theory, opaque in practice</h2>
+    <p class="stagger subhead mb-12 max-w-2xl">Open meeting laws mandate access. Reality delivers hours of unwatched video that fewer than 2% of residents ever view.</p>
+
+    <div class="grid grid-cols-3 gap-6">
+      <div class="stagger glass p-8 text-center">
+        <div class="stat-value grad-text-warm mb-3">$2.3B</div>
+        <div class="text-sm text-slate-400 leading-relaxed">Spent annually on meeting documentation, compliance, and constituent communication by local governments</div>
+      </div>
+      <div class="stagger glass p-8 text-center">
+        <div class="stat-value grad-text-warm mb-3">1.8%</div>
+        <div class="text-sm text-slate-400 leading-relaxed">Of residents in cities under 250K regularly watch recorded council meetings<br><span class="text-xs text-slate-500">National League of Cities, 2023</span></div>
+      </div>
+      <div class="stagger glass p-8 text-center">
+        <div class="stat-value grad-text-warm mb-3">8-15 hrs</div>
+        <div class="text-sm text-slate-400 leading-relaxed">Staff time per meeting to produce official minutes for a mid-size city council</div>
+      </div>
+    </div>
+
+    <div class="stagger mt-8 glass-sm p-5 flex items-start gap-4">
+      <div class="w-5 h-5 mt-0.5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3"><path d="M12 8v4m0 4h.01"/></svg>
+      </div>
+      <div class="text-sm text-slate-400">
+        <strong class="text-slate-300">The cost of inaccessibility:</strong>
+        Local newsroom staffing has declined 60% since 2005. Only 22% of Americans feel informed about local government actions. The primary barrier isn't apathy -- it's access.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 3: SOLUTION ==================== -->
+<div class="slide" data-slide="2">
+  <div class="bg-glow" style="background: #6366f1; top: 50%; left: -200px; transform: translateY(-50%);"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">The Solution</div>
+    <h2 class="stagger headline mb-3">Meeting ends. Intelligence delivered<br><span class="grad-text">in under 3 minutes.</span></h2>
+    <p class="stagger subhead mb-10 max-w-2xl">CivicLens ingests meeting video and outputs structured data, narrative summaries, and a searchable knowledge base -- automatically.</p>
+
+    <!-- Pipeline flow -->
+    <div class="stagger w-full">
+      <svg viewBox="0 0 900 200" fill="none" class="w-full" style="max-height: 200px;">
+        <!-- Flow boxes -->
+        <rect x="10" y="70" width="120" height="60" rx="10" fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.3)" stroke-width="1"/>
+        <text x="70" y="95" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="600">Meeting</text>
+        <text x="70" y="112" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="600">Video</text>
+
+        <line x1="130" y1="100" x2="168" y2="100" stroke="rgba(139,92,246,0.4)" stroke-width="1.5" class="flow-line"/>
+        <polygon points="168,95 178,100 168,105" fill="rgba(139,92,246,0.5)"/>
+
+        <rect x="178" y="70" width="120" height="60" rx="10" fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.3)" stroke-width="1"/>
+        <text x="238" y="95" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="600">AI</text>
+        <text x="238" y="112" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="600">Transcription</text>
+
+        <line x1="298" y1="100" x2="336" y2="100" stroke="rgba(139,92,246,0.4)" stroke-width="1.5" class="flow-line"/>
+        <polygon points="336,95 346,100 336,105" fill="rgba(139,92,246,0.5)"/>
+
+        <rect x="346" y="70" width="120" height="60" rx="10" fill="rgba(139,92,246,0.15)" stroke="rgba(139,92,246,0.4)" stroke-width="1"/>
+        <text x="406" y="95" text-anchor="middle" fill="#c4b5fd" font-size="11" font-weight="600">Structured</text>
+        <text x="406" y="112" text-anchor="middle" fill="#c4b5fd" font-size="11" font-weight="600">Extraction</text>
+
+        <line x1="466" y1="100" x2="504" y2="100" stroke="rgba(139,92,246,0.4)" stroke-width="1.5" class="flow-line"/>
+        <polygon points="504,95 514,100 504,105" fill="rgba(139,92,246,0.5)"/>
+
+        <rect x="514" y="70" width="120" height="60" rx="10" fill="rgba(139,92,246,0.15)" stroke="rgba(139,92,246,0.4)" stroke-width="1"/>
+        <text x="574" y="95" text-anchor="middle" fill="#c4b5fd" font-size="11" font-weight="600">Narrative</text>
+        <text x="574" y="112" text-anchor="middle" fill="#c4b5fd" font-size="11" font-weight="600">Summary</text>
+
+        <line x1="634" y1="100" x2="672" y2="100" stroke="rgba(139,92,246,0.4)" stroke-width="1.5" class="flow-line"/>
+        <polygon points="672,95 682,100 672,105" fill="rgba(139,92,246,0.5)"/>
+
+        <rect x="682" y="70" width="140" height="60" rx="10" fill="rgba(124,58,237,0.18)" stroke="rgba(124,58,237,0.5)" stroke-width="1.5"/>
+        <text x="752" y="95" text-anchor="middle" fill="#ddd6fe" font-size="11" font-weight="700">Searchable</text>
+        <text x="752" y="112" text-anchor="middle" fill="#ddd6fe" font-size="11" font-weight="700">Intelligence</text>
+
+        <!-- Timing annotation -->
+        <text x="450" y="38" text-anchor="middle" fill="rgba(139,92,246,0.5)" font-size="10" font-family="JetBrains Mono, monospace" letter-spacing="0.1em">~3 MINUTES END-TO-END</text>
+        <line x1="130" y1="50" x2="770" y2="50" stroke="rgba(139,92,246,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+
+        <!-- Output labels -->
+        <text x="406" y="165" text-anchor="middle" fill="#94a3b8" font-size="9.5">Votes, financials,</text>
+        <text x="406" y="178" text-anchor="middle" fill="#94a3b8" font-size="9.5">attendance, agenda items</text>
+        <line x1="406" y1="130" x2="406" y2="155" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+        <text x="574" y="165" text-anchor="middle" fill="#94a3b8" font-size="9.5">Section-by-section</text>
+        <text x="574" y="178" text-anchor="middle" fill="#94a3b8" font-size="9.5">with timestamps</text>
+        <line x1="574" y1="130" x2="574" y2="155" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+        <text x="752" y="165" text-anchor="middle" fill="#94a3b8" font-size="9.5">Natural language Q&A</text>
+        <text x="752" y="178" text-anchor="middle" fill="#94a3b8" font-size="9.5">across full archive</text>
+        <line x1="752" y1="130" x2="752" y2="155" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      </svg>
+    </div>
+
+    <div class="stagger mt-6 flex gap-3 justify-center">
+      <span class="glass-sm px-4 py-2 text-xs text-violet-300/70 mono">GPT-4o extraction</span>
+      <span class="glass-sm px-4 py-2 text-xs text-violet-300/70 mono">Claude narration</span>
+      <span class="glass-sm px-4 py-2 text-xs text-violet-300/70 mono">Whisper transcription</span>
+      <span class="glass-sm px-4 py-2 text-xs text-violet-300/70 mono">RAG Q&A</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 4: PRODUCT ==================== -->
+<div class="slide" data-slide="3">
+  <div class="bg-glow" style="background: #8b5cf6; bottom: -100px; right: -100px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Product</div>
+    <h2 class="stagger headline mb-10">Every meeting, fully understood</h2>
+
+    <div class="grid grid-cols-2 gap-5">
+      <!-- Feature cards -->
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">AI Transcription</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Timestamp-linked transcripts with speaker detection. Every word searchable, every moment reachable.</div>
+        </div>
+      </div>
+
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">Structured Vote Tracking</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Every motion, roll call, and outcome extracted. Council member voting patterns tracked across meetings.</div>
+        </div>
+      </div>
+
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">Natural Language Q&A</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Ask anything across the entire meeting archive. Cited answers with video timestamp links for instant verification.</div>
+        </div>
+      </div>
+
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">Narrative Summaries</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Two-pass AI generates section-by-section meeting narratives. Available same-day, not weeks later.</div>
+        </div>
+      </div>
+
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">Financial Item Tracking</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Every appropriation, contract, and bond extracted with dollar amounts. Track spending decisions across sessions.</div>
+        </div>
+      </div>
+
+      <div class="stagger glass p-6 flex gap-4">
+        <div class="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-slate-200 mb-1">Public Records Automation</div>
+          <div class="text-xs text-slate-400 leading-relaxed">Self-service access to meeting content reduces FOIA burden. Citizens find answers without filing requests.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 5: MARKET ==================== -->
+<div class="slide" data-slide="4">
+  <div class="bg-glow" style="background: #4f46e5; top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Market Opportunity</div>
+    <h2 class="stagger headline mb-10">Large market, clear entry point</h2>
+
+    <div class="flex items-center gap-16">
+      <!-- Concentric circles visualization -->
+      <div class="stagger flex-shrink-0" style="width: 360px; height: 360px;">
+        <svg viewBox="0 0 360 360" fill="none" width="360" height="360">
+          <!-- TAM -->
+          <circle cx="180" cy="180" r="165" fill="rgba(99,102,241,0.06)" stroke="rgba(99,102,241,0.2)" stroke-width="1" class="market-ring"/>
+          <text x="180" y="40" text-anchor="middle" fill="#818cf8" font-size="13" font-weight="700">$2.7B TAM</text>
+          <text x="180" y="56" text-anchor="middle" fill="#64748b" font-size="9">90,000 local government entities</text>
+
+          <!-- SAM -->
+          <circle cx="180" cy="195" r="105" fill="rgba(139,92,246,0.08)" stroke="rgba(139,92,246,0.3)" stroke-width="1" class="market-ring"/>
+          <text x="180" y="118" text-anchor="middle" fill="#a78bfa" font-size="13" font-weight="700">$600M SAM</text>
+          <text x="180" y="134" text-anchor="middle" fill="#64748b" font-size="9">5,500 Granicus-equipped entities</text>
+
+          <!-- SOM -->
+          <circle cx="180" cy="215" r="55" fill="rgba(124,58,237,0.12)" stroke="rgba(124,58,237,0.5)" stroke-width="1.5" class="market-ring"/>
+          <text x="180" y="208" text-anchor="middle" fill="#c4b5fd" font-size="14" font-weight="800">$48M</text>
+          <text x="180" y="224" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">SOM</text>
+          <text x="180" y="240" text-anchor="middle" fill="#94a3b8" font-size="8.5">500 cities, Year 3</text>
+        </svg>
+      </div>
+
+      <!-- Market details -->
+      <div class="flex-1 space-y-5">
+        <div class="stagger glass-sm p-5">
+          <div class="flex items-baseline justify-between mb-2">
+            <span class="font-semibold text-sm text-slate-200">Total Addressable Market</span>
+            <span class="mono text-sm text-indigo-400">$2.7B</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">All US local government entities holding public meetings. Includes documentation, transparency tech, and related staff costs.</p>
+        </div>
+
+        <div class="stagger glass-sm p-5">
+          <div class="flex items-baseline justify-between mb-2">
+            <span class="font-semibold text-sm text-slate-200">Serviceable Addressable Market</span>
+            <span class="mono text-sm text-violet-400">$600M</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">5,500 government organizations on Granicus -- the dominant platform with ~70% market share in municipal video management.</p>
+        </div>
+
+        <div class="stagger glass-sm p-5">
+          <div class="flex items-baseline justify-between mb-2">
+            <span class="font-semibold text-sm text-slate-200">Serviceable Obtainable Market</span>
+            <span class="mono text-sm text-purple-400">$48M</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">500 mid-size cities (25K-500K pop) at average $8K/yr contract. Year 3 target with cooperative purchasing and conference-driven sales.</p>
+        </div>
+
+        <div class="stagger glass-sm p-4 border-l-2 border-violet-500/30">
+          <p class="text-xs text-slate-400 leading-relaxed">
+            <strong class="text-slate-300">Tailwind:</strong> Gov SaaS spending grew 18% YoY in 2025. 67% of state/local CIOs plan to increase AI spending. 12 states passed new transparency mandates since 2023.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 6: TRACTION ==================== -->
+<div class="slide" data-slide="5">
+  <div class="bg-glow" style="background: #059669; top: -100px; right: -100px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-emerald-400/60 mb-4">Traction</div>
+    <h2 class="stagger headline mb-10">Proven pipeline, validated accuracy</h2>
+
+    <div class="grid grid-cols-4 gap-5 mb-8">
+      <div class="stagger glass p-6 text-center">
+        <div class="stat-value grad-text-green mb-2">312</div>
+        <div class="text-xs text-slate-400">Meetings processed</div>
+      </div>
+      <div class="stagger glass p-6 text-center">
+        <div class="stat-value grad-text-green mb-2">94%</div>
+        <div class="text-xs text-slate-400">Vote extraction accuracy</div>
+      </div>
+      <div class="stagger glass p-6 text-center">
+        <div class="stat-value grad-text-green mb-2">4.7<span class="text-lg">/5</span></div>
+        <div class="text-xs text-slate-400">City clerk satisfaction</div>
+      </div>
+      <div class="stagger glass p-6 text-center">
+        <div class="stat-value grad-text-green mb-2">$0.48</div>
+        <div class="text-xs text-slate-400">Cost per meeting</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-5">
+      <div class="stagger glass-sm p-6">
+        <div class="text-sm font-semibold text-slate-200 mb-4">Extraction Accuracy</div>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span class="text-slate-400">Vote outcomes</span><span class="text-emerald-400 mono">94.2%</span></div>
+            <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 94.2%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span class="text-slate-400">Financial item precision</span><span class="text-emerald-400 mono">96.3%</span></div>
+            <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 96.3%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span class="text-slate-400">Financial item recall</span><span class="text-emerald-400 mono">91.1%</span></div>
+            <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 91.1%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span class="text-slate-400">Speaker identification</span><span class="text-emerald-400 mono">88.7%</span></div>
+            <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 88.7%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stagger glass-sm p-6">
+        <div class="text-sm font-semibold text-slate-200 mb-4">Pilot Highlights</div>
+        <div class="space-y-4">
+          <div class="flex gap-3 items-start">
+            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0"></div>
+            <div class="text-xs text-slate-400 leading-relaxed"><strong class="text-slate-300">2.8 min</strong> average processing time per meeting (transcription through final summary)</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0"></div>
+            <div class="text-xs text-slate-400 leading-relaxed"><strong class="text-slate-300">1,847</strong> Q&A queries served during pilot period with 4.3/5 relevance rating</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0"></div>
+            <div class="text-xs text-slate-400 leading-relaxed"><strong class="text-slate-300">Two-pass pipeline</strong> separates GPT-4o extraction from Claude narration for superior output quality</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0"></div>
+            <div class="text-xs text-slate-400 leading-relaxed"><strong class="text-slate-300">Granicus-native</strong> integration tested across multiple meeting body types and formats</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 7: BUSINESS MODEL ==================== -->
+<div class="slide" data-slide="6">
+  <div class="bg-glow" style="background: #7c3aed; bottom: -150px; left: 50%; transform: translateX(-50%);"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Business Model</div>
+    <h2 class="stagger headline mb-10">SaaS pricing built for government budgets</h2>
+
+    <div class="grid grid-cols-3 gap-5 mb-8">
+      <!-- Starter -->
+      <div class="stagger glass tier-card p-6">
+        <div class="label text-slate-500 mb-3">Starter</div>
+        <div class="flex items-baseline gap-1 mb-1">
+          <span class="text-3xl font-bold text-slate-200">$299</span>
+          <span class="text-sm text-slate-500">/mo</span>
+        </div>
+        <div class="text-xs text-slate-500 mb-5">Cities under 50K population</div>
+        <div class="space-y-2.5 text-xs text-slate-400">
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Up to 10 meetings/month</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Full AI pipeline</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>100 Q&A queries/month</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Basic public portal</div>
+        </div>
+      </div>
+
+      <!-- Pro (featured) -->
+      <div class="stagger glass tier-card tier-featured p-6 relative">
+        <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-violet-600 rounded-full text-[10px] font-semibold tracking-wider uppercase">Most Popular</div>
+        <div class="label text-violet-400 mb-3">Pro</div>
+        <div class="flex items-baseline gap-1 mb-1">
+          <span class="text-3xl font-bold text-slate-100">$799</span>
+          <span class="text-sm text-slate-500">/mo</span>
+        </div>
+        <div class="text-xs text-slate-500 mb-5">Cities 50K-250K population</div>
+        <div class="space-y-2.5 text-xs text-slate-400">
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Up to 40 meetings/month</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>1,000 Q&A queries/month</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Branded public portal</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Read-only API access</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>5-year archive</div>
+        </div>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="stagger glass tier-card p-6">
+        <div class="label text-slate-500 mb-3">Enterprise</div>
+        <div class="flex items-baseline gap-1 mb-1">
+          <span class="text-3xl font-bold text-slate-200">$2,499</span>
+          <span class="text-sm text-slate-500">/mo</span>
+        </div>
+        <div class="text-xs text-slate-500 mb-5">Cities 250K+ / Counties</div>
+        <div class="space-y-2.5 text-xs text-slate-400">
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Unlimited meetings</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Unlimited Q&A queries</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Custom integrations</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Full API + 99.9% SLA</div>
+          <div class="flex gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>White-glove onboarding</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unit economics strip -->
+    <div class="stagger grid grid-cols-4 gap-4">
+      <div class="glass-sm p-4 text-center">
+        <div class="text-2xl font-bold text-slate-200 mb-1">85%</div>
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider">Gross Margin</div>
+      </div>
+      <div class="glass-sm p-4 text-center">
+        <div class="text-2xl font-bold text-slate-200 mb-1">12:1</div>
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider">LTV : CAC</div>
+      </div>
+      <div class="glass-sm p-4 text-center">
+        <div class="text-2xl font-bold text-slate-200 mb-1">$36K</div>
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider">Avg LTV</div>
+      </div>
+      <div class="glass-sm p-4 text-center">
+        <div class="text-2xl font-bold text-slate-200 mb-1">92%</div>
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider">Net Retention</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 8: GO-TO-MARKET ==================== -->
+<div class="slide" data-slide="7">
+  <div class="bg-glow" style="background: #6366f1; top: -200px; left: -200px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Go-to-Market</div>
+    <h2 class="stagger headline mb-10">Three-phase path to 500 customers</h2>
+
+    <div class="grid grid-cols-3 gap-6">
+      <!-- Phase 1 -->
+      <div class="stagger glass p-6 relative">
+        <div class="absolute -top-3 left-6 px-3 py-0.5 bg-indigo-600/80 rounded-full text-[10px] font-semibold tracking-wider uppercase">Months 1-6</div>
+        <div class="text-lg font-bold text-slate-200 mt-2 mb-1">Foundation</div>
+        <div class="text-xs text-indigo-400 mono mb-5">Target: 10 paying customers</div>
+        <div class="space-y-3 text-xs text-slate-400">
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0"></div>
+            <span>Direct outreach to city clerks in Granicus cities</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0"></div>
+            <span>Free 90-day pilot for 20 cities (50%+ conversion target)</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0"></div>
+            <span>Focus on CA, TX, FL (strong open meeting laws)</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0"></div>
+            <span>Founder-led sales + first case studies</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 2 -->
+      <div class="stagger glass p-6 relative">
+        <div class="absolute -top-3 left-6 px-3 py-0.5 bg-violet-600/80 rounded-full text-[10px] font-semibold tracking-wider uppercase">Months 7-18</div>
+        <div class="text-lg font-bold text-slate-200 mt-2 mb-1">Growth</div>
+        <div class="text-xs text-violet-400 mono mb-5">Target: 100 paying customers</div>
+        <div class="space-y-3 text-xs text-slate-400">
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-violet-400 mt-1.5 flex-shrink-0"></div>
+            <span>3 government-specialist AEs hired</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-violet-400 mt-1.5 flex-shrink-0"></div>
+            <span>6+ conference presence (NLC, ICMA, state leagues)</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-violet-400 mt-1.5 flex-shrink-0"></div>
+            <span>Cooperative purchasing (NASPO, Sourcewell)</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-violet-400 mt-1.5 flex-shrink-0"></div>
+            <span>Launch advocacy/newsroom plans for grassroots demand</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 3 -->
+      <div class="stagger glass p-6 relative">
+        <div class="absolute -top-3 left-6 px-3 py-0.5 bg-purple-600/80 rounded-full text-[10px] font-semibold tracking-wider uppercase">Months 19-36</div>
+        <div class="text-lg font-bold text-slate-200 mt-2 mb-1">Scale</div>
+        <div class="text-xs text-purple-400 mono mb-5">Target: 500 customers</div>
+        <div class="space-y-3 text-xs text-slate-400">
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-purple-400 mt-1.5 flex-shrink-0"></div>
+            <span>Granicus partnership / marketplace listing</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-purple-400 mt-1.5 flex-shrink-0"></div>
+            <span>Expand to counties, school boards, state legislatures</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-purple-400 mt-1.5 flex-shrink-0"></div>
+            <span>Product-led growth: embeddable widgets, email digests</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <div class="w-1 h-1 rounded-full bg-purple-400 mt-1.5 flex-shrink-0"></div>
+            <span>International: UK, Canada, Australia evaluation</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue milestones -->
+    <div class="stagger mt-8 glass-sm p-5 flex items-center justify-between">
+      <div class="flex items-center gap-8">
+        <div>
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Month 12 MRR</div>
+          <div class="text-lg font-bold text-slate-200">$50K</div>
+        </div>
+        <svg width="32" height="12" viewBox="0 0 32 12"><line x1="0" y1="6" x2="28" y2="6" stroke="rgba(139,92,246,0.3)" stroke-width="1.5"/><polygon points="28,2 32,6 28,10" fill="rgba(139,92,246,0.4)"/></svg>
+        <div>
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Month 18 MRR</div>
+          <div class="text-lg font-bold text-slate-200">$150K</div>
+        </div>
+        <svg width="32" height="12" viewBox="0 0 32 12"><line x1="0" y1="6" x2="28" y2="6" stroke="rgba(139,92,246,0.3)" stroke-width="1.5"/><polygon points="28,2 32,6 28,10" fill="rgba(139,92,246,0.4)"/></svg>
+        <div>
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Year 3 ARR</div>
+          <div class="text-lg font-bold grad-text">$4.3M</div>
+        </div>
+      </div>
+      <div class="text-xs text-slate-500">Government SaaS: 8% annual churn, 105% NRR</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 9: COMPETITION ==================== -->
+<div class="slide" data-slide="8">
+  <div class="bg-glow" style="background: #4f46e5; bottom: -200px; right: -200px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Competitive Landscape</div>
+    <h2 class="stagger headline mb-10">Only player in the upper-right quadrant</h2>
+
+    <div class="flex gap-10 items-start">
+      <!-- Positioning matrix -->
+      <div class="stagger flex-shrink-0" style="width: 420px; height: 380px;">
+        <svg viewBox="0 0 420 380" fill="none" width="420" height="380">
+          <!-- Quadrant highlight -->
+          <rect x="220" y="10" width="190" height="170" rx="8" fill="rgba(139,92,246,0.06)" class="quadrant-highlight"/>
+
+          <!-- Axes -->
+          <line x1="30" y1="190" x2="410" y2="190" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+          <line x1="215" y1="10" x2="215" y2="370" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+
+          <!-- Axis labels -->
+          <text x="215" y="8" text-anchor="middle" fill="#64748b" font-size="9" font-weight="600">STRUCTURED DATA EXTRACTION</text>
+          <text x="415" y="195" text-anchor="start" fill="#64748b" font-size="9" font-weight="600" transform="rotate(90 415 195)" style="transform-origin: 415px 195px;">CROSS-MEETING INTELLIGENCE</text>
+          <text x="8" y="195" text-anchor="start" fill="#475569" font-size="8" transform="rotate(-90 8 195)" style="transform-origin: 8px 195px;">TRANSCRIPTION ONLY</text>
+          <text x="215" y="375" text-anchor="middle" fill="#475569" font-size="8">VIDEO HOSTING ONLY</text>
+
+          <!-- Competitors -->
+          <!-- CivicLens (upper right) -->
+          <circle cx="340" cy="55" r="24" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="2"/>
+          <circle cx="340" cy="55" r="32" fill="none" stroke="rgba(139,92,246,0.15)" stroke-width="1" style="animation: pulse-ring 3s ease-in-out infinite;"/>
+          <text x="340" y="52" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="700">Civic</text>
+          <text x="340" y="64" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="700">Lens</text>
+
+          <!-- Granicus (lower right-center) -->
+          <circle cx="280" cy="260" r="18" fill="rgba(100,116,139,0.15)" stroke="rgba(100,116,139,0.4)" stroke-width="1"/>
+          <text x="280" y="264" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="500">Granicus</text>
+
+          <!-- Novus/Legistar (upper left) -->
+          <circle cx="120" cy="110" r="16" fill="rgba(100,116,139,0.1)" stroke="rgba(100,116,139,0.3)" stroke-width="1"/>
+          <text x="120" y="100" text-anchor="middle" fill="#94a3b8" font-size="8" font-weight="500">Novus/</text>
+          <text x="120" y="112" text-anchor="middle" fill="#94a3b8" font-size="8" font-weight="500">Legistar</text>
+
+          <!-- Rev.com (left center) -->
+          <circle cx="80" cy="210" r="14" fill="rgba(100,116,139,0.1)" stroke="rgba(100,116,139,0.3)" stroke-width="1"/>
+          <text x="80" y="213" text-anchor="middle" fill="#94a3b8" font-size="8" font-weight="500">Rev.com</text>
+
+          <!-- Otter.ai (lower left) -->
+          <circle cx="110" cy="270" r="14" fill="rgba(100,116,139,0.1)" stroke="rgba(100,116,139,0.3)" stroke-width="1"/>
+          <text x="110" y="273" text-anchor="middle" fill="#94a3b8" font-size="8" font-weight="500">Otter.ai</text>
+
+          <!-- Swagit (lower center) -->
+          <circle cx="200" cy="300" r="15" fill="rgba(100,116,139,0.1)" stroke="rgba(100,116,139,0.3)" stroke-width="1"/>
+          <text x="200" y="303" text-anchor="middle" fill="#94a3b8" font-size="8" font-weight="500">Swagit</text>
+        </svg>
+      </div>
+
+      <!-- Competitive detail -->
+      <div class="flex-1 space-y-4">
+        <div class="stagger glass-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-violet-500"></div>
+            <span class="text-sm font-semibold text-slate-200">CivicLens</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Full pipeline: transcription + structured extraction + narrative summary + cross-archive Q&A. Purpose-built for Granicus ecosystem.</p>
+        </div>
+
+        <div class="stagger glass-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+            <span class="text-sm font-semibold text-slate-200">Granicus</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Incumbent with deep relationships and 70% market share. Platform company, not an AI company. Incentive to partner, not compete.</p>
+        </div>
+
+        <div class="stagger glass-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+            <span class="text-sm font-semibold text-slate-200">General AI Tools</span>
+            <span class="text-[10px] text-slate-500">(Otter, Fireflies, Rev)</span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Transcription-focused or consumer-oriented. No structured civic data extraction, no vote tracking, no government-specific features.</p>
+        </div>
+
+        <div class="stagger glass-sm p-4 border-l-2 border-violet-500/30">
+          <p class="text-xs text-slate-400 leading-relaxed"><strong class="text-slate-300">Moat:</strong> No existing solution combines Granicus-native ingestion, structured civic extraction, narrative AI, and cross-archive Q&A. Building all four simultaneously is a 12-month head start.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 10: TECHNOLOGY ==================== -->
+<div class="slide" data-slide="9">
+  <div class="bg-glow" style="background: #4f46e5; top: -100px; left: -100px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Technology</div>
+    <h2 class="stagger headline mb-10">Multi-model AI pipeline, built for scale</h2>
+
+    <div class="flex gap-8">
+      <!-- Architecture diagram -->
+      <div class="stagger flex-1">
+        <svg viewBox="0 0 400 340" fill="none" class="w-full">
+          <!-- Ingestion -->
+          <rect x="140" y="5" width="120" height="36" rx="8" fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.3)" stroke-width="1"/>
+          <text x="200" y="28" text-anchor="middle" fill="#a5b4fc" font-size="10" font-weight="600">Granicus API</text>
+
+          <line x1="200" y1="41" x2="200" y2="60" stroke="rgba(139,92,246,0.3)" stroke-width="1" class="flow-line"/>
+          <polygon points="196,58 200,66 204,58" fill="rgba(139,92,246,0.4)"/>
+
+          <!-- Processing layer -->
+          <rect x="10" y="68" width="380" height="80" rx="10" fill="rgba(139,92,246,0.04)" stroke="rgba(139,92,246,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+          <text x="20" y="83" fill="#64748b" font-size="8" font-weight="500">PROCESSING LAYER (AWS Lambda / Step Functions)</text>
+
+          <rect x="25" y="95" width="82" height="40" rx="6" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.25)" stroke-width="1"/>
+          <text x="66" y="112" text-anchor="middle" fill="#a5b4fc" font-size="8.5" font-weight="500">Whisper</text>
+          <text x="66" y="124" text-anchor="middle" fill="#818cf8" font-size="7">Transcription</text>
+
+          <rect x="117" y="95" width="82" height="40" rx="6" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.25)" stroke-width="1"/>
+          <text x="158" y="112" text-anchor="middle" fill="#a5b4fc" font-size="8.5" font-weight="500">GPT-4o</text>
+          <text x="158" y="124" text-anchor="middle" fill="#818cf8" font-size="7">Extraction</text>
+
+          <rect x="209" y="95" width="82" height="40" rx="6" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.25)" stroke-width="1"/>
+          <text x="250" y="112" text-anchor="middle" fill="#a5b4fc" font-size="8.5" font-weight="500">Claude</text>
+          <text x="250" y="124" text-anchor="middle" fill="#818cf8" font-size="7">Narration</text>
+
+          <rect x="301" y="95" width="82" height="40" rx="6" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.25)" stroke-width="1"/>
+          <text x="342" y="112" text-anchor="middle" fill="#a5b4fc" font-size="8.5" font-weight="500">Embeddings</text>
+          <text x="342" y="124" text-anchor="middle" fill="#818cf8" font-size="7">Vectorization</text>
+
+          <!-- Arrow down -->
+          <line x1="200" y1="148" x2="200" y2="172" stroke="rgba(139,92,246,0.3)" stroke-width="1" class="flow-line"/>
+          <polygon points="196,170 200,178 204,170" fill="rgba(139,92,246,0.4)"/>
+
+          <!-- Storage layer -->
+          <rect x="10" y="180" width="380" height="56" rx="10" fill="rgba(139,92,246,0.04)" stroke="rgba(139,92,246,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+          <text x="20" y="195" fill="#64748b" font-size="8" font-weight="500">DATA LAYER</text>
+
+          <rect x="25" y="202" width="105" height="26" rx="5" fill="rgba(34,197,94,0.08)" stroke="rgba(34,197,94,0.2)" stroke-width="1"/>
+          <text x="77" y="219" text-anchor="middle" fill="#86efac" font-size="8.5" font-weight="500">Vector Store</text>
+
+          <rect x="140" y="202" width="105" height="26" rx="5" fill="rgba(34,197,94,0.08)" stroke="rgba(34,197,94,0.2)" stroke-width="1"/>
+          <text x="192" y="219" text-anchor="middle" fill="#86efac" font-size="8.5" font-weight="500">PostgreSQL</text>
+
+          <rect x="255" y="202" width="125" height="26" rx="5" fill="rgba(34,197,94,0.08)" stroke="rgba(34,197,94,0.2)" stroke-width="1"/>
+          <text x="317" y="219" text-anchor="middle" fill="#86efac" font-size="8.5" font-weight="500">Object Storage (S3)</text>
+
+          <!-- Arrow down -->
+          <line x1="200" y1="236" x2="200" y2="260" stroke="rgba(139,92,246,0.3)" stroke-width="1" class="flow-line"/>
+          <polygon points="196,258 200,266 204,258" fill="rgba(139,92,246,0.4)"/>
+
+          <!-- API + Frontend -->
+          <rect x="80" y="268" width="105" height="36" rx="8" fill="rgba(124,58,237,0.12)" stroke="rgba(124,58,237,0.3)" stroke-width="1"/>
+          <text x="132" y="290" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">FastAPI</text>
+
+          <rect x="215" y="268" width="105" height="36" rx="8" fill="rgba(124,58,237,0.12)" stroke="rgba(124,58,237,0.3)" stroke-width="1"/>
+          <text x="267" y="290" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">React SPA</text>
+
+          <!-- Multi-tenant label -->
+          <text x="200" y="330" text-anchor="middle" fill="#475569" font-size="8" font-weight="500" letter-spacing="0.1em">MULTI-TENANT SAAS / PER-CITY ISOLATION</text>
+        </svg>
+      </div>
+
+      <!-- Tech highlights -->
+      <div class="stagger w-64 space-y-4">
+        <div class="glass-sm p-4">
+          <div class="text-xs font-semibold text-slate-200 mb-2">Scalability</div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">Processing is embarrassingly parallel. Each meeting is independent. Scales horizontally via Lambda/ECS.</p>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-xs font-semibold text-slate-200 mb-2">Multi-Model</div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">Each AI model used for its strength. Whisper for audio, GPT-4o for extraction, Claude for narration. No single-vendor lock-in.</p>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-xs font-semibold text-slate-200 mb-2">Cost Efficiency</div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">$0.50/meeting at scale. Caching + batching reduces marginal costs 40%. API costs declining 15%+ annually.</p>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-xs font-semibold text-slate-200 mb-2">Security Path</div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">SOC 2 Type II in Year 1. FedRAMP authorization path for federal expansion. Tenant data isolation by default.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 11: TEAM ==================== -->
+<div class="slide" data-slide="10">
+  <div class="bg-glow" style="background: #7c3aed; top: 50%; right: -200px; transform: translateY(-50%);"></div>
+
+  <div class="max-w-4xl w-full text-center">
+    <div class="stagger label text-violet-400/60 mb-4">Team</div>
+    <h2 class="stagger headline mb-12">Built to win government AI</h2>
+
+    <div class="grid grid-cols-3 gap-8 mb-12">
+      <!-- CEO -->
+      <div class="stagger text-center">
+        <div class="w-24 h-24 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-white/5 flex items-center justify-center">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.5)" stroke-width="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="font-semibold text-slate-200 mb-0.5">CEO / Co-founder</div>
+        <div class="text-xs text-violet-400/70 mono mb-3">Sales & Vision</div>
+        <p class="text-xs text-slate-400 leading-relaxed">Government technology sales experience. Deep understanding of municipal procurement and city clerk workflows.</p>
+      </div>
+
+      <!-- CTO -->
+      <div class="stagger text-center">
+        <div class="w-24 h-24 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-white/5 flex items-center justify-center">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.5)" stroke-width="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="font-semibold text-slate-200 mb-0.5">CTO / Co-founder</div>
+        <div class="text-xs text-violet-400/70 mono mb-3">Architecture & ML</div>
+        <p class="text-xs text-slate-400 leading-relaxed">Built the working pipeline processing 300+ meetings. ML systems, distributed architectures, and AI pipeline expertise.</p>
+      </div>
+
+      <!-- Eng Lead -->
+      <div class="stagger text-center">
+        <div class="w-24 h-24 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-white/5 flex items-center justify-center">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.5)" stroke-width="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="font-semibold text-slate-200 mb-0.5">Full-Stack Engineer</div>
+        <div class="text-xs text-violet-400/70 mono mb-3">Product & Platform</div>
+        <p class="text-xs text-slate-400 leading-relaxed">Frontend, API, multi-tenancy, and deployment. Building the production SaaS platform and public portal experience.</p>
+      </div>
+    </div>
+
+    <!-- Growth hiring plan -->
+    <div class="stagger glass-sm p-6 text-left max-w-3xl mx-auto">
+      <div class="text-sm font-semibold text-slate-200 mb-4">Hiring plan with seed funding</div>
+      <div class="grid grid-cols-3 gap-6 text-xs">
+        <div>
+          <div class="text-violet-400 font-semibold mb-2">Months 7-12</div>
+          <div class="space-y-1.5 text-slate-400">
+            <div>3 Account Executives (gov sales)</div>
+            <div>1 Customer Success Manager</div>
+            <div>1 ML Engineer</div>
+          </div>
+        </div>
+        <div>
+          <div class="text-violet-400 font-semibold mb-2">Months 13-18</div>
+          <div class="space-y-1.5 text-slate-400">
+            <div>1 Frontend Engineer</div>
+            <div>1 DevOps / Infrastructure</div>
+          </div>
+        </div>
+        <div>
+          <div class="text-violet-400 font-semibold mb-2">Year 3 Target</div>
+          <div class="space-y-1.5 text-slate-400">
+            <div>~22 total headcount</div>
+            <div>Regional sales coverage</div>
+            <div>Product manager hire</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 12: FINANCIALS ==================== -->
+<div class="slide" data-slide="11">
+  <div class="bg-glow" style="background: #059669; bottom: -200px; left: -100px;"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">Financial Projections</div>
+    <h2 class="stagger headline mb-10">Clear path to $4.3M ARR</h2>
+
+    <div class="flex gap-8 items-end">
+      <!-- Revenue chart -->
+      <div class="stagger flex-1">
+        <svg viewBox="0 0 500 280" fill="none" class="w-full">
+          <!-- Grid lines -->
+          <line x1="60" y1="30" x2="480" y2="30" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+          <line x1="60" y1="80" x2="480" y2="80" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+          <line x1="60" y1="130" x2="480" y2="130" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+          <line x1="60" y1="180" x2="480" y2="180" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+          <line x1="60" y1="230" x2="480" y2="230" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+          <!-- Y-axis labels -->
+          <text x="52" y="34" text-anchor="end" fill="#475569" font-size="9" font-family="JetBrains Mono, monospace">$4M</text>
+          <text x="52" y="84" text-anchor="end" fill="#475569" font-size="9" font-family="JetBrains Mono, monospace">$3M</text>
+          <text x="52" y="134" text-anchor="end" fill="#475569" font-size="9" font-family="JetBrains Mono, monospace">$2M</text>
+          <text x="52" y="184" text-anchor="end" fill="#475569" font-size="9" font-family="JetBrains Mono, monospace">$1M</text>
+          <text x="52" y="234" text-anchor="end" fill="#475569" font-size="9" font-family="JetBrains Mono, monospace">$0</text>
+
+          <!-- Revenue bars -->
+          <!-- Year 1: $240K revenue => height ~12 -->
+          <rect x="110" y="218" width="80" height="12" rx="4" fill="url(#barGrad1)" class="chart-bar" style="transform: scaleY(0);"/>
+          <text x="150" y="210" text-anchor="middle" fill="#a78bfa" font-size="11" font-weight="700">$240K</text>
+
+          <!-- Year 2: $960K revenue => height ~48 -->
+          <rect x="230" y="182" width="80" height="48" rx="4" fill="url(#barGrad2)" class="chart-bar" style="transform: scaleY(0); transition-delay: 0.15s;"/>
+          <text x="270" y="174" text-anchor="middle" fill="#a78bfa" font-size="11" font-weight="700">$960K</text>
+
+          <!-- Year 3: $2.92M revenue => height ~146 -->
+          <rect x="350" y="84" width="80" height="146" rx="4" fill="url(#barGrad3)" class="chart-bar" style="transform: scaleY(0); transition-delay: 0.3s;"/>
+          <text x="390" y="76" text-anchor="middle" fill="#c4b5fd" font-size="12" font-weight="800">$2.92M</text>
+
+          <!-- X-axis labels -->
+          <text x="150" y="254" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">Year 1</text>
+          <text x="150" y="267" text-anchor="middle" fill="#64748b" font-size="8">50 customers</text>
+
+          <text x="270" y="254" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">Year 2</text>
+          <text x="270" y="267" text-anchor="middle" fill="#64748b" font-size="8">200 customers</text>
+
+          <text x="390" y="254" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">Year 3</text>
+          <text x="390" y="267" text-anchor="middle" fill="#64748b" font-size="8">500 customers</text>
+
+          <!-- Gradients -->
+          <defs>
+            <linearGradient id="barGrad1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#6366f1"/>
+              <stop offset="1" stop-color="#4338ca"/>
+            </linearGradient>
+            <linearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#7c3aed"/>
+              <stop offset="1" stop-color="#5b21b6"/>
+            </linearGradient>
+            <linearGradient id="barGrad3" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#8b5cf6"/>
+              <stop offset="1" stop-color="#6d28d9"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <!-- Key financials -->
+      <div class="stagger w-56 space-y-4">
+        <div class="glass-sm p-4">
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Year 3 ARR</div>
+          <div class="text-2xl font-bold grad-text">$4.3M</div>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Gross Margin</div>
+          <div class="text-2xl font-bold text-slate-200">85%</div>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Break-even</div>
+          <div class="text-2xl font-bold text-slate-200">Month 38-42</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Late Year 3 / Early Year 4</div>
+        </div>
+        <div class="glass-sm p-4">
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Revenue Mix (Year 3)</div>
+          <div class="flex gap-1 mt-2">
+            <div class="h-2 rounded-full bg-indigo-500" style="width: 16.8%" title="Starter: $718K"></div>
+            <div class="h-2 rounded-full bg-violet-500" style="width: 33.5%" title="Pro: $1.44M"></div>
+            <div class="h-2 rounded-full bg-purple-500" style="width: 35%" title="Enterprise: $1.5M"></div>
+            <div class="h-2 rounded-full bg-fuchsia-500" style="width: 14.7%" title="Advocacy/Media: $628K"></div>
+          </div>
+          <div class="flex justify-between mt-2 text-[9px] text-slate-500">
+            <span>Starter</span>
+            <span>Pro</span>
+            <span>Enterprise</span>
+            <span>Media</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 13: THE ASK ==================== -->
+<div class="slide" data-slide="12">
+  <div class="bg-glow" style="background: #7c3aed; top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
+
+  <div class="max-w-5xl w-full">
+    <div class="stagger label text-violet-400/60 mb-4">The Ask</div>
+    <h2 class="stagger headline mb-3">$1.5M Seed Round</h2>
+    <p class="stagger subhead mb-10 max-w-2xl">20-22 months of runway to reach Series A metrics: $1.5M+ ARR, 150+ customers, strong net revenue retention.</p>
+
+    <div class="flex gap-8">
+      <!-- Use of funds -->
+      <div class="stagger flex-1">
+        <div class="text-sm font-semibold text-slate-200 mb-5">Use of Funds</div>
+        <svg viewBox="0 0 340 200" fill="none" class="w-full" style="max-width: 340px;">
+          <!-- Donut chart -->
+          <!-- Total: $1.5M -->
+          <!-- Product & Engineering: 45% ($675K) -->
+          <circle cx="100" cy="100" r="75" fill="none" stroke="rgba(99,102,241,0.8)" stroke-width="28"
+            stroke-dasharray="212 283" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
+          <!-- Sales & Marketing: 30% ($450K) -->
+          <circle cx="100" cy="100" r="75" fill="none" stroke="rgba(139,92,246,0.8)" stroke-width="28"
+            stroke-dasharray="141 354" stroke-dashoffset="-212" transform="rotate(-90 100 100)"/>
+          <!-- Operations & G&A: 15% ($225K) -->
+          <circle cx="100" cy="100" r="75" fill="none" stroke="rgba(168,85,247,0.6)" stroke-width="28"
+            stroke-dasharray="71 424" stroke-dashoffset="-353" transform="rotate(-90 100 100)"/>
+          <!-- Reserve: 10% ($150K) -->
+          <circle cx="100" cy="100" r="75" fill="none" stroke="rgba(192,132,252,0.4)" stroke-width="28"
+            stroke-dasharray="47 448" stroke-dashoffset="-424" transform="rotate(-90 100 100)"/>
+
+          <!-- Center text -->
+          <text x="100" y="95" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="800">$1.5M</text>
+          <text x="100" y="112" text-anchor="middle" fill="#64748b" font-size="9">SEED ROUND</text>
+
+          <!-- Legend -->
+          <rect x="220" y="35" width="10" height="10" rx="2" fill="rgba(99,102,241,0.8)"/>
+          <text x="236" y="44" fill="#c7d2fe" font-size="10" font-weight="500">Product & Eng</text>
+          <text x="330" y="44" text-anchor="end" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">45%</text>
+
+          <rect x="220" y="62" width="10" height="10" rx="2" fill="rgba(139,92,246,0.8)"/>
+          <text x="236" y="71" fill="#c7d2fe" font-size="10" font-weight="500">Sales & Marketing</text>
+          <text x="330" y="71" text-anchor="end" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">30%</text>
+
+          <rect x="220" y="89" width="10" height="10" rx="2" fill="rgba(168,85,247,0.6)"/>
+          <text x="236" y="98" fill="#c7d2fe" font-size="10" font-weight="500">Operations & G&A</text>
+          <text x="330" y="98" text-anchor="end" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">15%</text>
+
+          <rect x="220" y="116" width="10" height="10" rx="2" fill="rgba(192,132,252,0.4)"/>
+          <text x="236" y="125" fill="#c7d2fe" font-size="10" font-weight="500">Reserve</text>
+          <text x="330" y="125" text-anchor="end" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">10%</text>
+        </svg>
+      </div>
+
+      <!-- Milestones -->
+      <div class="stagger flex-1">
+        <div class="text-sm font-semibold text-slate-200 mb-5">18-Month Milestones</div>
+        <div class="space-y-4">
+          <div class="flex gap-4 items-start">
+            <div class="flex flex-col items-center">
+              <div class="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">Q3</div>
+              <div class="w-px h-5 bg-white/5"></div>
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-slate-200">Month 6</div>
+              <div class="text-xs text-slate-400">10 paying customers, NPS > 50, first case study</div>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start">
+            <div class="flex flex-col items-center">
+              <div class="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">Q1</div>
+              <div class="w-px h-5 bg-white/5"></div>
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-slate-200">Month 12</div>
+              <div class="text-xs text-slate-400">50 customers, $50K MRR, sales team hired, SOC 2 started</div>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start">
+            <div class="flex flex-col items-center">
+              <div class="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">Q3</div>
+              <div class="w-px h-5 bg-white/5"></div>
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-slate-200">Month 18</div>
+              <div class="text-xs text-slate-400">100 customers, $150K MRR, cooperative purchasing live</div>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start">
+            <div class="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-slate-200">Series A Readiness</div>
+              <div class="text-xs text-slate-400">$1.5M+ ARR, 150+ customers, 105%+ NRR, Granicus partnership initiated</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE 14: CLOSING ==================== -->
+<div class="slide" data-slide="13">
+  <div class="bg-glow" style="background: #7c3aed; top: -100px; left: 50%; transform: translateX(-50%);"></div>
+  <div class="bg-glow" style="background: #4f46e5; bottom: -100px; left: 50%; transform: translateX(-50%);"></div>
+
+  <div class="text-center max-w-3xl relative">
+    <div class="stagger mb-8">
+      <svg width="56" height="56" viewBox="0 0 48 48" fill="none">
+        <rect width="48" height="48" rx="12" fill="url(#logoGrad2)"/>
+        <path d="M14 24C14 18.48 18.48 14 24 14C29.52 14 34 18.48 34 24" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M18 24C18 20.69 20.69 18 24 18C27.31 18 30 20.69 30 24" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+        <circle cx="24" cy="24" r="2.5" fill="white"/>
+        <path d="M24 27V34" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M20 34H28" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <defs><linearGradient id="logoGrad2" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#4f46e5"/></linearGradient></defs>
+      </svg>
+    </div>
+
+    <h2 class="stagger display grad-text mb-6">Making local government<br>accessible to everyone.</h2>
+
+    <p class="stagger subhead max-w-xl mx-auto mb-12">
+      90,000 government entities hold public meetings. Fewer than 2% of residents can access what happened. CivicLens changes that.
+    </p>
+
+    <div class="stagger glass p-8 inline-block mb-10">
+      <div class="grid grid-cols-3 gap-10 text-center">
+        <div>
+          <div class="stat-value grad-text mb-1" style="font-size: 2rem;">$1.5M</div>
+          <div class="text-xs text-slate-400">Seed Round</div>
+        </div>
+        <div>
+          <div class="stat-value text-white mb-1" style="font-size: 2rem;">$4.3M</div>
+          <div class="text-xs text-slate-400">Year 3 ARR Target</div>
+        </div>
+        <div>
+          <div class="stat-value grad-text-green mb-1" style="font-size: 2rem;">500</div>
+          <div class="text-xs text-slate-400">City Customers</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stagger">
+      <div class="text-sm text-slate-400 mb-2">Get in touch</div>
+      <div class="text-lg font-semibold text-slate-200 mb-1 mono">team@civiclens.ai</div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const totalSlides = slides.length;
+  let currentSlide = 0;
+  let transitioning = false;
+
+  const progressFill = document.getElementById('progress-fill');
+  const slideCounter = document.getElementById('slide-counter');
+  const navDots = document.getElementById('nav-dots');
+  const keyboardHint = document.getElementById('keyboard-hint');
+
+  // Create navigation dots
+  for (let i = 0; i < totalSlides; i++) {
+    const dot = document.createElement('button');
+    dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+    dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+    dot.addEventListener('click', () => goToSlide(i));
+    navDots.appendChild(dot);
+  }
+
+  function updateUI() {
+    const progress = ((currentSlide + 1) / totalSlides) * 100;
+    progressFill.style.width = progress + '%';
+    slideCounter.textContent = String(currentSlide + 1).padStart(2, '0') + ' / ' + String(totalSlides).padStart(2, '0');
+
+    const dots = navDots.querySelectorAll('.nav-dot');
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === currentSlide);
+    });
+  }
+
+  function goToSlide(index) {
+    if (index === currentSlide || transitioning || index < 0 || index >= totalSlides) return;
+    transitioning = true;
+
+    const direction = index > currentSlide ? 1 : -1;
+    const currentEl = slides[currentSlide];
+    const nextEl = slides[index];
+
+    // Exit current
+    currentEl.classList.remove('active');
+    currentEl.classList.add(direction > 0 ? 'exit-left' : '');
+    if (direction < 0) {
+      currentEl.style.transform = 'translateX(60px)';
+      currentEl.style.opacity = '0';
+    }
+
+    // Prepare next
+    nextEl.style.transform = direction > 0 ? 'translateX(60px)' : 'translateX(-60px)';
+    nextEl.style.opacity = '0';
+    nextEl.classList.remove('exit-left');
+
+    // Force reflow
+    void nextEl.offsetWidth;
+
+    // Animate in — clear inline overrides so .active class takes effect
+    nextEl.style.transform = '';
+    nextEl.style.opacity = '';
+    nextEl.classList.add('active');
+
+    currentSlide = index;
+    updateUI();
+
+    setTimeout(() => {
+      currentEl.classList.remove('exit-left');
+      currentEl.style.transform = '';
+      currentEl.style.opacity = '';
+      transitioning = false;
+    }, 650);
+  }
+
+  window.nextSlide = function() {
+    if (currentSlide < totalSlides - 1) goToSlide(currentSlide + 1);
+  };
+
+  window.prevSlide = function() {
+    if (currentSlide > 0) goToSlide(currentSlide - 1);
+  };
+
+  // Keyboard navigation
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+      e.preventDefault();
+      nextSlide();
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      prevSlide();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      goToSlide(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      goToSlide(totalSlides - 1);
+    }
+  });
+
+  // Touch swipe support
+  let touchStartX = 0;
+  let touchEndX = 0;
+  document.addEventListener('touchstart', function(e) {
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    touchEndX = e.changedTouches[0].screenX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 60) {
+      if (diff > 0) nextSlide();
+      else prevSlide();
+    }
+  }, { passive: true });
+
+  // Fade out keyboard hint after first navigation
+  let hintShown = true;
+  function hideHint() {
+    if (hintShown) {
+      keyboardHint.style.opacity = '0';
+      hintShown = false;
+    }
+  }
+  document.addEventListener('keydown', hideHint, { once: true });
+
+  // Initialize
+  updateUI();
+})();
+</script>
+
+</body>
+</html>

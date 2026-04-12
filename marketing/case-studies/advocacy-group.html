@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sierra Club Tracks Every Environmental Vote Across 12 Cities — CivicLens Case Study</title>
+  <meta name="description" content="How a Sierra Club regional chapter achieved 100% environmental vote coverage across 12 city councils, saving 20 hours per week of volunteer time with CivicLens.">
+  <link rel="canonical" href="https://civiclens.com/case-studies/advocacy-group.html">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(52,211,153,0.15) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 80% at 80% 20%, rgba(232,168,56,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 60% 80%, rgba(61,95,148,0.2) 0%, transparent 60%);
+      animation: meshShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes meshShift {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+      100% { background-position: 20% 20%, 80% 10%, 40% 80%; }
+    }
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .stat-number {
+      background: linear-gradient(135deg, #34d399 0%, #fff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-number-amber {
+      background: linear-gradient(135deg, #e8a838 0%, #fff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+  </style>
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Sierra Club Local Chapter Tracks Every Environmental Vote Across 12 Cities",
+    "description": "Case study: How a Sierra Club regional chapter achieved 100% environmental vote coverage across 12 city councils, saving 20 hours per week of volunteer time with CivicLens.",
+    "url": "https://civiclens.com/case-studies/advocacy-group.html",
+    "datePublished": "2026-02-20",
+    "dateModified": "2026-04-08",
+    "publisher": {
+      "@type": "Organization",
+      "name": "CivicLens",
+      "url": "https://civiclens.com"
+    },
+    "about": {
+      "@type": "NGO",
+      "name": "Sierra Club Sacramento Valley Chapter"
+    },
+    "mentions": [
+      {
+        "@type": "QuantitativeValue",
+        "name": "Vote Coverage",
+        "value": 100,
+        "unitCode": "P1"
+      },
+      {
+        "@type": "QuantitativeValue",
+        "name": "Weekly Hours Saved",
+        "value": 20,
+        "unitCode": "HUR"
+      }
+    ]
+  }
+  </script>
+</head>
+<body class="bg-navy-950 text-white antialiased overflow-x-hidden">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="../index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="./" class="text-amber-400 transition-colors">Case Studies</a>
+        <a href="../index.html#pricing" class="hover:text-amber-400 transition-colors">Pricing</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="../index.html#pricing" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2">Sign In</a>
+        <a href="../index.html#pricing" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">Start Free Trial</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="relative pt-28 pb-16">
+    <div class="hero-mesh absolute inset-0"></div>
+    <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+    <div class="relative max-w-7xl mx-auto px-6">
+      <div class="flex items-center gap-2 text-sm text-navy-400 mb-8">
+        <a href="./" class="hover:text-amber-400 transition-colors">Case Studies</a>
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <span class="text-navy-200">Sierra Club Regional Chapter</span>
+      </div>
+
+      <div class="grid lg:grid-cols-5 gap-12 items-start">
+        <div class="lg:col-span-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 text-xs font-semibold mb-5">Advocacy Group</div>
+          <h1 class="font-display text-3xl md:text-4xl lg:text-5xl leading-[1.1] tracking-tight mb-6">Sierra Club Local Chapter Tracks Every Environmental Vote Across 12 Cities</h1>
+          <p class="text-lg text-navy-200 leading-relaxed max-w-2xl mb-8">A regional advocacy chapter went from sporadic volunteer coverage to comprehensive, real-time vote tracking across a dozen city councils &mdash; without adding a single paid staffer.</p>
+          <div class="flex flex-wrap gap-3 text-xs">
+            <span class="px-3 py-1.5 rounded-lg bg-white/5 text-navy-300 border border-white/5">12 City Councils</span>
+            <span class="px-3 py-1.5 rounded-lg bg-white/5 text-navy-300 border border-white/5">Environmental Policy Focus</span>
+            <span class="px-3 py-1.5 rounded-lg bg-white/5 text-navy-300 border border-white/5">Volunteer-Run</span>
+            <span class="px-3 py-1.5 rounded-lg bg-white/5 text-navy-300 border border-white/5">CivicLens Professional</span>
+          </div>
+        </div>
+
+        <div class="lg:col-span-2">
+          <div class="bg-navy-900/60 border border-white/5 rounded-2xl p-8">
+            <h3 class="text-xs font-semibold text-navy-400 uppercase tracking-wider mb-6">Key Results</h3>
+            <div class="space-y-6">
+              <div>
+                <div class="stat-number font-display text-5xl">100%</div>
+                <p class="text-navy-300 text-sm mt-1">Environmental vote coverage</p>
+              </div>
+              <div class="border-t border-white/5 pt-6">
+                <div class="stat-number font-display text-5xl">20 hrs</div>
+                <p class="text-navy-300 text-sm mt-1">Volunteer time saved per week</p>
+              </div>
+              <div class="border-t border-white/5 pt-6">
+                <div class="stat-number font-display text-5xl">12</div>
+                <p class="text-navy-300 text-sm mt-1">City councils monitored simultaneously</p>
+              </div>
+              <div class="border-t border-white/5 pt-6">
+                <div class="stat-number font-display text-5xl">&lt;2 hrs</div>
+                <p class="text-navy-300 text-sm mt-1">Alert delivery after relevant vote</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== QUOTE BANNER ========== -->
+  <section class="border-y border-white/5 bg-navy-900/30 py-14 reveal">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <svg class="w-10 h-10 text-emerald-400/30 mx-auto mb-6" fill="currentColor" viewBox="0 0 24 24"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"/></svg>
+      <blockquote class="font-display text-2xl md:text-3xl leading-snug tracking-tight mb-6 italic">
+        "Before CivicLens, we were lucky to cover 3 of our 12 cities on any given week. Now we catch every relevant vote, in every city, every time &mdash; and our volunteers can focus on organizing instead of watching video."
+      </blockquote>
+      <div class="flex items-center justify-center gap-3">
+        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-navy-600 to-navy-800 flex items-center justify-center text-sm font-bold text-emerald-400">RL</div>
+        <div class="text-left">
+          <p class="font-semibold text-sm">Rachel Liu</p>
+          <p class="text-navy-400 text-xs">Conservation Chair, Sacramento Valley Chapter *</p>
+        </div>
+      </div>
+      <p class="text-navy-500 text-xs mt-4">* Placeholder name. Quote representative of customer feedback.</p>
+    </div>
+  </section>
+
+  <!-- ========== THE CHALLENGE ========== -->
+  <section class="py-20 reveal">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="flex items-center gap-3 mb-8">
+        <div class="w-10 h-10 rounded-xl bg-red-400/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        </div>
+        <h2 class="font-display text-3xl md:text-4xl tracking-tight">The Challenge</h2>
+      </div>
+
+      <div class="space-y-6 text-navy-200 leading-relaxed">
+        <p>The Sacramento Valley Chapter of the Sierra Club monitors environmental policy across 12 cities and unincorporated Sacramento County. Their policy priorities include zoning decisions near wetlands, tree preservation ordinances, air quality regulation, and climate action plans.</p>
+
+        <p>The problem: all of this policy work happens in city council and planning commission meetings, and it is physically impossible for a volunteer organization to cover them all.</p>
+
+        <div class="grid md:grid-cols-2 gap-4 my-8">
+          <div class="bg-navy-900/50 border border-red-400/10 rounded-xl p-6">
+            <div class="text-red-400 font-display text-3xl mb-2">3 of 12</div>
+            <p class="text-sm text-navy-300">Cities covered in any given week. Volunteers could only physically attend or watch so many meetings, leaving critical votes untracked.</p>
+          </div>
+          <div class="bg-navy-900/50 border border-red-400/10 rounded-xl p-6">
+            <div class="text-red-400 font-display text-3xl mb-2">20+ hrs/wk</div>
+            <p class="text-sm text-navy-300">Volunteer time spent watching meeting recordings, fast-forwarding through irrelevant sections, and manually logging vote outcomes.</p>
+          </div>
+          <div class="bg-navy-900/50 border border-red-400/10 rounded-xl p-6">
+            <div class="text-red-400 font-display text-3xl mb-2">Days late</div>
+            <p class="text-sm text-navy-300">Environmental votes were often discovered days or weeks after they happened, too late for effective public comment or media response.</p>
+          </div>
+          <div class="bg-navy-900/50 border border-red-400/10 rounded-xl p-6">
+            <div class="text-red-400 font-display text-3xl mb-2">Inconsistent</div>
+            <p class="text-sm text-navy-300">Vote tracking depended on which volunteers showed up. When key members were unavailable, entire cities went unmonitored for weeks.</p>
+          </div>
+        </div>
+
+        <p>"We had a zoning vote that would have opened 200 acres of riparian habitat to commercial development pass 4-1 at a Tuesday evening meeting. We didn't find out until the following Friday when someone saw it in the paper. By then, the public comment window was closed."</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== THE SOLUTION ========== -->
+  <section class="py-20 bg-navy-900/20 reveal">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="flex items-center gap-3 mb-8">
+        <div class="w-10 h-10 rounded-xl bg-emerald-400/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        </div>
+        <h2 class="font-display text-3xl md:text-4xl tracking-tight">The Solution</h2>
+      </div>
+
+      <div class="space-y-6 text-navy-200 leading-relaxed">
+        <p>The chapter deployed CivicLens Professional to monitor all 12 city Granicus instances simultaneously, with keyword alerts configured for their priority environmental topics.</p>
+
+        <h3 class="font-display text-xl text-white mt-10 mb-4">How CivicLens transformed their advocacy workflow</h3>
+
+        <div class="space-y-4">
+          <div class="flex gap-4 items-start bg-navy-900/50 border border-white/5 rounded-xl p-6">
+            <div class="w-8 h-8 rounded-lg bg-emerald-400/10 flex items-center justify-center shrink-0 mt-0.5">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            </div>
+            <div>
+              <h4 class="font-semibold text-white text-sm mb-1">Keyword Alerts for Environmental Topics</h4>
+              <p class="text-sm text-navy-300">Configured alerts for "zoning," "environmental impact," "tree preservation," "riparian," "climate action," "air quality," and 30+ other terms. When any city council discusses these topics, the chapter gets an email within 2 hours of the meeting ending.</p>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start bg-navy-900/50 border border-white/5 rounded-xl p-6">
+            <div class="w-8 h-8 rounded-lg bg-amber-400/10 flex items-center justify-center shrink-0 mt-0.5">
+              <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+            </div>
+            <div>
+              <h4 class="font-semibold text-white text-sm mb-1">Structured Vote Tracking Across All 12 Cities</h4>
+              <p class="text-sm text-navy-300">Every vote is extracted with outcome, roll call, and which council members voted for/against. The chapter now maintains a comprehensive scorecard showing how each elected official votes on environmental issues.</p>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start bg-navy-900/50 border border-white/5 rounded-xl p-6">
+            <div class="w-8 h-8 rounded-lg bg-blue-400/10 flex items-center justify-center shrink-0 mt-0.5">
+              <svg class="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h4 class="font-semibold text-white text-sm mb-1">Cross-City Q&A for Policy Research</h4>
+              <p class="text-sm text-navy-300">The Q&A system lets volunteers ask questions like "Which cities have discussed updating their tree preservation ordinance in the last 6 months?" and get sourced answers spanning all 12 councils instantly.</p>
+            </div>
+          </div>
+
+          <div class="flex gap-4 items-start bg-navy-900/50 border border-white/5 rounded-xl p-6">
+            <div class="w-8 h-8 rounded-lg bg-purple-400/10 flex items-center justify-center shrink-0 mt-0.5">
+              <svg class="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h4 class="font-semibold text-white text-sm mb-1">Financial Tracking for Environmental Budgets</h4>
+              <p class="text-sm text-navy-300">Automatic extraction of spending related to parks, sustainability programs, and infrastructure. The chapter uses this data to track whether cities are meeting their climate action plan commitments.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== THE RESULTS ========== -->
+  <section class="py-20 reveal">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="flex items-center gap-3 mb-8">
+        <div class="w-10 h-10 rounded-xl bg-emerald-400/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <h2 class="font-display text-3xl md:text-4xl tracking-tight">The Results</h2>
+      </div>
+
+      <div class="space-y-6">
+        <div class="bg-navy-900/50 border border-emerald-400/10 rounded-xl p-8">
+          <div class="grid md:grid-cols-4 gap-6 items-center">
+            <div class="text-center md:text-left">
+              <div class="stat-number font-display text-5xl">100%</div>
+              <p class="text-navy-400 text-xs mt-1">Vote Coverage</p>
+            </div>
+            <div class="md:col-span-3">
+              <h4 class="font-semibold text-white mb-2">From 25% to 100% coverage of environmental votes across 12 cities</h4>
+              <p class="text-sm text-navy-300">Every vote touching environmental topics is now captured, categorized, and logged &mdash; regardless of which city, which committee, or what time the meeting happens. The chapter has a complete record of every elected official's environmental voting history.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-navy-900/50 border border-emerald-400/10 rounded-xl p-8">
+          <div class="grid md:grid-cols-4 gap-6 items-center">
+            <div class="text-center md:text-left">
+              <div class="stat-number font-display text-5xl">20 hrs</div>
+              <p class="text-navy-400 text-xs mt-1">Saved Per Week</p>
+            </div>
+            <div class="md:col-span-3">
+              <h4 class="font-semibold text-white mb-2">Volunteer hours redirected from monitoring to organizing</h4>
+              <p class="text-sm text-navy-300">The 20 hours per week previously spent watching meeting recordings are now available for community organizing, public comment preparation, candidate engagement, and policy research. CivicLens handles the surveillance; volunteers handle the advocacy.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-navy-900/50 border border-emerald-400/10 rounded-xl p-8">
+          <div class="grid md:grid-cols-4 gap-6 items-center">
+            <div class="text-center md:text-left">
+              <div class="stat-number font-display text-5xl">&lt;2 hrs</div>
+              <p class="text-navy-400 text-xs mt-1">Alert Speed</p>
+            </div>
+            <div class="md:col-span-3">
+              <h4 class="font-semibold text-white mb-2">Real-time alerts replaced multi-day discovery lag</h4>
+              <p class="text-sm text-navy-300">Environmental votes that used to be discovered days later via newspaper coverage are now flagged within 2 hours. This gives the chapter time to mobilize for subsequent readings, file public comments, or engage media before a story goes cold.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-navy-900/50 border border-emerald-400/10 rounded-xl p-8">
+          <div class="grid md:grid-cols-4 gap-6 items-center">
+            <div class="text-center md:text-left">
+              <div class="stat-number font-display text-5xl">4x</div>
+              <p class="text-navy-400 text-xs mt-1">Comment Rate</p>
+            </div>
+            <div class="md:col-span-3">
+              <h4 class="font-semibold text-white mb-2">Public comments on environmental items quadrupled</h4>
+              <p class="text-sm text-navy-300">With advance notice of upcoming votes and real-time alerts on first readings, the chapter now mobilizes members to submit public comment 4x more often than before. Council members have taken notice of the increased civic participation.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== USE CASE DEEP DIVE ========== -->
+  <section class="py-20 bg-navy-900/20 reveal">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="flex items-center gap-3 mb-8">
+        <div class="w-10 h-10 rounded-xl bg-blue-400/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>
+        </div>
+        <h2 class="font-display text-3xl md:text-4xl tracking-tight">Real-World Example</h2>
+      </div>
+
+      <div class="bg-navy-900/50 border border-white/5 rounded-xl p-8">
+        <h3 class="font-display text-xl text-white mb-4">Catching a critical zoning vote in real time</h3>
+        <p class="text-navy-200 text-sm leading-relaxed mb-4">In March 2026, CivicLens flagged a Planning Commission meeting in one of the monitored cities that included a zoning variance request for a parcel adjacent to a protected creek corridor. The keyword alert for "riparian" fired within 90 minutes of the meeting ending.</p>
+        <p class="text-navy-200 text-sm leading-relaxed mb-4">The chapter's Conservation Chair reviewed the extracted facts: the vote was 3-2 in favor, with conditions. The structured data included which commissioners voted for and against, the exact conditions attached, and the timestamp in the meeting where the environmental impact was discussed.</p>
+        <p class="text-navy-200 text-sm leading-relaxed">Armed with this information, the chapter mobilized 15 community members to submit public comment before the City Council's final vote two weeks later. The Council added additional environmental protections as conditions of approval &mdash; a direct result of informed civic participation.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== MORE CASE STUDIES ========== -->
+  <section class="py-20 reveal">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="font-display text-3xl md:text-4xl tracking-tight mb-8 text-center">More Case Studies</h2>
+      <div class="grid md:grid-cols-2 gap-6">
+        <a href="elk-grove.html" class="group block bg-navy-900/50 border border-white/5 rounded-2xl p-6 transition-all hover:-translate-y-1 hover:shadow-lg hover:border-amber-400/20">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs font-semibold mb-3">City Government</div>
+          <h3 class="font-display text-lg mb-2 group-hover:text-amber-400 transition-colors">How Elk Grove Reduced Meeting Documentation Time by 85%</h3>
+          <p class="text-navy-300 text-sm leading-relaxed mb-4">$47K annual savings, same-day meeting summaries, and a fully searchable public archive.</p>
+          <div class="flex items-center gap-2 text-amber-400 text-sm font-semibold">
+            Read case study
+            <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </div>
+        </a>
+        <a href="journalist.html" class="group block bg-navy-900/50 border border-white/5 rounded-2xl p-6 transition-all hover:-translate-y-1 hover:shadow-lg hover:border-blue-400/20">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-400/10 border border-blue-400/20 text-blue-400 text-xs font-semibold mb-3">Journalism</div>
+          <h3 class="font-display text-lg mb-2 group-hover:text-amber-400 transition-colors">Local News Outlet Breaks 3x More Government Stories</h3>
+          <p class="text-navy-300 text-sm leading-relaxed mb-4">One reporter, five city councils, triple the story output. 60% fewer FOIA requests needed.</p>
+          <div class="flex items-center gap-2 text-amber-400 text-sm font-semibold">
+            Read case study
+            <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CTA ========== -->
+  <section class="py-24 relative">
+    <div class="absolute inset-0">
+      <div class="glow-line absolute top-0 w-full"></div>
+      <div class="glow-line absolute bottom-0 w-full"></div>
+    </div>
+    <div class="relative max-w-3xl mx-auto px-6 text-center reveal">
+      <h2 class="font-display text-4xl md:text-5xl tracking-tight mb-6">Never miss another<br>critical vote</h2>
+      <p class="text-navy-200 text-lg mb-10 max-w-xl mx-auto">Whether you are tracking environmental policy, housing, transportation, or any other issue &mdash; CivicLens ensures you catch every relevant decision across every city you monitor.</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="../index.html#pricing" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Start Free Trial
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="mailto:demo@civiclens.com?subject=CivicLens%20Demo%20Request%20-%20Advocacy%20Organization" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-navy-400 text-navy-100 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-white/5">
+          Schedule a Demo
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-16">
+      <div class="grid md:grid-cols-5 gap-12 mb-12">
+        <div class="md:col-span-2">
+          <a href="../index.html" class="flex items-center gap-2.5 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <span class="font-display text-xl tracking-tight">CivicLens</span>
+          </a>
+          <p class="text-navy-400 text-sm leading-relaxed max-w-xs">AI-powered city council meeting intelligence. Making local government transparent, searchable, and accountable.</p>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Product</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="../index.html#features" class="hover:text-amber-400 transition-colors">Features</a></li>
+            <li><a href="../demo.html" class="hover:text-amber-400 transition-colors">Live Demo</a></li>
+            <li><a href="../index.html#pricing" class="hover:text-amber-400 transition-colors">Pricing</a></li>
+            <li><a href="./" class="hover:text-amber-400 transition-colors">Case Studies</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Company</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="#" class="hover:text-amber-400 transition-colors">About</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Blog</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Legal</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Privacy Policy</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Terms of Service</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Security</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+        <div class="flex items-center gap-6">
+          <a href="#" class="text-navy-500 hover:text-navy-300 transition-colors"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/></svg></a>
+          <a href="#" class="text-navy-500 hover:text-navy-300 transition-colors"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pricing Justification — CivicLens</title>
+  <meta name="description" content="ROI justification for procurement review. Cost comparison vs manual transcription and staff FTE. 3-year TCO, plan comparison, and per-org pricing rationale.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+
+    /* Number highlight */
+    .big-number {
+      font-family: 'DM Serif Display', Georgia, serif;
+      background: linear-gradient(135deg, #e8a838 0%, #fff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Tables */
+    .cost-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+    }
+    .cost-table th, .cost-table td {
+      padding: 0.85rem 1rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    .cost-table th {
+      background: rgba(232,168,56,0.08);
+      color: #e8a838;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+    }
+    .cost-table td { color: #b8c7df; }
+    .cost-table tr.total-row td {
+      background: rgba(232,168,56,0.08);
+      color: #fff;
+      font-weight: 600;
+    }
+    .cost-table tr.highlight-row td {
+      background: rgba(232,168,56,0.04);
+    }
+
+    /* Plan card */
+    .plan-card {
+      transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    .plan-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(232,168,56,0.4);
+    }
+    .plan-card.featured {
+      border-color: #e8a838;
+      position: relative;
+    }
+    .plan-card.featured::before {
+      content: 'MOST POPULAR';
+      position: absolute;
+      top: -0.65rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #e8a838;
+      color: #0c1a33;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+    }
+
+    @media print {
+      body::before { display: none; }
+      .no-print { display: none !important; }
+      body { background: white !important; color: #111 !important; }
+      h1, h2, h3 { color: #0c1a33 !important; }
+      p { color: #333 !important; }
+      .big-number { background: none !important; -webkit-text-fill-color: #b87a1e !important; color: #b87a1e !important; }
+      .cost-table td { color: #111 !important; }
+      .cost-table th { background: #f5f5f5 !important; color: #b87a1e !important; border-color: #ccc !important; }
+      .cost-table td { border-color: #ccc !important; }
+      .cost-table tr.total-row td { background: #fef3c7 !important; color: #111 !important; }
+      .plan-card { background: white !important; border: 1px solid #ccc !important; page-break-inside: avoid; }
+      @page { margin: 0.6in; }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="no-print fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+        <a href="index.html" class="text-amber-400">For Procurement</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../roi-calculator.html" class="hover:text-amber-400 transition-colors">ROI Calculator</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="../roi-calculator.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all">
+          Interactive ROI Calculator
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HEADER ========== -->
+  <section class="pt-32 pb-12">
+    <div class="max-w-4xl mx-auto px-6">
+      <a href="index.html" class="no-print inline-flex items-center gap-2 text-navy-400 hover:text-amber-400 text-sm mb-6 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Procurement Kit
+      </a>
+      <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Document 4 of 4</p>
+      <h1 class="font-display text-4xl md:text-5xl tracking-tight mb-4">Pricing Justification</h1>
+      <p class="text-navy-300 text-lg leading-relaxed">Side-by-side cost comparison, 3-year total cost of ownership, and rationale for per-organization pricing. Designed for the finance committee and procurement review package.</p>
+    </div>
+  </section>
+
+  <!-- ========== TL;DR ========== -->
+  <section class="pb-16">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="bg-gradient-to-br from-amber-400/10 to-navy-900/60 border border-amber-400/30 rounded-2xl p-8 md:p-10">
+        <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Bottom line</p>
+        <h2 class="font-display text-3xl md:text-4xl tracking-tight mb-4">A typical Pro subscription pays for itself in under 8 weeks.</h2>
+        <p class="text-navy-200 leading-relaxed mb-6">A mid-size city processing 60 meetings per year spends roughly <span class="big-number text-2xl font-bold">$42,000</span> annually on clerk-led manual transcription and summarization. CivicLens Pro delivers the same outputs plus automated extraction, natural-language Q&amp;A, and FOIA-ready export for <span class="big-number text-2xl font-bold">$9,588</span> per year. Net annual savings: roughly <span class="big-number text-2xl font-bold">$32,000</span>.</p>
+        <div class="flex flex-wrap gap-4">
+          <a href="../roi-calculator.html" class="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all">
+            Run your own numbers
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== COST BREAKDOWN ========== -->
+  <section class="pb-16">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="font-display text-3xl mb-2">Annual cost breakdown</h2>
+      <p class="text-navy-400 text-sm mb-6">Assumptions: a mid-size U.S. city with 60 meetings per year, averaging 2.5 hours per meeting, a clerk at fully loaded cost of $85,000/year, and current Granicus video hosting already in place.</p>
+
+      <table class="cost-table">
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>What you get</th>
+            <th>Annual cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Granicus-only baseline</strong></td>
+            <td>Video hosting, basic searchable video player, minutes PDFs.</td>
+            <td>Already in budget</td>
+          </tr>
+          <tr>
+            <td><strong>Manual transcription vendor</strong></td>
+            <td>Human transcription at ~$1.25/audio minute &times; 150 hours of meetings = 9,000 minutes.</td>
+            <td>$11,250</td>
+          </tr>
+          <tr>
+            <td><strong>Clerk staff FTE time (summaries, vote tracking, FOIA responses)</strong></td>
+            <td>Conservatively 0.35 FTE dedicated to meeting follow-up documentation ($85,000 &times; 35% + benefits).</td>
+            <td>$29,750</td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="2"><strong>Status quo total (manual baseline)</strong></td>
+            <td><strong>$41,000</strong></td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 0.5rem; background: transparent; border: none;"></td>
+          </tr>
+          <tr class="highlight-row">
+            <td><strong>CivicLens Pro subscription</strong></td>
+            <td>$799/month &times; 12 months. Automated transcription, structured extraction, Q&amp;A, vote tracking, FOIA export.</td>
+            <td>$9,588</td>
+          </tr>
+          <tr class="highlight-row">
+            <td><strong>Clerk review time (reduced)</strong></td>
+            <td>Clerk spends ~5% FTE verifying auto-generated outputs instead of producing them from scratch.</td>
+            <td>$4,250</td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="2"><strong>CivicLens Pro total</strong></td>
+            <td><strong>$13,838</strong></td>
+          </tr>
+          <tr class="total-row" style="background: rgba(34,197,94,0.15) !important;">
+            <td colspan="2"><strong>Annual savings</strong></td>
+            <td><strong>$27,162 (66% reduction)</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="text-navy-400 text-xs italic mt-4">These figures are illustrative for a mid-size city. Use the <a href="../roi-calculator.html" class="text-amber-400 hover:underline">interactive ROI calculator</a> to model your own meeting volume, staff cost, and transcription rates. Savings are typically higher for larger jurisdictions with more meetings per month.</p>
+    </div>
+  </section>
+
+  <!-- ========== 3-YEAR TCO ========== -->
+  <section class="pb-16">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="font-display text-3xl mb-2">3-year total cost of ownership</h2>
+      <p class="text-navy-400 text-sm mb-6">Annual commitment discount of 10% applied. No hidden implementation fees. No per-user charges.</p>
+
+      <table class="cost-table">
+        <thead>
+          <tr>
+            <th>Year</th>
+            <th>Starter ($299/mo)</th>
+            <th>Pro ($799/mo)</th>
+            <th>Enterprise ($2,499/mo)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Year 1 (net of 10% annual discount)</td>
+            <td>$3,228</td>
+            <td>$8,629</td>
+            <td>$26,989</td>
+          </tr>
+          <tr>
+            <td>Year 2</td>
+            <td>$3,228</td>
+            <td>$8,629</td>
+            <td>$26,989</td>
+          </tr>
+          <tr>
+            <td>Year 3</td>
+            <td>$3,228</td>
+            <td>$8,629</td>
+            <td>$26,989</td>
+          </tr>
+          <tr class="total-row">
+            <td><strong>3-year subscription TCO</strong></td>
+            <td><strong>$9,684</strong></td>
+            <td><strong>$25,887</strong></td>
+            <td><strong>$80,967</strong></td>
+          </tr>
+          <tr>
+            <td>Implementation fee</td>
+            <td>$0</td>
+            <td>$0</td>
+            <td>$0</td>
+          </tr>
+          <tr>
+            <td>Training (included)</td>
+            <td>$0</td>
+            <td>$0</td>
+            <td>$0</td>
+          </tr>
+          <tr>
+            <td>Per-seat charges</td>
+            <td>$0</td>
+            <td>$0</td>
+            <td>$0</td>
+          </tr>
+          <tr class="total-row" style="background: rgba(232,168,56,0.18) !important;">
+            <td><strong>Fully loaded 3-year TCO</strong></td>
+            <td><strong>$9,684</strong></td>
+            <td><strong>$25,887</strong></td>
+            <td><strong>$80,967</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="text-navy-400 text-xs italic mt-4">Multi-year commitments (2 or 3 years) unlock a further 5% discount per year beyond the annual discount. Enterprise plans may include custom line items for dedicated CSM, SLA guarantees, or premium SSO/SCIM features.</p>
+    </div>
+  </section>
+
+  <!-- ========== PLAN COMPARISON ========== -->
+  <section class="pb-16">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="font-display text-3xl mb-2 max-w-4xl mx-auto">Plan comparison</h2>
+      <p class="text-navy-400 text-sm mb-8 max-w-4xl mx-auto">Pick the plan that matches meeting volume and support expectations. Every plan includes unlimited named users.</p>
+
+      <div class="grid md:grid-cols-3 gap-6">
+
+        <!-- Starter -->
+        <div class="plan-card bg-navy-900/40 border border-white/10 rounded-2xl p-6">
+          <h3 class="font-display text-2xl mb-1">Starter</h3>
+          <p class="text-navy-400 text-sm mb-4">Small cities, pilots, single department</p>
+          <div class="text-4xl font-bold mb-1"><span class="big-number">$299</span><span class="text-navy-400 text-base font-normal">/mo</span></div>
+          <div class="text-xs text-navy-500 mb-6">Billed annually at $3,228</div>
+          <ul class="space-y-2 text-sm text-navy-300">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 100 Q&amp;A queries / month</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Unlimited meetings ingested</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Vote &amp; financial tracking</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Email support, 2 business-day response</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 99.5% uptime target</li>
+          </ul>
+        </div>
+
+        <!-- Pro -->
+        <div class="plan-card featured bg-navy-900/60 border-2 rounded-2xl p-6">
+          <h3 class="font-display text-2xl mb-1">Pro</h3>
+          <p class="text-navy-400 text-sm mb-4">Mid-size cities, multi-department</p>
+          <div class="text-4xl font-bold mb-1"><span class="big-number">$799</span><span class="text-navy-400 text-base font-normal">/mo</span></div>
+          <div class="text-xs text-navy-500 mb-6">Billed annually at $8,629</div>
+          <ul class="space-y-2 text-sm text-navy-300">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 1,000 Q&amp;A queries / month</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Everything in Starter</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> SAML 2.0 SSO</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Automated scheduled ingestion</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Slack, Teams, Zapier integrations</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 4-hour P1 response</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 99.9% uptime SLA with credits</li>
+          </ul>
+        </div>
+
+        <!-- Enterprise -->
+        <div class="plan-card bg-navy-900/40 border border-white/10 rounded-2xl p-6">
+          <h3 class="font-display text-2xl mb-1">Enterprise</h3>
+          <p class="text-navy-400 text-sm mb-4">Large cities, counties, regional agencies</p>
+          <div class="text-4xl font-bold mb-1"><span class="big-number">$2,499</span><span class="text-navy-400 text-base font-normal">/mo</span></div>
+          <div class="text-xs text-navy-500 mb-6">Billed annually at $26,989</div>
+          <ul class="space-y-2 text-sm text-navy-300">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Unlimited queries</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Everything in Pro</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Custom branding &amp; white-label</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Dedicated CSM</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 24x7 P1 support, 30-min response</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Self-hosted option available</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> 99.9% uptime SLA with enhanced credits</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PER-ORG RATIONALE ========== -->
+  <section class="pb-16">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="font-display text-3xl mb-4">Why per-organization, not per-seat?</h2>
+      <div class="space-y-4 text-navy-300 leading-relaxed">
+        <p>Most SaaS vendors price by the seat. CivicLens does not, and the reason is mission-aligned.</p>
+        <p>Civic transparency tools work best when every staff member, council member, intern, press liaison, and community engagement officer who needs access <em>can</em> get it. If we charged per seat, we would be creating friction against our own value proposition and rewarding buyers for keeping information siloed.</p>
+        <p>Instead, CivicLens prices per organization (tenant). Plans are scoped by query volume, which scales with real usage rather than with the number of people on your team roster. Every plan allows unlimited named users within the tenant.</p>
+        <p><strong class="text-amber-400">What this means for procurement:</strong> no per-seat math, no true-up invoices at year end, no "we need to add three more people" change orders. The line item on your contract stays flat.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== QUALITATIVE VALUE ========== -->
+  <section class="pb-16">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="font-display text-3xl mb-6">Benefits beyond the dollar savings</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="bg-navy-900/40 border border-white/10 rounded-xl p-5">
+          <h3 class="font-semibold text-base text-amber-400 mb-2">Faster FOIA response</h3>
+          <p class="text-navy-300 text-sm leading-relaxed">Public-records requests that used to require a clerk to manually scan hours of video now resolve in minutes. FOIA-compliant exports are built into the platform.</p>
+        </div>
+        <div class="bg-navy-900/40 border border-white/10 rounded-xl p-5">
+          <h3 class="font-semibold text-base text-amber-400 mb-2">Better public engagement</h3>
+          <p class="text-navy-300 text-sm leading-relaxed">Residents, press, and watchdog groups get a searchable front door to city decisions. Lower friction on information access reduces repeat citizen questions to the clerk's office.</p>
+        </div>
+        <div class="bg-navy-900/40 border border-white/10 rounded-xl p-5">
+          <h3 class="font-semibold text-base text-amber-400 mb-2">Institutional memory</h3>
+          <p class="text-navy-300 text-sm leading-relaxed">When a long-serving clerk retires, their institutional knowledge doesn't walk out the door. The archive remains searchable and queryable by any successor.</p>
+        </div>
+        <div class="bg-navy-900/40 border border-white/10 rounded-xl p-5">
+          <h3 class="font-semibold text-base text-amber-400 mb-2">Defensible audit trail</h3>
+          <p class="text-navy-300 text-sm leading-relaxed">Every question asked, every answer given, every citation — all logged to an append-only audit database with SHA-256 integrity hashes. This matters for SOC 2, FISMA, and public-records law.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CTA ========== -->
+  <section class="py-16 border-t border-white/5">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="font-display text-3xl md:text-4xl tracking-tight mb-4">Ready to build the business case?</h2>
+      <p class="text-navy-300 mb-8">Use the interactive ROI calculator to plug in your own numbers, or talk to sales for a custom quote.</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="../roi-calculator.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all hover:shadow-xl hover:shadow-amber-500/25">
+          Open ROI Calculator
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
+        <a href="../contact.html" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-amber-400 text-navy-100 font-semibold px-6 py-3 rounded-xl transition-all hover:bg-white/5">
+          Request custom quote
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="no-print border-t border-white/5 bg-navy-950 py-12">
+    <div class="max-w-7xl mx-auto px-6 text-center">
+      <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. &middot; <a href="index.html" class="hover:text-amber-400">Procurement Kit</a> &middot; <a href="../contact.html" class="hover:text-amber-400">Contact</a></p>
+    </div>
+  </footer>
+</body>
+</html>

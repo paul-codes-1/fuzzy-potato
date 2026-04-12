@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicLens Extends Granicus Integration with Real-Time Vote Tracking and AI Search — Press Release</title>
+  <meta name="description" content="CivicLens deepens its Granicus integration with real-time vote extraction, financial item tracking, and cross-meeting AI search — all read from the existing Granicus archive.">
+
+  <meta property="og:title" content="CivicLens Extends Granicus Integration with Real-Time Vote Tracking and AI Search">
+  <meta property="og:description" content="New roll-call extraction, financial item surfacing, and RAG-backed cross-meeting Q&amp;A layer on top of the existing Granicus stack.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://civiclens.ai/press/release-granicus-integration.html">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <meta name="article:published_time" content="2026-04-10">
+  <meta name="article:section" content="Press Release">
+  <meta name="author" content="CivicLens">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #e8a838;
+      color: #060e1d;
+      padding: 0.75rem 1.25rem;
+      z-index: 10000;
+      font-weight: 600;
+    }
+    .skip-link:focus { left: 1rem; top: 1rem; }
+
+    .release-body p {
+      margin-bottom: 1.25rem;
+      line-height: 1.75;
+    }
+
+    @media print {
+      body { background: white !important; color: black !important; }
+      nav, footer, .no-print { display: none !important; }
+      main { padding-top: 0 !important; }
+      .release-container {
+        background: white !important;
+        color: black !important;
+        border: none !important;
+        box-shadow: none !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+      }
+      .release-container * {
+        color: black !important;
+        background: transparent !important;
+        border-color: #ccc !important;
+      }
+      .release-container h1 { font-size: 24pt; }
+      .release-container h2 { font-size: 14pt; }
+      .release-container p, .release-container li { font-size: 11pt; }
+      a { text-decoration: underline; color: black !important; }
+      @page { margin: 0.75in; }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5 no-print" aria-label="Primary navigation">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5" aria-label="CivicLens home">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="index.html" class="text-amber-400">Press</a>
+        <a href="kit.html" class="hover:text-amber-400 transition-colors">Press Kit</a>
+        <a href="brand-assets.html" class="hover:text-amber-400 transition-colors">Brand</a>
+        <a href="fact-sheet.html" class="hover:text-amber-400 transition-colors">Fact Sheet</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="window.print()" class="text-sm font-semibold border border-amber-400/40 hover:border-amber-400 text-amber-400 px-4 py-2 rounded-lg transition-all hover:bg-amber-400/5">
+          Print / PDF
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main" class="pt-24 pb-24">
+    <div class="max-w-3xl mx-auto px-6">
+      <a href="index.html" class="no-print inline-flex items-center gap-2 text-sm text-navy-400 hover:text-amber-400 transition-colors mb-6">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Back to press center
+      </a>
+
+      <article class="release-container bg-navy-900/40 border border-white/10 rounded-2xl p-8 md:p-12">
+
+        <div class="mb-8 pb-6 border-b border-white/10">
+          <div class="text-xs uppercase tracking-[0.2em] text-amber-400 font-bold mb-4">For Immediate Release</div>
+          <div class="text-sm text-navy-300 font-mono">
+            <strong>Dateline:</strong> [City, State] &mdash; April 10, 2026
+          </div>
+        </div>
+
+        <h1 class="font-display text-3xl md:text-4xl lg:text-5xl leading-tight mb-4">
+          CivicLens Extends Granicus Integration with Real-Time Vote Tracking and AI Search
+        </h1>
+        <p class="text-lg md:text-xl text-navy-200 leading-relaxed mb-10 italic">
+          New roll-call extraction, financial item surfacing, and cross-meeting natural-language Q&amp;A deepen the platform's read-only integration with Granicus-hosted archives.
+        </p>
+
+        <div class="release-body text-navy-100">
+
+          <p>
+            <strong>[City, State] — April 10, 2026 —</strong> CivicLens today announced an expansion of its integration with Granicus, the video hosting and meeting management platform used by thousands of US local governments. The expansion adds automated roll-call vote extraction, dollar-amount-level financial item tracking, and a retrieval-augmented natural language query system — all built as a read-only layer on top of a city's existing Granicus view. No migration, no re-upload, and no changes to the clerk's workflow are required.
+          </p>
+
+          <p>
+            With the new capabilities, city staff, journalists, and residents can ask questions like "Which council members voted against the Oakwood rezoning?" or "What appropriations has the council made for parks maintenance this fiscal year?" and receive answers that cite specific meetings, timestamps, and speaker turns. Every answer links back to the exact second in the source Granicus video, enabling instant human verification.
+          </p>
+
+          <p>
+            "Granicus is already the system of record for thousands of cities. We're not asking anyone to rip and replace anything," said <em>[CEO / Spokesperson placeholder]</em>, CivicLens. "CivicLens reads from what you already have and adds an intelligence layer on top. That's the only posture that respects how government IT actually works."
+          </p>
+
+          <p>
+            Under the hood, the platform uses OpenAI Whisper for transcription, GPT-4o for structured extraction of votes and financial items, Anthropic's Claude for narrative summarization, and ChromaDB for semantic search across the full meeting archive. The architecture is multi-tenant with per-city data isolation, tenant-scoped API keys, and an immutable audit log tracking every query and administrative action. SAML 2.0 single sign-on is available for Enterprise customers who federate through Okta, Microsoft Entra, or Google Workspace.
+          </p>
+
+          <p>
+            The extended Granicus integration is available today to all CivicLens customers at no additional charge. Cities interested in evaluating the platform on their own Granicus archive can request a 90-day pilot at civiclens.ai.
+          </p>
+
+        </div>
+
+        <div class="mt-12 pt-8 border-t border-white/10">
+          <h2 class="text-xs uppercase tracking-[0.2em] text-amber-400 font-bold mb-4">About CivicLens</h2>
+          <p class="text-sm text-navy-300 leading-relaxed">
+            CivicLens is a SaaS platform that transforms city council meeting videos into structured, searchable intelligence. By ingesting Granicus-hosted meeting recordings, the platform delivers AI-powered transcription, two-pass summarization, vote tracking, financial item extraction, and natural language Q&amp;A — all within minutes of a meeting ending. CivicLens is built for city clerks, journalists, advocacy organizations, and engaged residents who need to know exactly what local government is doing without watching hours of video. Learn more at civiclens.ai.
+          </p>
+
+          <div class="mt-6 text-sm text-navy-400">
+            <strong class="text-amber-400">Media Contact:</strong><br>
+            <em>[Press Contact placeholder]</em><br>
+            press@civiclens.io<br>
+            civiclens.ai/press
+          </div>
+
+          <div class="mt-6 text-xs text-navy-500 font-mono">
+            # # #
+          </div>
+        </div>
+
+      </article>
+    </div>
+  </main>
+
+  <footer class="border-t border-white/5 bg-navy-950 no-print">
+    <div class="max-w-7xl mx-auto px-6 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-navy-500">
+        <p>&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+        <div class="flex items-center gap-6">
+          <a href="../index.html" class="hover:text-amber-400 transition-colors">Home</a>
+          <a href="index.html" class="hover:text-amber-400 transition-colors">Press</a>
+          <a href="mailto:press@civiclens.io" class="hover:text-amber-400 transition-colors">press@civiclens.io</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

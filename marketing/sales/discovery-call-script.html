@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicLens Discovery Call Script — Internal Sales Enablement</title>
+  <meta name="description" content="30-minute discovery call script for CivicLens account executives. Internal sales enablement — not for public distribution.">
+  <meta name="robots" content="noindex, nofollow">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+    .internal-banner {
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(232,168,56,0.12),
+        rgba(232,168,56,0.12) 12px,
+        rgba(232,168,56,0.04) 12px,
+        rgba(232,168,56,0.04) 24px
+      );
+    }
+    .stage-card { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+    .stage-card:hover { transform: translateY(-2px); box-shadow: 0 12px 32px -12px rgba(0,0,0,0.4); }
+    .script-line { border-left: 3px solid rgba(232,168,56,0.4); padding-left: 1rem; }
+    .script-line.transition { border-left-color: rgba(93, 173, 226, 0.4); }
+    .script-line.pitfall { border-left-color: rgba(239, 68, 68, 0.45); }
+    blockquote { font-style: italic; }
+    @media print {
+      body::before { display: none; }
+      .no-print { display: none !important; }
+      body { background: white !important; color: black !important; font-size: 11pt; }
+      .bg-navy-950, .bg-navy-900, .bg-navy-900\/50, .bg-navy-800\/50 { background: white !important; }
+      .text-white, .text-navy-100, .text-navy-200, .text-navy-300, .text-navy-400 { color: #111 !important; }
+      .border-white\/5, .border-white\/10, .border-amber-400\/30 { border-color: #999 !important; }
+      .stage-card { break-inside: avoid; box-shadow: none; border: 1px solid #aaa; }
+      section { break-inside: avoid; }
+      h1, h2, h3 { color: #000 !important; }
+      a { color: #000 !important; text-decoration: none; }
+      .internal-banner { background: #f2f2f2 !important; color: #000 !important; }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== INTERNAL BANNER ========== -->
+  <div class="internal-banner border-b border-amber-400/30 py-3 text-center text-sm text-amber-300 font-medium no-print">
+    <span class="uppercase tracking-wider font-semibold">Internal tool</span>
+    <span class="mx-2 text-amber-300/60">|</span>
+    <span>Sales enablement only. Not for customer distribution. Do not link from public nav.</span>
+  </div>
+
+  <!-- ========== NAV ========== -->
+  <nav class="border-b border-white/5 bg-navy-950/80 no-print">
+    <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens <span class="text-navy-400 text-xs font-body uppercase tracking-widest align-middle">/ Sales</span></span>
+      </a>
+      <div class="flex items-center gap-4 text-sm">
+        <a href="index.html" class="text-navy-200 hover:text-amber-400 transition-colors">Sales Home</a>
+        <a href="../../docs/COMPETITIVE_BATTLECARDS.md" class="text-navy-200 hover:text-amber-400 transition-colors">Battle Cards</a>
+        <button onclick="window.print()" class="bg-amber-400 hover:bg-amber-500 text-navy-950 font-semibold px-4 py-2 rounded-lg text-xs uppercase tracking-wider">Print / PDF</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HEADER ========== -->
+  <section class="max-w-5xl mx-auto px-6 pt-16 pb-10">
+    <p class="text-amber-400 text-xs font-semibold tracking-wider uppercase mb-3">30-minute discovery call</p>
+    <h1 class="font-display text-4xl md:text-5xl tracking-tight mb-6">Discovery Call Script</h1>
+    <p class="text-navy-300 text-lg max-w-3xl leading-relaxed">
+      A conversational framework for CivicLens account executives. The goal of a discovery call is <span class="text-amber-400">not</span> to deliver a pitch.
+      The goal is to find out whether the prospect has real pain, has a champion, and has budget authority.
+      If those three things are present, the pilot sells itself. If any one of them is missing, no amount of pitching will save the deal.
+    </p>
+    <div class="mt-8 grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">2 min</div><div class="text-navy-400 mt-1">Intro</div></div>
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">5 min</div><div class="text-navy-400 mt-1">Context</div></div>
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">5 min</div><div class="text-navy-400 mt-1">Current state</div></div>
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">8 min</div><div class="text-navy-400 mt-1">Pain</div></div>
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">5 min</div><div class="text-navy-400 mt-1">Future state</div></div>
+      <div class="bg-navy-900/50 border border-white/5 rounded-lg p-3 text-center"><div class="text-amber-400 font-bold">5 min</div><div class="text-navy-400 mt-1">Next steps</div></div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 1: INTRO ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="stage-card bg-navy-900/50 border border-white/5 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-400/40 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">1</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Intro &mdash; 2 minutes</h2>
+          <p class="text-navy-400 text-sm">Orient, set the frame, get permission.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Confirm who is on the call and what they expected. Set a clear agenda. Reassure them this is discovery, not a demo ambush.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Sample language</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">"Thanks for making time. Before I dive in &mdash; I see I've got [names]. Is there anyone else we're expecting, or should we kick off?"</blockquote>
+            <blockquote class="text-navy-100">"Here's what I'd like to do with our 30 minutes: spend most of it learning about how your team handles meeting records today &mdash; what's working, what's painful, what you'd change. I'll save the last few minutes to tell you a little about CivicLens and see if a short pilot might make sense. Does that work for you?"</blockquote>
+            <blockquote class="text-navy-100">"And just to set expectations &mdash; this isn't a pitch call. If CivicLens isn't a fit I'll tell you that. I'd rather get to that answer in 30 minutes than waste six weeks of both our time."</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Transition phrases</p>
+          <div class="script-line transition space-y-2">
+            <blockquote class="text-navy-100">"Great &mdash; to start, I'd love to hear a bit about your role and what prompted you to take this call."</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Don't launch into product talk. They've seen the website. They know what we do.</p>
+            <p>&mdash; Don't make small talk beyond 30 seconds. Respect the 30 minutes.</p>
+            <p>&mdash; Don't forget to confirm they have 30 minutes. A clerk with a council meeting at 6 PM may have less.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 2: CONTEXT ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="stage-card bg-navy-900/50 border border-white/5 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-400/40 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">2</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Context &mdash; 5 minutes</h2>
+          <p class="text-navy-400 text-sm">Five open questions. Shut up and take notes.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Understand who they are, why they took this call today, who else is involved, and what the political/budget context looks like. Do not advance until you have this.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">The five open questions</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">1. "Tell me about your role &mdash; what does a typical week look like for you, and how does meeting content factor in?"</blockquote>
+            <blockquote class="text-navy-100">2. "What prompted you to take this call specifically today? Was there a moment, a project, a complaint, a budget cycle?"</blockquote>
+            <blockquote class="text-navy-100">3. "Who else in your organization would care about this? Clerk's office, IT, communications, mayor's office, council directly?"</blockquote>
+            <blockquote class="text-navy-100">4. "Is there a digital-transformation or AI initiative on the city side that this might fit into &mdash; or is it more of an operational pain-point you're trying to solve?"</blockquote>
+            <blockquote class="text-navy-100">5. "Walk me through where you are with meeting video and records today &mdash; are you on Granicus, Swagit, something else? How long has that been in place?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Transition phrases</p>
+          <div class="script-line transition space-y-2">
+            <blockquote class="text-navy-100">"That's really helpful context. Can I dig into the workflow side for a few minutes?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Do not start solving yet. When they say "we use Granicus," do not launch into the vs-Granicus pitch.</p>
+            <p>&mdash; Do not ask more than five questions in this stage. If you blow through your clock here you'll skip pain, which is the whole point of the call.</p>
+            <p>&mdash; Do not interrupt an answer to move to the next question. Silence is fine. Let them fill it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 3: CURRENT STATE ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="stage-card bg-navy-900/50 border border-white/5 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-400/40 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">3</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Current state &mdash; 5 minutes</h2>
+          <p class="text-navy-400 text-sm">Map the actual workflow. Names, hours, handoffs.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Get the prospect to describe, in operational detail, what happens before, during, and after a meeting. You are building a mental map of the swim lanes so you can identify where CivicLens fits.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Sample language</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">"Walk me through a typical council meeting from start to finish. Who preps the agenda? Who runs the video? Who writes the summary after?"</blockquote>
+            <blockquote class="text-navy-100">"And once the meeting ends &mdash; what does the next 24 hours look like? Who's doing what? When does the public or the press get anything?"</blockquote>
+            <blockquote class="text-navy-100">"How do you handle a FOIA or records request that references an old meeting? Who gets the request? What's their first move?"</blockquote>
+            <blockquote class="text-navy-100">"When a council member or the mayor asks 'what did we decide about X six months ago,' how does that get answered?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">What to write down</p>
+          <ul class="list-disc list-inside text-navy-300 space-y-1 text-sm pl-4">
+            <li>Named people and roles (use their titles later &mdash; "your clerk Denise")</li>
+            <li>Estimated hours per meeting on summaries, research, FOIA</li>
+            <li>Tools in the stack: Granicus, Legistar, Novus, Swagit, CivicPlus, SharePoint, Google Drive</li>
+            <li>Whether a transcript exists today at all</li>
+            <li>Any moment where they visibly sigh &mdash; that is the pain you will anchor on next</li>
+          </ul>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Transition phrases</p>
+          <div class="script-line transition space-y-2">
+            <blockquote class="text-navy-100">"That's really clear. So if I'm hearing right, [play back workflow]. I want to go a little deeper on the parts that sound the most time-consuming &mdash; can I ask a few follow-ups?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Don't judge their current stack. If they use Novus, don't say "oh, that's limited." Say "got it, tell me more about how it handles minutes."</p>
+            <p>&mdash; Don't fill gaps with assumptions. If they don't know how a step works, write "unknown" and circle back.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 4: PAIN ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="stage-card bg-navy-900/50 border border-amber-400/20 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/20 border border-amber-400/50 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">4</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Pain &mdash; 8 minutes <span class="text-amber-400 text-sm font-body font-normal">(the most important stage)</span></h2>
+          <p class="text-navy-400 text-sm">Quantify the pain. Get emotion on the record. Find the cost of inaction.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Move the prospect from "this could be nice" to "this is actually costing us something I can quantify." Get the pain into their own words so you can quote it back in the proposal.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Probing questions</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">"What's the worst version of this? The week where it all went wrong &mdash; tell me that story."</blockquote>
+            <blockquote class="text-navy-100">"If the clerk retired tomorrow, what breaks? Who would know how to find things?"</blockquote>
+            <blockquote class="text-navy-100">"How many hours a week would you estimate go into meeting-related research and summary work across your team?"</blockquote>
+            <blockquote class="text-navy-100">"Has council or the mayor complained about search, transparency, or response times? Has a journalist written anything?"</blockquote>
+            <blockquote class="text-navy-100">"When was your last FOIA request and how long did it take? Were you close to the deadline?"</blockquote>
+            <blockquote class="text-navy-100">"If this stayed exactly as it is for the next 12 months, what's the downside? And is there an upside to fixing it now versus next year?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">The silent move</p>
+          <div class="script-line space-y-2">
+            <p class="text-navy-300 text-sm">When they describe a pain, do not immediately offer a solution. Instead: pause, write it down, and say one of:</p>
+            <blockquote class="text-navy-100">"That sounds exhausting. How often does that happen?"</blockquote>
+            <blockquote class="text-navy-100">"And when that happens &mdash; how does it feel for the team?"</blockquote>
+            <blockquote class="text-navy-100">"Got it. How would you measure what that costs you today?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Transition phrases</p>
+          <div class="script-line transition space-y-2">
+            <blockquote class="text-navy-100">"Okay &mdash; I think I've got a pretty clear picture of where it hurts. Can I describe what a better version might look like, and you can tell me if that's actually valuable or if I'm off?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Do not sell yet. Pain stage is for listening, not pitching.</p>
+            <p>&mdash; Do not make the clerk feel criticized. Frame pain as "the system is broken," not "you are behind."</p>
+            <p>&mdash; Do not accept "it's fine" as an answer. If they are on this call, something prompted it. Ask what.</p>
+            <p>&mdash; Do not let the conversation be entirely rational. Emotional pain (frustration, embarrassment, burnout) drives deals more than ROI math.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 5: FUTURE STATE ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="stage-card bg-navy-900/50 border border-white/5 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-400/40 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">5</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Future state &mdash; 5 minutes</h2>
+          <p class="text-navy-400 text-sm">Paint the vision in <em>their</em> words, then tie CivicLens to it briefly.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Reflect the pain back and describe what "solved" looks like, using specific examples from their own workflow. Then &mdash; and only then &mdash; briefly describe how CivicLens fits. Do not do a full demo in this stage. Save it for a second call.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Sample language</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">"So imagine this. A resident emails your clerk asking what council decided about short-term rentals last spring. Today that's a two-hour dig. In the future state, your clerk types the question into a search bar and gets a cited answer in five seconds &mdash; with a link that jumps straight to the video moment. Is that valuable to [named clerk]?"</blockquote>
+            <blockquote class="text-navy-100">"Or imagine the morning after a council meeting. Instead of your clerk writing a summary from scratch, there's already a draft waiting in her inbox with the votes, the financial items, and the public comment section broken out. She edits and publishes in 15 minutes. Is that the right picture?"</blockquote>
+            <blockquote class="text-navy-100">"That's essentially what CivicLens does. We sit on top of your existing Granicus [or whatever they use] video archive and turn the content into structured, searchable, queryable intelligence. No migration, no change to your clerk's current tools on day one."</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Transition phrases</p>
+          <div class="script-line transition space-y-2">
+            <blockquote class="text-navy-100">"Is that the right direction, or is there a piece of the picture I'm missing?"</blockquote>
+            <blockquote class="text-navy-100">"Assuming this is interesting &mdash; can we talk about what a short pilot would look like for your team?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Do not turn this into a feature tour. You can say "we also do highlights, email digests, vote tracking" but do not demo all of them.</p>
+            <p>&mdash; Do not use generic vision language. Use their clerk's name, their council's name, their city's last real issue. "Short-term rentals" beats "policy items."</p>
+            <p>&mdash; Do not promise what you cannot ship. If they ask "can you integrate with our homegrown permitting system," say "probably, let's take that offline."</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAGE 6: NEXT STEPS ========== -->
+  <section class="max-w-5xl mx-auto px-6 py-10 pb-20">
+    <div class="stage-card bg-navy-900/50 border border-white/5 rounded-2xl p-8">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-400/40 flex items-center justify-center text-amber-400 font-display text-lg flex-shrink-0">6</div>
+        <div>
+          <h2 class="font-display text-2xl mb-1">Next steps &mdash; 5 minutes</h2>
+          <p class="text-navy-400 text-sm">Never leave without a concrete commitment on both sides.</p>
+        </div>
+      </div>
+
+      <div class="space-y-5 text-navy-200">
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Objective</p>
+          <p>Lock in a specific next step with a date on the calendar. "We'll circle back" is a failed call. "Let's book a 30-minute demo with your clerk and IT director next Tuesday at 2 PM" is a successful one.</p>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">The commitment ladder</p>
+          <div class="script-line space-y-3">
+            <p class="text-navy-300 text-sm">Pick the highest rung they'll agree to, not the lowest. Start high and ratchet down only if they resist.</p>
+            <blockquote class="text-navy-100">High: "Let's set up a 30-minute working session with your clerk and your IT director next week. I'll demo against your actual archive so it's real to them."</blockquote>
+            <blockquote class="text-navy-100">Middle: "Let me send a short proposal for a 90-day pilot, scoped to your council archive, and schedule a follow-up to walk through it together."</blockquote>
+            <blockquote class="text-navy-100">Lower: "Would it be useful if I sent our procurement kit and the security whitepaper so your IT team can pre-review before we meet again?"</blockquote>
+            <blockquote class="text-navy-100">Lowest: "Can I send you a short recap email and three links &mdash; our product tour, the vs-Granicus comparison, and a case study from [similar city] &mdash; and book a 20-minute follow-up two weeks from now?"</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">What to always ask before hanging up</p>
+          <ul class="list-disc list-inside text-navy-300 space-y-1 text-sm pl-4">
+            <li>"Who else inside the city needs to hear about this? Can I be on the next conversation with them?"</li>
+            <li>"What's the budget or procurement path if we did move forward? Is it a purchase order, a cooperative contract, a grant?"</li>
+            <li>"Is there anything I can send that would help you make the case internally?"</li>
+            <li>"Is there any reason you can think of, right now, that this wouldn't work for you?"</li>
+          </ul>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Sample closing language</p>
+          <div class="script-line space-y-3">
+            <blockquote class="text-navy-100">"Appreciate you walking me through all of that. Honestly &mdash; this sounds like a strong fit. Here's what I'd love to do next: [specific ask]. Does that work?"</blockquote>
+            <blockquote class="text-navy-100">"I'll send a recap by end of day today with the links I mentioned and a calendar invite for our next meeting. If anything changes on your end, just reply to that email."</blockquote>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-navy-400 text-xs uppercase tracking-wider mb-2">Pitfalls</p>
+          <div class="script-line pitfall space-y-2 text-navy-300 text-sm">
+            <p>&mdash; Do not end the call with "I'll send you some materials." That is a death sentence. Always put a date on the calendar.</p>
+            <p>&mdash; Do not propose a pilot without knowing who signs the PO. Find the budget owner before you price anything.</p>
+            <p>&mdash; Do not be afraid to disqualify. If this is not a fit, say so: "Honestly, based on what you've described, I think you'd be over-buying with us today. Let's stay in touch in six months." Burned prospects will remember and come back.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== POST-CALL ========== -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="bg-navy-900/30 border border-white/5 rounded-2xl p-8">
+      <h2 class="font-display text-2xl mb-4">After the call (within 2 hours)</h2>
+      <ul class="space-y-2 text-navy-200 text-sm">
+        <li class="flex gap-3"><span class="text-amber-400">&rarr;</span> Log call notes in CRM: pain points verbatim, stack, budget owner, next step with date.</li>
+        <li class="flex gap-3"><span class="text-amber-400">&rarr;</span> Send recap email with three links (product tour, relevant comparison page, case study).</li>
+        <li class="flex gap-3"><span class="text-amber-400">&rarr;</span> Send calendar invite for the committed next step.</li>
+        <li class="flex gap-3"><span class="text-amber-400">&rarr;</span> Flag any claim you were unsure about (competitor feature, pricing, compliance) and chase it down before the next call.</li>
+        <li class="flex gap-3"><span class="text-amber-400">&rarr;</span> If you heard an objection you couldn't answer, add it to the #sales-objections channel for team review.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950 no-print">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between gap-4 text-sm text-navy-400">
+      <div>&copy; 2026 CivicLens, Inc. Internal sales enablement &mdash; not for public distribution.</div>
+      <div class="flex gap-5">
+        <a href="index.html" class="hover:text-amber-400 transition-colors">Sales Home</a>
+        <a href="../../docs/COMPETITIVE_BATTLECARDS.md" class="hover:text-amber-400 transition-colors">Battle Cards</a>
+        <a href="../index.html" class="hover:text-amber-400 transition-colors">Marketing Home</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

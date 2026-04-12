@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Procurement Resources — CivicLens</title>
+  <meta name="description" content="Everything your procurement team needs to evaluate, approve, and deploy CivicLens. Pre-filled RFP responses, security questionnaires, onboarding checklists, and pricing justification.">
+
+  <meta property="og:title" content="CivicLens for Procurement">
+  <meta property="og:description" content="Pre-filled RFP responses, security questionnaires, onboarding checklists, and ROI documentation for government procurement teams.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://civiclens.ai/procurement/">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(61,95,148,0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 80% at 80% 20%, rgba(232,168,56,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 60% 80%, rgba(61,95,148,0.2) 0%, transparent 60%);
+      animation: meshShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes meshShift {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+      100% { background-position: 20% 20%, 80% 10%, 40% 80%; }
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+
+    .hero-line {
+      opacity: 0;
+      transform: translateY(40px);
+      animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .hero-line:nth-child(1) { animation-delay: 0.15s; }
+    .hero-line:nth-child(2) { animation-delay: 0.3s; }
+    .hero-line:nth-child(3) { animation-delay: 0.5s; }
+    @keyframes heroReveal { to { opacity: 1; transform: translateY(0); } }
+
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .resource-card {
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.35s ease;
+    }
+    .resource-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px -15px rgba(0,0,0,0.4);
+      border-color: rgba(232,168,56,0.4);
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased overflow-x-hidden">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="../index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="../case-studies/" class="hover:text-amber-400 transition-colors">Case Studies</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../developers.html" class="hover:text-amber-400 transition-colors">Developers</a>
+        <a href="index.html" class="text-amber-400">For Procurement</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="../contact.html" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Talk to Sales
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="relative min-h-[70vh] flex items-center pt-16">
+    <div class="hero-mesh absolute inset-0"></div>
+    <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+
+    <div class="relative max-w-5xl mx-auto px-6 py-24 md:py-32 text-center">
+      <div class="hero-line inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm font-medium mb-8">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        Built for government procurement
+      </div>
+      <h1 class="font-display text-5xl md:text-6xl lg:text-7xl tracking-tight leading-[1.05] mb-6">
+        <span class="hero-line block">Everything your</span>
+        <span class="hero-line block">procurement team</span>
+        <span class="hero-line block text-amber-400">needs.</span>
+      </h1>
+      <p class="hero-line text-navy-200 text-lg md:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
+        Pre-filled RFP responses. CAIQ-aligned security questionnaires. Onboarding checklists. ROI documentation. Give your procurement team everything they need to say yes.
+      </p>
+      <div class="hero-line flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="../contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Talk to Sales
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
+        <a href="#resources" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-navy-400 text-navy-100 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-white/5">
+          Browse Resources
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="glow-line max-w-5xl mx-auto"></div>
+
+  <!-- ========== RESOURCE CARDS ========== -->
+  <section id="resources" class="py-24 relative">
+    <div class="absolute inset-0 bg-gradient-to-b from-navy-900/20 via-transparent to-transparent"></div>
+    <div class="relative max-w-7xl mx-auto px-6">
+      <div class="text-center mb-16 reveal">
+        <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Procurement Kit</p>
+        <h2 class="font-display text-4xl md:text-5xl tracking-tight mb-4">Four documents. Zero guesswork.</h2>
+        <p class="text-navy-300 text-lg max-w-2xl mx-auto">Download, review, route internally. Every document is pre-filled with the answers your procurement office is about to ask.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-8">
+
+        <!-- Card 1: RFP Response -->
+        <a href="rfp-response-template.html" class="resource-card bg-navy-900/50 border border-white/10 rounded-2xl p-8 block reveal">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-14 h-14 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+              <svg class="w-7 h-7 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold tracking-wider uppercase text-navy-400">Template</span>
+          </div>
+          <h3 class="font-display text-2xl mb-3">RFP Response Template</h3>
+          <p class="text-navy-300 leading-relaxed mb-6">Pre-filled boilerplate covering company overview, technical architecture, data residency, uptime SLAs, support tiers, pricing, and references. Drop it into your response.</p>
+          <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+            Open template
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+          </div>
+        </a>
+
+        <!-- Card 2: Security Questionnaire -->
+        <a href="security-questionnaire.html" class="resource-card bg-navy-900/50 border border-white/10 rounded-2xl p-8 block reveal reveal-delay-1">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-14 h-14 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+              <svg class="w-7 h-7 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold tracking-wider uppercase text-navy-400">CAIQ-lite</span>
+          </div>
+          <h3 class="font-display text-2xl mb-3">Security Questionnaire</h3>
+          <p class="text-navy-300 leading-relaxed mb-6">28 pre-answered questions covering encryption, access control, SSO/SAML, audit logging, backup/DR, incident response, subprocessors, and compliance posture.</p>
+          <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+            Open questionnaire
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+          </div>
+        </a>
+
+        <!-- Card 3: Onboarding Checklist -->
+        <a href="vendor-onboarding-checklist.html" class="resource-card bg-navy-900/50 border border-white/10 rounded-2xl p-8 block reveal reveal-delay-2">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-14 h-14 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+              <svg class="w-7 h-7 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold tracking-wider uppercase text-navy-400">Checklist</span>
+          </div>
+          <h3 class="font-display text-2xl mb-3">Vendor Onboarding Checklist</h3>
+          <p class="text-navy-300 leading-relaxed mb-6">Every step from NDA to go-live: W-9, MSA, DPA, IdP/SSO setup, API key provisioning, pilot scope, and go-live criteria. Print and work through it.</p>
+          <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+            Open checklist
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+          </div>
+        </a>
+
+        <!-- Card 4: Pricing Justification -->
+        <a href="pricing-justification.html" class="resource-card bg-navy-900/50 border border-white/10 rounded-2xl p-8 block reveal reveal-delay-3">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-14 h-14 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+              <svg class="w-7 h-7 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold tracking-wider uppercase text-navy-400">ROI</span>
+          </div>
+          <h3 class="font-display text-2xl mb-3">Pricing Justification</h3>
+          <p class="text-navy-300 leading-relaxed mb-6">Side-by-side cost comparison vs. manual transcription and staff FTE. 3-year TCO analysis, per-seat vs. per-org pricing, and a link to the interactive ROI calculator.</p>
+          <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+            Open justification
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== TRUST SIGNALS ========== -->
+  <section class="py-24 relative border-t border-white/5 bg-navy-900/30">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center mb-16 reveal">
+        <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Compliance Posture</p>
+        <h2 class="font-display text-4xl md:text-5xl tracking-tight mb-4">Built for public-sector scrutiny</h2>
+        <p class="text-navy-300 text-lg max-w-2xl mx-auto">We are honest about what is in place today and what is on the roadmap. No vaporware claims.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="bg-navy-900/50 border border-white/10 rounded-2xl p-6 reveal">
+          <div class="w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          </div>
+          <h3 class="font-display text-lg mb-1">SOC 2 Aligned</h3>
+          <p class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Type II in progress</p>
+          <p class="text-navy-300 text-sm leading-relaxed">Controls mapped to SOC 2 Trust Services Criteria. Immutable audit logging, RBAC-ready auth, and documented incident response.</p>
+        </div>
+
+        <div class="bg-navy-900/50 border border-white/10 rounded-2xl p-6 reveal reveal-delay-1">
+          <div class="w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/></svg>
+          </div>
+          <h3 class="font-display text-lg mb-1">FedRAMP Path</h3>
+          <p class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Moderate target</p>
+          <p class="text-navy-300 text-sm leading-relaxed">Architecture designed against NIST 800-53 moderate baseline. Self-hosted deployment available today for agencies that need air-gap.</p>
+        </div>
+
+        <div class="bg-navy-900/50 border border-white/10 rounded-2xl p-6 reveal reveal-delay-2">
+          <div class="w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h3 class="font-display text-lg mb-1">FISMA-Ready</h3>
+          <p class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Low / Moderate</p>
+          <p class="text-navy-300 text-sm leading-relaxed">Append-only audit trails with SHA-256 integrity chain. SSO via SAML 2.0. Per-tenant data isolation and exportable FOIA-compliant records.</p>
+        </div>
+
+        <div class="bg-navy-900/50 border border-white/10 rounded-2xl p-6 reveal reveal-delay-3">
+          <div class="w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          </div>
+          <h3 class="font-display text-lg mb-1">WCAG 2.1 AA</h3>
+          <p class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Section 508</p>
+          <p class="text-navy-300 text-sm leading-relaxed">Keyboard navigation, screen reader announcements, color-contrast audited. VPAT available on request. Accessibility is a feature, not an afterthought.</p>
+        </div>
+      </div>
+
+      <div class="mt-12 bg-navy-900/50 border border-white/10 rounded-2xl p-6 text-center reveal">
+        <p class="text-navy-300 text-sm leading-relaxed max-w-3xl mx-auto">
+          <span class="text-amber-400 font-semibold">A note on honesty:</span>
+          CivicLens is a young platform and we refuse to claim certifications we do not yet hold. Our
+          <a href="../../docs/SECURITY.md" class="text-amber-400 hover:underline">SECURITY.md</a>
+          document maintains an up-to-date separation between implemented controls and roadmap items. Procurement teams appreciate this; so do auditors.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== COOPERATIVE PURCHASING ========== -->
+  <section class="py-24 relative border-t border-white/5">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="bg-gradient-to-br from-navy-900/80 to-navy-950/80 border border-white/10 rounded-3xl p-10 md:p-14 reveal">
+        <div class="grid md:grid-cols-2 gap-10 items-center">
+          <div>
+            <p class="text-amber-400 font-semibold text-sm tracking-wider uppercase mb-3">Skip the RFP</p>
+            <h2 class="font-display text-3xl md:text-4xl tracking-tight mb-4">Cooperative purchasing contracts</h2>
+            <p class="text-navy-300 leading-relaxed mb-6">CivicLens is available through cooperative purchasing vehicles that let you skip a full RFP cycle. We support purchase orders, multi-year commitments, and NET-30/NET-45 terms.</p>
+            <a href="../contact.html" class="inline-flex items-center gap-2 text-amber-400 font-semibold">
+              Request contract details
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+            </a>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 bg-navy-900/60 border border-white/5 rounded-xl px-4 py-3">
+              <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+              <span class="font-semibold text-sm">NASPO ValuePoint</span>
+              <span class="ml-auto text-xs text-navy-400">In progress</span>
+            </div>
+            <div class="flex items-center gap-3 bg-navy-900/60 border border-white/5 rounded-xl px-4 py-3">
+              <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+              <span class="font-semibold text-sm">Sourcewell</span>
+              <span class="ml-auto text-xs text-navy-400">Available</span>
+            </div>
+            <div class="flex items-center gap-3 bg-navy-900/60 border border-white/5 rounded-xl px-4 py-3">
+              <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+              <span class="font-semibold text-sm">OMNIA Partners</span>
+              <span class="ml-auto text-xs text-navy-400">Available</span>
+            </div>
+            <div class="flex items-center gap-3 bg-navy-900/60 border border-white/5 rounded-xl px-4 py-3">
+              <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+              <span class="font-semibold text-sm">GSA Advantage</span>
+              <span class="ml-auto text-xs text-navy-400">2026 target</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CTA ========== -->
+  <section class="py-24 relative border-t border-white/5">
+    <div class="max-w-4xl mx-auto px-6 text-center reveal">
+      <h2 class="font-display text-4xl md:text-5xl tracking-tight mb-6">Questions your procurement team has not thought of yet?</h2>
+      <p class="text-navy-300 text-lg mb-10 max-w-2xl mx-auto">Our team has answered hundreds of procurement questionnaires for city clerks, IT directors, and finance committees. Send us yours.</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="../contact.html" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Talk to Sales
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
+        <a href="../pricing.html" class="inline-flex items-center justify-center gap-2 border border-navy-500 hover:border-navy-400 text-navy-100 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-white/5">
+          View Pricing
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-16">
+      <div class="grid md:grid-cols-5 gap-12 mb-12">
+        <div class="md:col-span-2">
+          <a href="../index.html" class="flex items-center gap-2.5 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <span class="font-display text-xl tracking-tight">CivicLens</span>
+          </a>
+          <p class="text-navy-400 text-sm leading-relaxed max-w-xs">AI-powered city council meeting intelligence. Making local government transparent, searchable, and accountable.</p>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Product</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="../index.html#features" class="hover:text-amber-400 transition-colors">Features</a></li>
+            <li><a href="../demo.html" class="hover:text-amber-400 transition-colors">Live Demo</a></li>
+            <li><a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a></li>
+            <li><a href="../developers.html" class="hover:text-amber-400 transition-colors">Developers</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">For Buyers</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="index.html" class="hover:text-amber-400 transition-colors">Procurement Kit</a></li>
+            <li><a href="rfp-response-template.html" class="hover:text-amber-400 transition-colors">RFP Template</a></li>
+            <li><a href="security-questionnaire.html" class="hover:text-amber-400 transition-colors">Security Q&amp;A</a></li>
+            <li><a href="pricing-justification.html" class="hover:text-amber-400 transition-colors">ROI Justification</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Legal</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="../legal/privacy-policy.html" class="hover:text-amber-400 transition-colors">Privacy Policy</a></li>
+            <li><a href="../legal/terms-of-service.html" class="hover:text-amber-400 transition-colors">Terms of Service</a></li>
+            <li><a href="../legal/data-processing-agreement.html" class="hover:text-amber-400 transition-colors">DPA</a></li>
+            <li><a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+        <p class="text-navy-500 text-xs">Built for public servants.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

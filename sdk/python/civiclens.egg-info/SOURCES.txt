@@ -1,0 +1,11 @@
+README.md
+setup.py
+civiclens/__init__.py
+civiclens/client.py
+civiclens.egg-info/PKG-INFO
+civiclens.egg-info/SOURCES.txt
+civiclens.egg-info/dependency_links.txt
+civiclens.egg-info/requires.txt
+civiclens.egg-info/top_level.txt
+tests/__init__.py
+tests/test_client.py

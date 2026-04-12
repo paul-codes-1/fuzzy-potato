@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicLens Widget - Embeddable Meeting Q&A for Government Websites</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #1e293b;
+      background: #f8fafc;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* -- Header / Nav -- */
+    .site-header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .site-header-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: #1e293b;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.3px;
+    }
+    .logo svg { width: 32px; height: 32px; }
+    .logo span { color: #6366f1; }
+    .header-links { display: flex; align-items: center; gap: 28px; }
+    .header-links a {
+      color: #64748b;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .header-links a:hover { color: #1e293b; }
+    .header-cta {
+      background: #6366f1 !important;
+      color: #fff !important;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .header-cta:hover { background: #4f46e5 !important; }
+
+    /* -- Hero -- */
+    .hero {
+      text-align: center;
+      padding: 80px 24px 60px;
+      background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #eef2ff;
+      color: #6366f1;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 100px;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.15;
+      margin-bottom: 16px;
+      color: #0f172a;
+    }
+    .hero h1 span { color: #6366f1; }
+    .hero p {
+      font-size: 18px;
+      color: #64748b;
+      max-width: 580px;
+      margin: 0 auto 32px;
+      line-height: 1.7;
+    }
+    .hero-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
+    .btn-secondary { background: #fff; color: #1e293b; border: 1px solid #e2e8f0; }
+    .btn-secondary:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+    /* -- Sections -- */
+    .section {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 80px 24px;
+    }
+    .section-label {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #6366f1;
+      margin-bottom: 8px;
+    }
+    .section-title {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      color: #0f172a;
+    }
+    .section-desc {
+      font-size: 16px;
+      color: #64748b;
+      max-width: 640px;
+      margin-bottom: 40px;
+      line-height: 1.7;
+    }
+
+    /* -- Installation -- */
+    .install-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    .install-step {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+    .install-step-num {
+      width: 32px;
+      height: 32px;
+      background: #eef2ff;
+      color: #6366f1;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+    .install-step h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .install-step p {
+      font-size: 14px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    /* -- Code block -- */
+    .code-block-wrapper {
+      position: relative;
+      margin-bottom: 40px;
+    }
+    .code-block {
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #e2e8f0;
+      border: 1px solid #1e293b;
+    }
+    .code-block .comment { color: #64748b; }
+    .code-block .tag { color: #f472b6; }
+    .code-block .attr { color: #a5b4fc; }
+    .code-block .str { color: #86efac; }
+    .code-copy {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .code-copy:hover { background: #334155; color: #e2e8f0; }
+    .code-copy.copied { background: #16a34a; color: #fff; border-color: #16a34a; }
+
+    /* -- Config options table -- */
+    .config-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 48px;
+    }
+    .config-table th {
+      background: #f8fafc;
+      padding: 12px 18px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .config-table td {
+      padding: 14px 18px;
+      font-size: 14px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .config-table tr:last-child td { border-bottom: none; }
+    .config-table code {
+      background: #f1f5f9;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #6366f1;
+      white-space: nowrap;
+    }
+    .config-table .required {
+      color: #ef4444;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    .config-table .optional {
+      color: #94a3b8;
+      font-size: 11px;
+    }
+
+    /* -- Theme preview -- */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    .theme-card {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+    }
+    .theme-card-label {
+      padding: 14px 18px;
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .theme-card-label code {
+      background: #f1f5f9;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #6366f1;
+    }
+    .theme-preview {
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .theme-preview-light { background: #f1f5f9; }
+    .theme-preview-dark { background: #1e1e2e; }
+    .mock-widget {
+      width: 280px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    }
+    .mock-header {
+      padding: 12px 14px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .mock-header svg { width: 16px; height: 16px; fill: currentColor; }
+    .mock-body { padding: 14px; }
+    .mock-bubble {
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      max-width: 85%;
+    }
+    .mock-body-light { background: #fff; }
+    .mock-body-dark { background: #1e1e2e; }
+    .mock-bubble-user-light { background: #6366f1; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+    .mock-bubble-user-dark { background: #6366f1; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+    .mock-bubble-bot-light { background: #f1f5f9; color: #1e293b; border-bottom-left-radius: 4px; }
+    .mock-bubble-bot-dark { background: #313244; color: #cdd6f4; border-bottom-left-radius: 4px; }
+    .mock-input {
+      display: flex;
+      gap: 6px;
+      padding: 10px 14px;
+    }
+    .mock-input-light { border-top: 1px solid #e2e8f0; background: #fafafa; }
+    .mock-input-dark { border-top: 1px solid #313244; background: #181825; }
+    .mock-input-field {
+      flex: 1;
+      height: 28px;
+      border-radius: 6px;
+    }
+    .mock-input-field-light { background: #fff; border: 1px solid #d1d5db; }
+    .mock-input-field-dark { background: #1e1e2e; border: 1px solid #45475a; }
+    .mock-input-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: #6366f1;
+    }
+
+    /* -- Features grid -- */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .feature-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .feature-card:hover {
+      border-color: #c7d2fe;
+      box-shadow: 0 4px 12px rgba(99,102,241,0.08);
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: #eef2ff;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+      font-size: 20px;
+    }
+    .feature-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .feature-card p {
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    /* -- Live demo banner -- */
+    .demo-banner {
+      background: linear-gradient(135deg, #eef2ff, #faf5ff);
+      border: 1px solid #c7d2fe;
+      border-radius: 12px;
+      padding: 28px 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-top: 48px;
+    }
+    .demo-banner-icon {
+      width: 52px;
+      height: 52px;
+      background: #6366f1;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: #fff;
+      font-size: 24px;
+    }
+    .demo-banner h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .demo-banner p {
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    /* -- Footer -- */
+    .site-footer {
+      border-top: 1px solid #e2e8f0;
+      padding: 32px 24px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 13px;
+      background: #fff;
+    }
+    .site-footer a { color: #6366f1; text-decoration: none; }
+    .site-footer a:hover { text-decoration: underline; }
+
+    /* -- Responsive -- */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .hero p { font-size: 16px; }
+      .install-steps { grid-template-columns: 1fr; }
+      .theme-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .header-links { display: none; }
+      .demo-banner { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="logo" href="#">
+        <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M16 5L6 11v2h20v-2L16 5zm0 3.5L22.5 12h-13L16 8.5z" fill="#fff"/><rect x="8" y="15" width="3.5" height="7" rx="1" fill="#fff"/><rect x="14.25" y="15" width="3.5" height="7" rx="1" fill="#fff"/><rect x="20.5" y="15" width="3.5" height="7" rx="1" fill="#fff"/><rect x="6" y="24" width="20" height="2.5" rx="1" fill="#fff"/></svg>
+        Civic<span>Lens</span>
+      </a>
+      <nav class="header-links">
+        <a href="#installation">Installation</a>
+        <a href="#configuration">Configuration</a>
+        <a href="#themes">Themes</a>
+        <a href="#features">Features</a>
+        <a href="https://civiclens.ai/docs" class="header-cta">Documentation</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7v1h20V7L12 2z" fill="#6366f1"/><rect x="4" y="10" width="3" height="6" rx="1" fill="#6366f1"/><rect x="10.5" y="10" width="3" height="6" rx="1" fill="#6366f1"/><rect x="17" y="10" width="3" height="6" rx="1" fill="#6366f1"/><rect x="2" y="18" width="20" height="2" rx="1" fill="#6366f1"/></svg>
+      Embeddable Widget
+    </div>
+    <h1>AI-Powered Meeting Q&A<br>for <span>Government Websites</span></h1>
+    <p>Add a single script tag to any government website and give citizens instant access to meeting transcripts, votes, budgets, and public discussions.</p>
+    <div class="hero-actions">
+      <a href="#installation" class="btn btn-primary">Get Started</a>
+      <a href="#demo" class="btn btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7L8 5z" fill="#6366f1"/></svg>
+        Try Live Demo
+      </a>
+    </div>
+  </section>
+
+  <!-- Installation -->
+  <section class="section" id="installation">
+    <div class="section-label">Installation</div>
+    <div class="section-title">Up and running in minutes</div>
+    <div class="section-desc">No build tools, no frameworks, no dependencies. Just add the script tag and you are done.</div>
+
+    <div class="install-steps">
+      <div class="install-step">
+        <div class="install-step-num">1</div>
+        <h3>Get your API key</h3>
+        <p>Create a CivicLens account and set up your tenant. Your API key will be in the Admin Dashboard under Settings.</p>
+      </div>
+      <div class="install-step">
+        <div class="install-step-num">2</div>
+        <h3>Add the script tag</h3>
+        <p>Copy the snippet below and paste it before the closing <code>&lt;/body&gt;</code> tag on your website.</p>
+      </div>
+      <div class="install-step">
+        <div class="install-step-num">3</div>
+        <h3>Customize and launch</h3>
+        <p>Set your theme, accent color, position, and welcome message using data attributes. No code changes needed.</p>
+      </div>
+    </div>
+
+    <div class="code-block-wrapper">
+      <button class="code-copy" onclick="copySnippet(this)" aria-label="Copy code snippet">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" stroke="currentColor" stroke-width="2"/></svg>
+        Copy
+      </button>
+      <pre class="code-block" id="snippet"><span class="comment">&lt;!-- CivicLens Meeting Q&amp;A Widget --&gt;</span>
+<span class="tag">&lt;script</span>
+  <span class="attr">src</span>=<span class="str">"https://cdn.civiclens.ai/widget.js"</span>
+  <span class="attr">data-api-key</span>=<span class="str">"mra_your_api_key_here"</span>
+  <span class="attr">data-api-url</span>=<span class="str">"https://api.civiclens.ai"</span>
+  <span class="attr">data-theme</span>=<span class="str">"light"</span>
+  <span class="attr">data-position</span>=<span class="str">"bottom-right"</span>
+  <span class="attr">data-accent-color</span>=<span class="str">"#1a56db"</span>
+  <span class="attr">data-title</span>=<span class="str">"Meeting Q&amp;A"</span>
+  <span class="attr">data-welcome-message</span>=<span class="str">"Ask anything about city council meetings."</span>
+  <span class="attr">data-suggested-questions</span>=<span class="str">"What was discussed at the last council meeting?|How was the budget allocated?|Any recent zoning changes?"</span><span class="tag">&gt;&lt;/script&gt;</span></pre>
+    </div>
+  </section>
+
+  <!-- Configuration -->
+  <section class="section" id="configuration" style="padding-top: 0;">
+    <div class="section-label">Configuration</div>
+    <div class="section-title">Data attribute reference</div>
+    <div class="section-desc">Every option is set via HTML data attributes on the script tag. No JavaScript configuration needed.</div>
+
+    <table class="config-table">
+      <thead>
+        <tr>
+          <th>Attribute</th>
+          <th>Description</th>
+          <th>Default</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>data-api-key</code></td>
+          <td>Your tenant API key (starts with <code>mra_</code>)</td>
+          <td>--</td>
+          <td><span class="required">Required</span></td>
+        </tr>
+        <tr>
+          <td><code>data-api-url</code></td>
+          <td>CivicLens API server URL</td>
+          <td>--</td>
+          <td><span class="required">Required</span></td>
+        </tr>
+        <tr>
+          <td><code>data-theme</code></td>
+          <td>Color theme for the widget</td>
+          <td><code>"light"</code></td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+        <tr>
+          <td><code>data-position</code></td>
+          <td>Corner of the screen for the widget button</td>
+          <td><code>"bottom-right"</code></td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+        <tr>
+          <td><code>data-accent-color</code></td>
+          <td>Primary color (hex) for buttons, links, and header</td>
+          <td><code>"#1a56db"</code></td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+        <tr>
+          <td><code>data-title</code></td>
+          <td>Header title displayed at the top of the chat panel</td>
+          <td><code>"Meeting Q&amp;A"</code></td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+        <tr>
+          <td><code>data-welcome-message</code></td>
+          <td>Greeting text shown before the first question</td>
+          <td>Default welcome text</td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+        <tr>
+          <td><code>data-suggested-questions</code></td>
+          <td>Pipe-separated list of up to 3 starter questions</td>
+          <td>3 default questions</td>
+          <td><span class="optional">Optional</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Themes -->
+  <section class="section" id="themes" style="padding-top: 0;">
+    <div class="section-label">Themes</div>
+    <div class="section-title">Light and dark modes</div>
+    <div class="section-desc">The widget ships with two built-in themes. Switch between them with a single data attribute. All colors adapt automatically based on your accent color.</div>
+
+    <div class="theme-grid">
+      <!-- Light theme -->
+      <div class="theme-card">
+        <div class="theme-card-label">
+          Light Theme
+          <code>data-theme="light"</code>
+        </div>
+        <div class="theme-preview theme-preview-light">
+          <div class="mock-widget">
+            <div class="mock-header" style="background: #6366f1;">
+              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2L2 7v1h20V7L12 2zm0 2.26L18.18 7H5.82L12 4.26zM2 22h20v-2H2v2zm2-3h2v-5H4v5zm4 0h2v-5H8v5zm4 0h2v-5h-2v5zm4 0h2v-5h-2v5zm4 0h2v-5h-2v5z"/></svg>
+              Meeting Q&A
+            </div>
+            <div class="mock-body mock-body-light">
+              <div class="mock-bubble mock-bubble-user-light">What was the budget for parks?</div>
+              <div class="mock-bubble mock-bubble-bot-light">The council allocated <strong>$2.4M</strong> to parks and recreation in the FY2026 budget...</div>
+            </div>
+            <div class="mock-input mock-input-light">
+              <div class="mock-input-field mock-input-field-light"></div>
+              <div class="mock-input-btn"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dark theme -->
+      <div class="theme-card">
+        <div class="theme-card-label">
+          Dark Theme
+          <code>data-theme="dark"</code>
+        </div>
+        <div class="theme-preview theme-preview-dark">
+          <div class="mock-widget">
+            <div class="mock-header" style="background: #6366f1;">
+              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2L2 7v1h20V7L12 2zm0 2.26L18.18 7H5.82L12 4.26zM2 22h20v-2H2v2zm2-3h2v-5H4v5zm4 0h2v-5H8v5zm4 0h2v-5h-2v5zm4 0h2v-5h-2v5zm4 0h2v-5h-2v5z"/></svg>
+              Meeting Q&A
+            </div>
+            <div class="mock-body mock-body-dark">
+              <div class="mock-bubble mock-bubble-user-dark">What was the budget for parks?</div>
+              <div class="mock-bubble mock-bubble-bot-dark">The council allocated <strong>$2.4M</strong> to parks and recreation in the FY2026 budget...</div>
+            </div>
+            <div class="mock-input mock-input-dark">
+              <div class="mock-input-field mock-input-field-dark"></div>
+              <div class="mock-input-btn"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section" id="features" style="padding-top: 0;">
+    <div class="section-label">Features</div>
+    <div class="section-title">Everything you need, nothing you don't</div>
+    <div class="section-desc">The widget is a single, self-contained JavaScript file. No external dependencies, no iframes, no performance impact.</div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#128172;</div>
+        <h3>Multi-Turn Chat</h3>
+        <p>Citizens can ask follow-up questions in a natural conversation. Context is maintained across the session.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127912;</div>
+        <h3>Shadow DOM Isolation</h3>
+        <p>Styles are fully encapsulated. The widget never conflicts with your site's CSS, and vice versa.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9000;</div>
+        <h3>Keyboard Accessible</h3>
+        <p>Full keyboard navigation with Escape to close, Tab trapping, focus management, and ARIA attributes.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128241;</div>
+        <h3>Mobile Responsive</h3>
+        <p>Automatically goes full-screen on small viewports. Touch-friendly controls and smooth animations.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128270;</div>
+        <h3>Source Citations</h3>
+        <p>Every answer includes clickable source cards with meeting date, body, and video timestamp deep-links.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128161;</div>
+        <h3>Suggested Questions</h3>
+        <p>Show 3 configurable starter questions to help citizens discover what they can ask about.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127752;</div>
+        <h3>Theming</h3>
+        <p>Light and dark modes with customizable accent color. Matches any government website brand.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9889;</div>
+        <h3>Typing Indicator</h3>
+        <p>Animated dots with rotating status text keep users informed while the AI searches meeting records.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128196;</div>
+        <h3>Markdown Rendering</h3>
+        <p>Responses render bold, italic, links, lists, and inline code for well-formatted answers.</p>
+      </div>
+    </div>
+
+    <!-- Live demo banner -->
+    <div class="demo-banner" id="demo">
+      <div class="demo-banner-icon">&#128172;</div>
+      <div>
+        <h3>Try the live widget on this page</h3>
+        <p>Click the chat button in the bottom-right corner to interact with the CivicLens widget. This demo is connected to a local API server for testing.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <p>&copy; 2026 <a href="https://civiclens.ai">CivicLens</a>. AI-powered civic transparency for every community.</p>
+  </footer>
+
+  <script>
+    function copySnippet(btn) {
+      var text = '<!-- CivicLens Meeting Q&A Widget -->\n<script\n  src="https://cdn.civiclens.ai/widget.js"\n  data-api-key="mra_your_api_key_here"\n  data-api-url="https://api.civiclens.ai"\n  data-theme="light"\n  data-position="bottom-right"\n  data-accent-color="#1a56db"\n  data-title="Meeting Q&A"\n  data-welcome-message="Ask anything about city council meetings."\n  data-suggested-questions="What was discussed at the last council meeting?|How was the budget allocated?|Any recent zoning changes?"><\/script>';
+      navigator.clipboard.writeText(text).then(function() {
+        btn.classList.add('copied');
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Copied!';
+        setTimeout(function() {
+          btn.classList.remove('copied');
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" stroke="currentColor" stroke-width="2"/></svg> Copy';
+        }, 2000);
+      });
+    }
+  </script>
+
+  <!--
+    CivicLens Embeddable Widget - Live Demo
+    This script tag loads the widget on this demo page.
+    Replace data-api-key and data-api-url with your own values for production use.
+  -->
+  <script
+    src="./civiclens-widget.js"
+    data-api-key="demo_test_key"
+    data-api-url="http://localhost:8000"
+    data-theme="light"
+    data-position="bottom-right"
+    data-accent-color="#6366f1"
+    data-welcome-message="Ask anything about Elk Grove city council meetings, votes, budgets, or public discussions."
+    data-title="Elk Grove Meeting Q&A"
+    data-suggested-questions="What was discussed at the last council meeting?|How was the city budget allocated this year?|Were there any contentious votes recently?">
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — CivicLens</title>
+  <meta name="description" content="See what's new in CivicLens. Product updates, new features, improvements, and fixes for your city council intelligence platform.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+
+    .timeline-line {
+      position: absolute;
+      left: 23px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, #e8a838, #3d5f94 40%, #3d5f94 60%, transparent);
+    }
+
+    @media (min-width: 768px) {
+      .timeline-line {
+        left: 50%;
+        transform: translateX(-1px);
+      }
+    }
+
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAV ========== -->
+  <nav class="fixed top-0 inset-x-0 z-50 border-b border-white/5 bg-navy-950/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="flex items-center gap-6 text-sm">
+        <a href="index.html#features" class="text-navy-300 hover:text-white transition-colors hidden sm:inline">Features</a>
+        <a href="index.html#pricing" class="text-navy-300 hover:text-white transition-colors hidden sm:inline">Pricing</a>
+        <a href="changelog.html" class="text-amber-400 font-medium">Changelog</a>
+        <a href="index.html#cta" class="px-4 py-2 rounded-full bg-amber-500 text-navy-950 font-semibold text-sm hover:bg-amber-400 transition-colors">Get Started</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="pt-32 pb-16 px-6">
+    <div class="max-w-3xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-800 border border-navy-700 text-xs font-medium text-navy-200 mb-6">
+        <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Product Updates
+      </div>
+      <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.1] mb-6">
+        What's new in<br>
+        <span class="bg-gradient-to-r from-amber-400 to-amber-200 bg-clip-text text-transparent">CivicLens</span>
+      </h1>
+      <p class="text-navy-300 text-lg max-w-xl mx-auto mb-10">
+        We ship improvements every week. Here's what's changed across the platform, from major features to under-the-hood fixes.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <!-- Subscribe form -->
+        <form id="subscribe-form" class="flex w-full sm:w-auto" onsubmit="event.preventDefault(); document.getElementById('subscribe-success').classList.remove('hidden'); this.classList.add('hidden');">
+          <input
+            type="email"
+            placeholder="your@email.com"
+            required
+            class="flex-1 sm:w-64 px-4 py-2.5 rounded-l-lg bg-navy-800 border border-navy-700 text-sm text-white placeholder-navy-500 focus:outline-none focus:border-amber-500 transition-colors"
+          >
+          <button type="submit" class="px-5 py-2.5 rounded-r-lg bg-amber-500 text-navy-950 text-sm font-semibold hover:bg-amber-400 transition-colors whitespace-nowrap">
+            Subscribe to updates
+          </button>
+        </form>
+        <p id="subscribe-success" class="hidden text-sm text-emerald-400 font-medium">
+          Subscribed! You'll get notified of new releases.
+        </p>
+        <!-- RSS -->
+        <a href="#" class="inline-flex items-center gap-2 text-sm text-navy-400 hover:text-amber-400 transition-colors">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6.18 15.64a2.18 2.18 0 010 4.36 2.18 2.18 0 010-4.36M4 4.44A15.56 15.56 0 0119.56 20h-2.83A12.73 12.73 0 004 7.27V4.44m0 5.66a9.9 9.9 0 019.9 9.9h-2.83A7.07 7.07 0 004 12.93v-2.83z"/>
+          </svg>
+          RSS Feed
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="glow-line max-w-5xl mx-auto"></div>
+
+  <!-- ========== CHANGELOG TIMELINE ========== -->
+  <section class="py-20 px-6">
+    <div class="max-w-4xl mx-auto relative">
+      <!-- The timeline spine -->
+      <div class="timeline-line hidden md:block"></div>
+
+      <!-- v1.6.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12">
+          <div class="inline-flex items-center gap-2 mb-3">
+            <span class="text-2xl font-display tracking-tight">v1.6.0</span>
+            <span class="text-xs text-navy-400 font-medium">March 2026</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">On-Demand Reporting & Real-Time Search</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">Generate PDF exports of any meeting, set up weekly email digests, and search across meetings with sub-second results.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pl-12 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Custom PDF report builder with cover pages, charts, and branded templates</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Configurable email digest subscriptions (daily, weekly, or per-body)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Global search now uses FlexSearch with sub-200ms response time across 10,000+ meetings</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Search index chunked for lazy-loading -- initial page load reduced by 62%</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/20">Fix</span>
+            <span class="text-sm text-navy-200">Fixed transcript timestamp links not seeking to correct video position in Safari</span>
+          </div>
+        </div>
+        <!-- Timeline dot -->
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-amber-500 border-4 border-navy-950 shadow-lg shadow-amber-500/20"></div>
+      </article>
+
+      <!-- v1.5.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12 md:order-1 md:col-start-2">
+          <div class="inline-flex items-center gap-2 mb-3 md:flex-row-reverse">
+            <span class="text-2xl font-display tracking-tight">v1.5.0</span>
+            <span class="text-xs text-navy-400 font-medium">February 2026</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Meeting Diff, Sentiment & Calendar Feeds</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">Compare how topics evolved across meetings, gauge council sentiment, and subscribe to meeting calendars directly.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pr-12 md:order-0 md:col-start-1 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Meeting diff view: side-by-side comparison of how policy language changed between readings</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Sentiment analysis dashboard with per-topic and per-council-member breakdowns</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">ICS calendar feeds -- subscribe to specific meeting bodies in Google Calendar or Outlook</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">"What's New" page highlights recent notable changes across meetings</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/20">Fix</span>
+            <span class="text-sm text-navy-200">Corrected vote count display when abstentions were present</span>
+          </div>
+        </div>
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-navy-600 border-4 border-navy-950"></div>
+      </article>
+
+      <!-- v1.4.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12">
+          <div class="inline-flex items-center gap-2 mb-3">
+            <span class="text-2xl font-display tracking-tight">v1.4.0</span>
+            <span class="text-xs text-navy-400 font-medium">January 2026</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Multilingual Support, PWA & Notifications</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">CivicLens now speaks 5 languages, works offline as a PWA, and can push real-time alerts when topics you track come up.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pl-12 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Full i18n: English, Spanish, French, Mandarin, and Arabic with RTL support</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Progressive Web App: installable, offline-capable, cached meeting data</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Push notifications for tracked topics, specific council members, or meeting bodies</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Language switcher component with automatic locale detection</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/20">Fix</span>
+            <span class="text-sm text-navy-200">Fixed accessibility announcer not working with screen readers in non-English locales</span>
+          </div>
+        </div>
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-navy-600 border-4 border-navy-950"></div>
+      </article>
+
+      <!-- v1.3.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12 md:order-1 md:col-start-2">
+          <div class="inline-flex items-center gap-2 mb-3 md:flex-row-reverse">
+            <span class="text-2xl font-display tracking-tight">v1.3.0</span>
+            <span class="text-xs text-navy-400 font-medium">December 2025</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Enterprise Security & FOIA Automation</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">SSO/SAML for enterprise identity providers, comprehensive audit logging, and one-click FOIA request generation from any meeting record.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pr-12 md:order-0 md:col-start-1 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">SSO/SAML integration with Okta, Azure AD, and Google Workspace</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Audit logging: every query, export, and user action is tracked and exportable</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">FOIA request automation: generate pre-filled requests from any meeting record or search result</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/20">Security</span>
+            <span class="text-sm text-navy-200">SOC 2 Type II audit window opened with independent firm; penetration testing engagement in progress</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/20">Security</span>
+            <span class="text-sm text-navy-200">API key rotation, IP allowlisting, and role-based access controls for admin panel</span>
+          </div>
+        </div>
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-navy-600 border-4 border-navy-950"></div>
+      </article>
+
+      <!-- v1.2.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12">
+          <div class="inline-flex items-center gap-2 mb-3">
+            <span class="text-2xl font-display tracking-tight">v1.2.0</span>
+            <span class="text-xs text-navy-400 font-medium">November 2025</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Slack, Teams & Embeddable Widget</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">Ask questions about meetings directly from Slack or Teams. Embed a live meeting search widget on any government website.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pl-12 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Slack integration: /civiclens command to query meeting archive from any channel</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Microsoft Teams bot with threaded conversation support</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Embeddable search widget: drop a &lt;script&gt; tag on any .gov site for public meeting search</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Webhook notifications for new meetings, vote alerts, and agenda changes</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/20">Fix</span>
+            <span class="text-sm text-navy-200">Fixed RAG citations occasionally referencing wrong clip when meetings shared similar topics</span>
+          </div>
+        </div>
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-navy-600 border-4 border-navy-950"></div>
+      </article>
+
+      <!-- v1.1.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12 mb-20">
+        <div class="md:text-right md:pr-12 md:order-1 md:col-start-2">
+          <div class="inline-flex items-center gap-2 mb-3 md:flex-row-reverse">
+            <span class="text-2xl font-display tracking-tight">v1.1.0</span>
+            <span class="text-xs text-navy-400 font-medium">October 2025</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Vote Tracking & Financial Intelligence</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">Track every vote with roll-call detail, follow the money through budget items, and get alerts when policies you care about move forward.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pr-12 md:order-0 md:col-start-1 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Vote tracker dashboard with pass/fail badges, roll-call breakdowns, and voting history per member</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Financial item extraction: dollar amounts, vendors, appropriations, and contract details</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Policy alerts: subscribe to topics and get notified when they appear on an agenda or in a vote</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Two-pass summary system: GPT-4o extracts structured facts, Claude Sonnet writes narrative</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/20">Improvement</span>
+            <span class="text-sm text-navy-200">Overview tab now renders extracted_facts.json directly with structured cards</span>
+          </div>
+        </div>
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-5 h-5 rounded-full bg-navy-600 border-4 border-navy-950"></div>
+      </article>
+
+      <!-- v1.0.0 -->
+      <article class="reveal relative md:grid md:grid-cols-2 md:gap-12">
+        <div class="md:text-right md:pr-12">
+          <div class="inline-flex items-center gap-2 mb-3">
+            <span class="text-2xl font-display tracking-tight">v1.0.0</span>
+            <span class="text-xs text-navy-400 font-medium">September 2025</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Core Platform Launch</h3>
+          <p class="text-navy-400 text-sm leading-relaxed">The initial release of CivicLens: automated transcription, AI-generated summaries, and natural-language Q&A across your entire meeting archive.</p>
+        </div>
+        <div class="mt-4 md:mt-0 md:pl-12 space-y-3">
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Automated audio download and OpenAI Whisper transcription with timestamped segments</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">AI-generated meeting summaries with topic extraction and section headers</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">RAG-powered Q&A: ask natural-language questions across the entire meeting archive</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">React SPA with meeting browser, full-text search, agenda &amp; minutes viewer</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">Granicus integration: automatic clip discovery, metadata scraping, and video deep-linking</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Feature</span>
+            <span class="text-sm text-navy-200">ChromaDB vector store with 5 source types: summary, facts, minutes, agenda, transcript</span>
+          </div>
+        </div>
+        <!-- Launch dot - special styling -->
+        <div class="hidden md:flex absolute left-1/2 top-2 -translate-x-1/2 w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 border-4 border-navy-950 shadow-lg shadow-amber-500/30"></div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950">
+    <div class="max-w-7xl mx-auto px-6 py-16">
+      <div class="grid md:grid-cols-4 gap-12 mb-12">
+        <div class="md:col-span-1">
+          <a href="index.html" class="flex items-center gap-2.5 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <span class="font-display text-xl tracking-tight">CivicLens</span>
+          </a>
+          <p class="text-navy-400 text-sm leading-relaxed">Making local government transparent, searchable, and accountable.</p>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Product</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="index.html#features" class="hover:text-amber-400 transition-colors">Features</a></li>
+            <li><a href="demo.html" class="hover:text-amber-400 transition-colors">Live Demo</a></li>
+            <li><a href="index.html#pricing" class="hover:text-amber-400 transition-colors">Pricing</a></li>
+            <li><a href="changelog.html" class="text-amber-400/80 hover:text-amber-400 transition-colors">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Company</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="#" class="hover:text-amber-400 transition-colors">About</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Blog</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-sm mb-4">Legal</h4>
+          <ul class="space-y-2 text-sm text-navy-400">
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Privacy Policy</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Terms of Service</a></li>
+            <li><a href="#" class="hover:text-amber-400 transition-colors">Security</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========== SCROLL REVEAL SCRIPT ========== -->
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+
+</body>
+</html>

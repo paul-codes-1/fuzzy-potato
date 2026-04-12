@@ -1,15 +1,32 @@
-# LFUCG Meeting Pipeline
+# CivicLens
 
-Downloads, transcribes, and generates comprehensive summaries from Lexington-Fayette Urban County Government (LFUCG) city council meeting video clips hosted on Granicus. Includes a React SPA frontend for browsing and searching the meeting archive, plus a RAG-powered Q&A system for natural-language queries across the entire meeting archive.
+CivicLens is an AI-powered government meeting intelligence platform. This repo now contains two connected systems:
+
+- A Granicus ingestion pipeline that downloads meetings, transcripts, agendas, minutes, and structured summaries.
+- A multi-tenant SaaS application with a FastAPI backend, React frontend, integrations, exports, analytics, and admin tooling.
 
 ## Documentation
 
-- **[granicus.md](granicus.md)** - Granicus platform documentation including:
-  - Video player URL parameters (`entrytime`, `stoptime` for timestamp linking)
-  - Legistar Web API (REST API for legislative data)
-  - MediaManager SOAP API (video management)
-  - RSS feeds for agendas/minutes
-  - Embed options and JavaScript player API
+- **[docs/README.md](docs/README.md)** - Documentation index and repo map
+- **[docs/PRODUCT_GUIDE.md](docs/PRODUCT_GUIDE.md)** - What the app does, feature inventory, and how the pieces fit together
+- **[docs/OPERATOR_GUIDE.md](docs/OPERATOR_GUIDE.md)** - What actually runs, where state lives, and how to operate the system today
+- **[docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md)** - Architecture review and enterprise readiness assessment
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - Quickstart for the SaaS/API layer
+- **[docs/API.md](docs/API.md)** - API reference
+- **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** - Self-hosting and deployment notes
+- **[docs/DATABASE.md](docs/DATABASE.md)** - Database strategy and migration notes
+- **[docs/SECURITY.md](docs/SECURITY.md)** - Security architecture and controls
+- **[granicus.md](granicus.md)** - Granicus platform notes, URL parameters, and source-system behavior
+
+## Repo At A Glance
+
+- `main.py`: meeting ingestion, transcription, summarization, and archive generation
+- `api/`: FastAPI application and platform modules (auth, search, analytics, exports, billing, integrations)
+- `frontend/`: React SPA for residents, staff, and admins
+- `sdk/`: Python and JavaScript API clients
+- `widget/`: embeddable chat widget
+- `infra/`: Terraform for AWS deployment
+- `marketing/`: marketing site and collateral
 
 ## Quick Start
 
@@ -132,7 +149,7 @@ nohup uv run python main.py --scrape --max 9999 > pipeline.log 2>&1 &
 tail -f pipeline.log
 
 # Check state
-cat lfucg_output/state.json | python -m json.tool
+cat meetings_output/state.json | python -m json.tool
 
 # Stop processing
 pkill -f "python main.py"
@@ -153,10 +170,10 @@ uv run python probe_clips.py
 nohup uv run python probe_clips.py 1 7000 > probe.log 2>&1 &
 
 # Check progress
-cat lfucg_output/available_clips.json | head -5
+cat meetings_output/available_clips.json | head -5
 ```
 
-Results saved to `lfucg_output/available_clips.json`.
+Results saved to `meetings_output/available_clips.json`.
 
 **Important:** Once `available_clips.json` exists, `--auto` mode will use it to only process valid clips, skipping non-existent clip IDs automatically.
 
@@ -172,7 +189,7 @@ npm install
 npm run dev
 ```
 
-The dev server proxies `/data/` to `../lfucg_output/` via symlink.
+The dev server proxies `/data/` to `../meetings_output/` via symlink.
 
 ### Production Build
 
@@ -189,19 +206,15 @@ npm run preview  # Test production build locally
 CLOUDFRONT_DISTRIBUTION_ID=E1234567890 ./deploy.sh
 ```
 
-### Basic Auth
+### Basic Auth (Optional)
 
-The deployed site is protected with basic authentication:
+The deployed site can be protected with basic authentication via a CloudFront Function. To set it up:
 
-- **Username:** `public`
-- **Password:** `L3tMe1n!`
-
-This is implemented as a CloudFront Function (`cloudfront/basic-auth.js`). To set it up:
-
-1. Go to **CloudFront > Functions** in the AWS Console
-2. Create a new function, paste the contents of `cloudfront/basic-auth.js`
-3. Publish the function
-4. Associate it with your distribution's **Viewer request** event on the default behavior
+1. Edit `cloudfront/basic-auth.js` and configure your own credentials
+2. Go to **CloudFront > Functions** in the AWS Console
+3. Create a new function, paste the contents of `cloudfront/basic-auth.js`
+4. Publish the function
+5. Associate it with your distribution's **Viewer request** event on the default behavior
 
 ## RAG Q&A System
 
@@ -217,14 +230,14 @@ The RAG system ingests 5 source types per clip for comprehensive retrieval:
 ### Setup
 
 ```bash
-# Install RAG dependencies (includes anthropic)
-uv sync --extra rag
+# Install API dependencies (includes anthropic)
+uv sync --extra api
 
 # Build the vector index (one-time, embeds all clips into ChromaDB)
-uv run python -m rag.ingest --all
+uv run python -m api.ingest --all
 
 # Check stats
-uv run python -m rag.ingest --stats
+uv run python -m api.ingest --stats
 ```
 
 ### Running Locally
@@ -232,8 +245,8 @@ uv run python -m rag.ingest --stats
 You need two processes running — the API server and the frontend dev server:
 
 ```bash
-# Terminal 1: Start the RAG API server
-uv run uvicorn rag.server:app --reload --port 8000
+# Terminal 1: Start the API server
+uv run uvicorn api.server:app --reload --port 8000
 
 # Terminal 2: Start the frontend dev server
 cd frontend && npm run dev
@@ -246,9 +259,9 @@ The Vite dev server proxies `/api/*` requests to the FastAPI backend on port 800
 ### CLI Query (no server needed)
 
 ```bash
-uv run python -m rag.query "What has the city done about short-term rentals?"
-uv run python -m rag.query "budget for parks" --body Council --after 2023-01-01
-uv run python -m rag.query "zoning changes" --model gpt-4o-mini  # cheaper
+uv run python -m api.query "What has the city done about short-term rentals?"
+uv run python -m api.query "budget for parks" --body Council --after 2023-01-01
+uv run python -m api.query "zoning changes" --model gpt-4o-mini  # cheaper
 ```
 
 ### Keeping the Index Updated
@@ -258,7 +271,7 @@ uv run python -m rag.query "zoning changes" --model gpt-4o-mini  # cheaper
 uv run python main.py --scrape --max 10 --rag
 
 # Or ingest newly processed clips after the fact
-uv run python -m rag.ingest --new
+uv run python -m api.ingest --new
 
 # Rebuild the entire index from scratch
 uv run python main.py --rebuild-rag
@@ -278,7 +291,7 @@ uv run python main.py --rebuild-rag
 
 ```bash
 # All Python tests (ingestion, query, server, integration, summary v2, RAG e2e)
-uv sync --extra dev --extra rag
+uv sync --extra dev --extra api
 uv run pytest tests/ -x -v
 
 # Run specific test files
@@ -294,7 +307,7 @@ cd frontend && npm test
 Files are named with date prefix for easy sorting and identification:
 
 ```
-lfucg_output/
+meetings_output/
   state.json                              # Pipeline state (tracks progress)
   index.json                              # Search index for frontend
   available_clips.json                    # Probed clip IDs
@@ -316,52 +329,37 @@ lfucg_output/
 
 ## Architecture
 
-Your frontend already fetches everything from relative /data/ paths. You have two main options:
+CivicLens runs as a multi-tenant SaaS platform with three main components:
 
-  Option 1: S3 + CloudFront (recommended)
+### API Server (FastAPI)
 
-  1. Upload lfucg_output/ to S3, mapping it to a /data/ prefix:
+The core of the platform. Handles authentication, RAG Q&A, tenant management, billing, integrations, and serves meeting data. Each tenant (city/jurisdiction) gets isolated data, its own API key, and configurable Granicus connection.
 
-  ***
-`  aws s3 sync lfucg_output/ s3://public-meetings/data/ --exclude "state.json" --exclude "*.mp3"
-`
-***
+```bash
+# Run locally
+uv run uvicorn api.server:app --reload --port 8000
 
-  2. Deploy the built frontend (frontend/dist/) to the same bucket root:
+# Or via Docker
+docker build -t civiclens .
+docker run -p 8000:8000 --env-file .env civiclens
+```
 
-      `cd frontend && npm run build`
-      
-      `aws s3 sync dist/ s3://public-meetings/ --exclude "data/*"`
-***
+### Frontend (React SPA)
 
-  3. Create a CloudFront distribution pointing to the bucket. The structure would be:
-  s3://your-bucket/
-    index.html          <- from frontend/dist/
-    assets/             <- from frontend/dist/
-    data/
-      index.json        <- from lfucg_output/index.json
-      clips/
-        6669/
-          metadata.json
-          extracted_facts.json
-          summary.txt
-          ...
-  4. Enable S3 static website hosting or use CloudFront with an OAC. For SPA routing, set up a custom error response that returns index.html for 403/404 errors (so React Router works).
+Connects to the API server. In production, served by the same Docker container or deployed separately to a CDN. The Vite dev server proxies `/api/*` to the backend.
 
-  Option 2: Separate S3 origin (CORS)
+### Pipeline (`main.py`)
 
-  If you want the frontend hosted separately (e.g., Vercel/Netlify) and data on S3:
+Processes meetings for a given tenant: downloads audio, transcribes, extracts structured facts, generates summaries, and ingests into the vector store. Can run on a schedule via the built-in scheduler or AWS Lambda.
 
-  1. Upload data to S3 and put CloudFront in front of it
-  2. Add CORS headers on the S3 bucket/CloudFront
-  3. Change the base URL in useMeetings.js to point to your CloudFront domain:
-  const DATA_BASE = import.meta.env.VITE_DATA_URL || '/data'
-  const INDEX_URL = `${DATA_BASE}/index.json`
-  3. Then prefix all fetch calls with DATA_BASE instead of hardcoded /data.
-  4. Set VITE_DATA_URL=https://d1234.cloudfront.net/data at build time.
+```bash
+# Process meetings for a specific tenant
+uv run python main.py --tenant-id elk-grove-ca --scrape --max 10 --rag
+```
 
-  Option 1 is simpler since everything lives under one domain — no CORS, no env vars, and the code works as-is with zero changes. You just need to get the S3 directory structure to match what the fetches expect
-  (/data/index.json, /data/clips/{id}/...).
+### Deployment
+
+The recommended production deployment is Docker behind a reverse proxy (or on AWS ECS/Fargate). See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for full deployment instructions and [infra/](infra/) for Terraform configuration.
 
 
 ## API Costs

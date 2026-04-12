@@ -42,7 +42,7 @@ The system reuses the existing OpenAI API key and fits naturally alongside the c
 - **No production code without a failing test.** If you catch yourself writing implementation code first, stop, delete it, and write the test.
 - **One behavior per test.** Each test should assert one thing. Name it descriptively: `test_chunk_summary_splits_on_h2_headers`, not `test_chunking`.
 - **Tests run fast.** Mock external services (OpenAI API, ChromaDB) in unit tests. Use real instances only in integration tests.
-- **Test file mirrors source file.** `rag/ingest.py` → `tests/test_ingest.py`, `rag/query.py` → `tests/test_query.py`, etc.
+- **Test file mirrors source file.** `api/ingest.py` → `tests/test_ingest.py`, `api/query.py` → `tests/test_query.py`, etc.
 - **Run tests after every Green and every Refactor step.** Use `uv run pytest tests/ -x` (stop on first failure) during development.
 
 ### Test infrastructure setup (do this first, before Phase 1)
@@ -141,7 +141,7 @@ cd frontend && npm test
 
 ## Phase 1: Ingestion & Embedding Pipeline
 
-### New file: `rag/ingest.py`
+### New file: `api/ingest.py`
 
 Reads existing processed clips and creates embeddings stored in a local ChromaDB collection.
 
@@ -189,23 +189,23 @@ Reads existing processed clips and creates embeddings stored in a local ChromaDB
 
 ```bash
 # Full ingest (all existing clips)
-uv run python -m rag.ingest --all
+uv run python -m api.ingest --all
 
 # Ingest specific clip(s)
-uv run python -m rag.ingest --clip 6696
+uv run python -m api.ingest --clip 6696
 
 # Ingest only new (not yet embedded) clips
-uv run python -m rag.ingest --new
+uv run python -m api.ingest --new
 
 # Show stats
-uv run python -m rag.ingest --stats
+uv run python -m api.ingest --stats
 ```
 
 ---
 
 ## Phase 2: Retrieval & Synthesis Backend
 
-### New file: `rag/query.py`
+### New file: `api/query.py`
 
 Core query logic, usable from CLI or API.
 
@@ -282,20 +282,20 @@ Each chunk in context formatted as:
 
 ```bash
 # Simple question
-uv run python -m rag.query "What has the city done about short-term rentals?"
+uv run python -m api.query "What has the city done about short-term rentals?"
 
 # With filters
-uv run python -m rag.query "budget for parks" --body Council --after 2023-01-01
+uv run python -m api.query "budget for parks" --body Council --after 2023-01-01
 
 # Use cheaper model
-uv run python -m rag.query "when was the Town Branch Trail discussed?" --model gpt-4o-mini
+uv run python -m api.query "when was the Town Branch Trail discussed?" --model gpt-4o-mini
 ```
 
 ---
 
 ## Phase 3: FastAPI Server
 
-### New file: `rag/server.py`
+### New file: `api/server.py`
 
 Lightweight API server so the React frontend can call the RAG system.
 
@@ -314,7 +314,7 @@ GET /api/health
 
 ```bash
 # Local development
-uv run uvicorn rag.server:app --reload --port 8000
+uv run uvicorn api.server:app --reload --port 8000
 
 # Or integrate with existing frontend dev workflow
 # Vite proxy config to forward /api/* to FastAPI
@@ -374,7 +374,7 @@ Add one call at the end of `process_clip()`:
 ```python
 # After all other processing steps
 if rag_enabled:
-    from rag.ingest import ingest_clip
+    from api.ingest import ingest_clip
     ingest_clip(clip_id, self.output_dir)
 ```
 
@@ -386,7 +386,7 @@ After processing new clips and generating the search index, also run incremental
 
 ```python
 # After generate_search_index()
-from rag.ingest import ingest_new_clips
+from api.ingest import ingest_new_clips
 ingest_new_clips(output_dir)
 ```
 
@@ -416,7 +416,7 @@ dev = [
 ]
 ```
 
-Install with: `uv sync --extra rag --extra dev`
+Install with: `uv sync --extra api --extra dev`
 
 This keeps RAG optional — the base pipeline still works without it.
 
@@ -425,7 +425,7 @@ This keeps RAG optional — the base pipeline still works without it.
 ## File Structure
 
 ```
-rag/
+api/
   __init__.py
   ingest.py          # Chunking + embedding + ChromaDB storage
   query.py           # Retrieval + LLM synthesis logic
@@ -457,9 +457,9 @@ frontend/src/
 **Every step below follows Red/Green TDD. Write the failing test first, then the implementation, then refactor. No exceptions.**
 
 0. **Test infrastructure** — Create `tests/` directory, `conftest.py` with shared fixtures (sample clip data, mock OpenAI client, ephemeral ChromaDB). Add `pytest` to dev dependencies. Verify `uv run pytest` runs and passes (with zero tests). This must be done before anything else.
-1. **`rag/ingest.py`** — Start with `tests/test_ingest.py`. Write tests for summary chunking first (RED), implement the parser (GREEN), refactor. Then transcript passage grouping. Then agenda/minutes. Then ChromaDB storage. Then incremental ingestion. Run against the existing 337 transcribed clips as a final integration check.
-2. **`rag/query.py`** — Start with `tests/test_query.py`. Write tests for filter building (RED/GREEN), then retrieval deduplication, then synthesis prompt construction, then the full `ask()` flow with mocked dependencies. Test via CLI after all unit tests pass.
-3. **`rag/server.py`** — Start with `tests/test_server.py`. Write tests for each endpoint using FastAPI TestClient (RED/GREEN). Thin wrapper — most logic is already tested in query.py.
+1. **`api/ingest.py`** — Start with `tests/test_ingest.py`. Write tests for summary chunking first (RED), implement the parser (GREEN), refactor. Then transcript passage grouping. Then agenda/minutes. Then ChromaDB storage. Then incremental ingestion. Run against the existing 337 transcribed clips as a final integration check.
+2. **`api/query.py`** — Start with `tests/test_query.py`. Write tests for filter building (RED/GREEN), then retrieval deduplication, then synthesis prompt construction, then the full `ask()` flow with mocked dependencies. Test via CLI after all unit tests pass.
+3. **`api/server.py`** — Start with `tests/test_server.py`. Write tests for each endpoint using FastAPI TestClient (RED/GREEN). Thin wrapper — most logic is already tested in query.py.
 4. **`AskQuestion.jsx`** — Add Vitest + React Testing Library to frontend. Write component tests (RED/GREEN) for rendering, loading states, response display, source card links. Can be built in parallel with step 3.
 5. **Pipeline integration** — Write tests for the `main.py` and Lambda hooks (rag_enabled flag gating, --rebuild-rag CLI arg). Do last since manual `--rebuild-rag` works fine initially.
 

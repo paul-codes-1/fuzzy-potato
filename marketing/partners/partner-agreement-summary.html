@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Partner Agreement Summary — CivicLens Partner Program</title>
+  <meta name="description" content="A plain-language summary of the CivicLens partner agreement: revenue share, deal registration, IP ownership, termination, confidentiality, and brand usage. Not a legal document — a preview of what you are signing.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Partner Agreement Summary — CivicLens Partner Program">
+  <meta property="og:description" content="A plain-language preview of what is in the CivicLens partner agreement so you know what you are signing up for.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://civiclens.ai/partners/partner-agreement-summary">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+
+    /* Agreement section anchors */
+    .section-anchor {
+      scroll-margin-top: 6rem;
+    }
+
+    /* Print styles */
+    @media print {
+      body {
+        background: white !important;
+        color: black !important;
+      }
+      body::before { display: none; }
+      nav, .no-print, footer { display: none !important; }
+      .print-only { display: block !important; }
+      .hero-mesh { display: none; }
+      main { padding-top: 0 !important; }
+      section { page-break-inside: avoid; padding: 1rem 0 !important; }
+      h1, h2, h3 { color: #0c1a33 !important; }
+      p, li, td, th, div { color: #1e3660 !important; }
+      .bg-navy-950, .bg-navy-900, .bg-navy-900\/60, .bg-navy-900\/40, .bg-navy-950\/60 {
+        background: white !important;
+      }
+      .border-white\/5, .border-white\/10, .border-white\/15 {
+        border-color: #dce3ef !important;
+      }
+      .text-white, .text-navy-100, .text-navy-200, .text-navy-300 {
+        color: #0c1a33 !important;
+      }
+      .text-amber-400 { color: #b87a1e !important; }
+      a { color: #b87a1e !important; text-decoration: underline; }
+      .glow-line { background: #b87a1e !important; animation: none; }
+      .reveal { opacity: 1 !important; transform: none !important; }
+    }
+    .print-only { display: none; }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased">
+
+  <!-- ========== NAVIGATION ========== -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5 no-print">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="../partners.html" class="hover:text-amber-400 transition-colors">&larr; Back to Partners</a>
+        <a href="../pricing.html" class="hover:text-amber-400 transition-colors">Pricing</a>
+        <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="window.print()" class="hidden sm:inline-flex text-sm font-semibold text-navy-200 hover:text-white transition-colors px-4 py-2 border border-white/10 rounded-lg hover:border-amber-400/40">
+          Print
+        </button>
+        <a href="../contact.html?intent=partner" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Apply
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="pt-16">
+
+    <!-- ========== HEADER ========== -->
+    <section class="relative border-b border-white/5">
+      <div class="max-w-4xl mx-auto px-6 py-16 md:py-20">
+        <div class="print-only mb-8">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-display text-2xl">CivicLens</span>
+          </div>
+          <p class="text-xs">civiclens.ai / partnerships@civiclens.io</p>
+          <hr class="my-4">
+        </div>
+
+        <a href="../partners.html" class="inline-flex items-center gap-2 text-sm text-navy-400 hover:text-amber-400 transition-colors mb-6 no-print">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Back to Partner Program
+        </a>
+
+        <div class="glow-line w-24 mb-6 no-print"></div>
+        <h1 class="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.05] tracking-tight mb-4">
+          Partner Agreement Summary
+        </h1>
+        <p class="text-lg text-navy-300 leading-relaxed mb-6">
+          A plain-language preview of what is in the CivicLens partner agreement so you know what you are signing up for before any paperwork lands in your inbox.
+        </p>
+
+        <div class="bg-amber-400/5 border border-amber-400/20 rounded-xl p-5 text-sm text-navy-200">
+          <div class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div>
+              <p class="font-semibold text-white mb-1">This is not the legal agreement.</p>
+              <p>This page summarizes what the agreement covers. The actual executable contract is sent during onboarding and is the controlling document. If there is a conflict between this summary and the signed agreement, the signed agreement wins.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-8 text-xs text-navy-500">
+          Last updated: April 2026 &middot; Version 1.0
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== TABLE OF CONTENTS ========== -->
+    <section class="py-10 bg-navy-900/40 border-b border-white/5 no-print">
+      <div class="max-w-4xl mx-auto px-6">
+        <h2 class="text-xs uppercase tracking-[0.2em] text-navy-400 font-semibold mb-4">Contents</h2>
+        <ol class="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-navy-200 list-decimal list-inside">
+          <li><a href="#rev-share" class="hover:text-amber-400 transition-colors">Revenue share calculation</a></li>
+          <li><a href="#deal-reg" class="hover:text-amber-400 transition-colors">Deal registration rules</a></li>
+          <li><a href="#ip" class="hover:text-amber-400 transition-colors">IP ownership</a></li>
+          <li><a href="#termination" class="hover:text-amber-400 transition-colors">Termination</a></li>
+          <li><a href="#confidentiality" class="hover:text-amber-400 transition-colors">Confidentiality</a></li>
+          <li><a href="#brand" class="hover:text-amber-400 transition-colors">Brand usage guidelines</a></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ========== SECTIONS ========== -->
+    <article class="max-w-4xl mx-auto px-6 py-16 md:py-20 space-y-16">
+
+      <!-- 1. Revenue Share -->
+      <section id="rev-share" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">1</div>
+          <h2 class="font-display text-3xl md:text-4xl">Revenue share calculation</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <p>Your commission is calculated on <strong class="text-white">Net Paid ARR</strong> — the subscription revenue CivicLens actually collects from a customer you sourced, after refunds, credits, and chargebacks.</p>
+          <ul class="list-disc list-outside pl-6 space-y-2">
+            <li><strong class="text-white">Rate by tier:</strong> 15% (Referral), 25% (Solution), or 30%+ (Strategic) of Net Paid ARR.</li>
+            <li><strong class="text-white">Duration:</strong> Commission applies to the first 12 months of the customer relationship. Strategic Partners may negotiate extended or perpetual terms during review.</li>
+            <li><strong class="text-white">What is excluded:</strong> Pass-through infrastructure costs on self-hosted deployments, third-party LLM API fees billed at cost, Stripe processing fees, and any services you bill directly to the customer (which are 100% yours).</li>
+            <li><strong class="text-white">Payment timing:</strong> Net 30 from the date CivicLens receives payment from the customer. Statements sent monthly.</li>
+            <li><strong class="text-white">No clawback:</strong> Commission already paid out is not clawed back if the customer later churns. Future commission stops when the customer stops paying.</li>
+            <li><strong class="text-white">Expansion &amp; upsells:</strong> Commission applies to the initial subscription plus any organic expansion within the 12-month window (e.g., customer upgrades from Pro to Enterprise).</li>
+          </ul>
+          <p class="text-sm text-navy-400">
+            <em>Example: You register and close a Pro plan customer at $799/mo on March 1. You are Solution Partner (25%). The customer pays monthly. Each month CivicLens collects the $799, you receive $199.75 commission Net 30. Over 12 months, total commission is $2,397.</em>
+          </p>
+        </div>
+      </section>
+
+      <!-- 2. Deal Registration -->
+      <section id="deal-reg" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">2</div>
+          <h2 class="font-display text-3xl md:text-4xl">Deal registration rules</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <p>Deal registration is how we protect partners from conflict — both from each other and from our own direct sales team.</p>
+          <ul class="list-disc list-outside pl-6 space-y-2">
+            <li><strong class="text-white">How to register:</strong> Submit account name, primary contact, estimated ARR, and expected close date through the partner portal (or by email during early-program phase).</li>
+            <li><strong class="text-white">Response time:</strong> CivicLens responds within 2 business days with approval or decline. Declines include a reason — typically a pre-existing registration or an active direct relationship.</li>
+            <li><strong class="text-white">Lock period:</strong> Approved registrations lock the account to you for 90 days. You may request a 90-day extension with a progress update.</li>
+            <li><strong class="text-white">Exclusivity scope:</strong> A registration protects the specific legal entity named (e.g., "City of Elk Grove") for the scope of CivicLens subscription sales. It does not block other partners from selling unrelated services to that entity.</li>
+            <li><strong class="text-white">First-to-register wins:</strong> If two partners register the same account, the earlier timestamp wins. Ties are resolved by material evidence of engagement (meeting notes, emails, proposals).</li>
+            <li><strong class="text-white">CivicLens direct sales:</strong> Our direct team is instructed to check the partner registry before any new outbound activity. If a registered account contacts us directly, we route the inquiry back to the partner of record.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 3. IP Ownership -->
+      <section id="ip" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">3</div>
+          <h2 class="font-display text-3xl md:text-4xl">IP ownership</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <p>Clean and simple: <strong class="text-white">you own your services, we own the product.</strong></p>
+          <div class="grid md:grid-cols-2 gap-4 my-4">
+            <div class="bg-navy-900/60 border border-white/10 rounded-xl p-5">
+              <h3 class="font-display text-lg text-amber-400 mb-2">You own</h3>
+              <ul class="text-sm space-y-1.5 text-navy-200">
+                <li>&check; Your services methodology &amp; playbooks</li>
+                <li>&check; Implementation deliverables you create for clients</li>
+                <li>&check; Custom scripts, dashboards, or configs you build</li>
+                <li>&check; Your brand, templates, training material</li>
+                <li>&check; Client data you handle under your own DPA</li>
+              </ul>
+            </div>
+            <div class="bg-navy-900/60 border border-white/10 rounded-xl p-5">
+              <h3 class="font-display text-lg text-amber-400 mb-2">CivicLens owns</h3>
+              <ul class="text-sm space-y-1.5 text-navy-200">
+                <li>&check; The CivicLens platform, code, and models</li>
+                <li>&check; The CivicLens brand, logo, and trademarks</li>
+                <li>&check; Product documentation and API schemas</li>
+                <li>&check; Aggregate telemetry and product analytics</li>
+                <li>&check; Feedback you share with us (to improve the product)</li>
+              </ul>
+            </div>
+          </div>
+          <p><strong class="text-white">Feedback license:</strong> If you share ideas, feature requests, or bug reports with us, we get a perpetual license to use them to improve the product. We will never claim your proprietary methodology or client-specific work.</p>
+          <p><strong class="text-white">Integration work:</strong> If you build an integration between CivicLens and another product using our public API, you own that integration. If we jointly develop something under a Strategic Partner engagement, ownership is negotiated in a separate Statement of Work.</p>
+        </div>
+      </section>
+
+      <!-- 4. Termination -->
+      <section id="termination" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">4</div>
+          <h2 class="font-display text-3xl md:text-4xl">Termination</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <ul class="list-disc list-outside pl-6 space-y-2">
+            <li><strong class="text-white">For convenience:</strong> Either party can terminate the partner agreement for any reason with 30 days written notice.</li>
+            <li><strong class="text-white">For cause:</strong> Either party can terminate immediately for material breach (non-payment, misrepresentation, violation of law, brand abuse) if the other party does not cure within 15 days of notice.</li>
+            <li><strong class="text-white">Commission tail:</strong> After termination, you continue to receive commission on customers you sourced through the end of their 12-month commission window. We do not claw back commission already paid, and we do not cancel future payments on already-closed deals unless the termination was for cause related to that deal.</li>
+            <li><strong class="text-white">Data handoff:</strong> On termination we provide a final statement of all registered accounts, pipeline status, and outstanding commission. We will not poach customers you closed during the partnership.</li>
+            <li><strong class="text-white">Survival:</strong> Confidentiality, IP, and payment obligations survive termination. Brand usage rights end on termination — you must remove CivicLens marks from your website and collateral within 30 days.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 5. Confidentiality -->
+      <section id="confidentiality" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">5</div>
+          <h2 class="font-display text-3xl md:text-4xl">Confidentiality</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <p>Standard two-way NDA baked into the partner agreement.</p>
+          <ul class="list-disc list-outside pl-6 space-y-2">
+            <li><strong class="text-white">What is confidential:</strong> Roadmap, pricing below published tiers, customer pipeline, internal architecture details, unreleased features, any information marked confidential, and anything a reasonable person would treat as confidential.</li>
+            <li><strong class="text-white">What is not confidential:</strong> Publicly available information, anything you already knew before the partnership, anything independently developed without use of our confidential info, and anything required by law to disclose (with notice to us if legally permitted).</li>
+            <li><strong class="text-white">Duration:</strong> Confidentiality obligations last for 3 years after termination of the partner agreement.</li>
+            <li><strong class="text-white">Customer data:</strong> Customer data you encounter during implementation is covered by the customer's own agreement with CivicLens, not this NDA. You should have your own DPA with the customer for work you perform directly.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 6. Brand Usage -->
+      <section id="brand" class="section-anchor reveal">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center font-display text-xl text-amber-400 flex-shrink-0">6</div>
+          <h2 class="font-display text-3xl md:text-4xl">Brand usage guidelines</h2>
+        </div>
+        <div class="prose prose-invert max-w-none text-navy-200 leading-relaxed space-y-4">
+          <p>Once you sign, you get a non-exclusive, revocable license to use the CivicLens name and logo to identify yourself as a partner. Keep it classy.</p>
+          <div class="grid md:grid-cols-2 gap-4 my-4">
+            <div class="bg-emerald-400/5 border border-emerald-400/20 rounded-xl p-5">
+              <h3 class="font-display text-lg text-emerald-400 mb-2">Do</h3>
+              <ul class="text-sm space-y-1.5 text-navy-200">
+                <li>&check; Use "CivicLens Referral Partner" / "Solution Partner" / "Strategic Partner" accurately based on your tier</li>
+                <li>&check; Display our logo on your website partners page</li>
+                <li>&check; Reference CivicLens in proposals, case studies, and RFP responses</li>
+                <li>&check; Request the official partner badge asset from us</li>
+                <li>&check; Describe the product accurately using our marketing copy</li>
+              </ul>
+            </div>
+            <div class="bg-red-400/5 border border-red-400/20 rounded-xl p-5">
+              <h3 class="font-display text-lg text-red-400 mb-2">Don't</h3>
+              <ul class="text-sm space-y-1.5 text-navy-200">
+                <li>&times; Claim a higher tier than you hold</li>
+                <li>&times; Imply CivicLens endorses anything we did not endorse</li>
+                <li>&times; Use the CivicLens name in your company name, product name, or domain without written permission</li>
+                <li>&times; Modify our logo (colors, proportions, lockups)</li>
+                <li>&times; Make claims about the product we have not made ourselves (performance, compliance, certifications)</li>
+                <li>&times; Use the CivicLens brand after termination</li>
+              </ul>
+            </div>
+          </div>
+          <p><strong class="text-white">Press releases:</strong> Joint press releases require written approval from both parties. Unilateral announcements should not imply an exclusive or strategic relationship unless you are a Strategic Partner.</p>
+          <p><strong class="text-white">White-label exception:</strong> Strategic Partners with an OEM arrangement can ship the product under their own brand with no CivicLens attribution, per the Strategic Partner Statement of Work.</p>
+        </div>
+      </section>
+
+      <!-- Final callout -->
+      <section class="reveal bg-navy-900/60 border border-white/10 rounded-2xl p-8 md:p-10 mt-16">
+        <h2 class="font-display text-3xl mb-4">Ready to move forward?</h2>
+        <p class="text-navy-300 leading-relaxed mb-6">
+          If this summary looks reasonable, the next step is to apply. We will send you the full executable agreement with these terms after the onboarding call. No legal fees, no surprises.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 no-print">
+          <a href="../contact.html?intent=partner" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-7 py-3.5 rounded-xl transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+            Apply to the Partner Program
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+          <a href="mailto:partnerships@civiclens.io" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-7 py-3.5 rounded-xl transition-all hover:bg-amber-400/5">
+            Email partnerships@civiclens.io
+          </a>
+          <button onclick="window.print()" class="inline-flex items-center justify-center gap-2 border border-white/10 hover:border-white/20 text-navy-200 font-semibold px-7 py-3.5 rounded-xl transition-all hover:bg-white/5">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Print this page
+          </button>
+        </div>
+      </section>
+
+      <p class="text-center text-xs text-navy-500 mt-12">
+        Questions? Email <a href="mailto:partnerships@civiclens.io" class="text-amber-400 hover:underline">partnerships@civiclens.io</a> or check the <a href="../partners.html#faq" class="text-amber-400 hover:underline">Partner Program FAQ</a>.
+      </p>
+
+    </article>
+  </main>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-navy-950 no-print">
+    <div class="max-w-7xl mx-auto px-6 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+            <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+          <span class="font-display text-lg tracking-tight">CivicLens</span>
+          <span class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc.</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-navy-400">
+          <a href="../partners.html" class="hover:text-amber-400 transition-colors">Partner Program</a>
+          <a href="../contact.html" class="hover:text-amber-400 transition-colors">Contact</a>
+          <a href="mailto:partnerships@civiclens.io" class="hover:text-amber-400 transition-colors">partnerships@civiclens.io</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

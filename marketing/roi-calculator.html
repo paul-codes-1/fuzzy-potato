@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROI Calculator - CivicLens</title>
+  <meta name="description" content="Calculate your return on investment with CivicLens. See how much your city can save on meeting documentation, transcription, and FOIA compliance.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 50: '#f0f3f8', 100: '#dce3ef', 200: '#b8c7df', 300: '#8ba3c8', 400: '#5e7faf', 500: '#3d5f94', 600: '#2d4a78', 700: '#1e3660', 800: '#142647', 900: '#0c1a33', 950: '#060e1d' },
+            amber: { 400: '#e8a838', 500: '#d4922a', 600: '#b87a1e' },
+            slate: { 750: '#253042' }
+          },
+          fontFamily: {
+            display: ['"DM Serif Display"', 'Georgia', 'serif'],
+            body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Instrument Sans', system-ui, sans-serif; }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+
+    .hero-line {
+      opacity: 0;
+      transform: translateY(40px);
+      animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .hero-line:nth-child(1) { animation-delay: 0.15s; }
+    .hero-line:nth-child(2) { animation-delay: 0.3s; }
+    .hero-line:nth-child(3) { animation-delay: 0.5s; }
+    @keyframes heroReveal { to { opacity: 1; transform: translateY(0); } }
+
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e8a838, transparent);
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+    .stat-number {
+      background: linear-gradient(135deg, #e8a838 0%, #fff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0c1a33; }
+    ::-webkit-scrollbar-thumb { background: #2d4a78; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d5f94; }
+
+    /* Slider styling */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: #1e3660;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #e8a838;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(232,168,56,0.4);
+      transition: box-shadow 0.2s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      box-shadow: 0 0 20px rgba(232,168,56,0.6);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #e8a838;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 12px rgba(232,168,56,0.4);
+    }
+
+    /* Number input styling */
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    /* Animated counter */
+    .counter-value {
+      transition: opacity 0.15s ease;
+    }
+    .counter-value.updating {
+      opacity: 0.6;
+    }
+
+    /* Preset button */
+    .preset-btn {
+      transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .preset-btn.active {
+      background: rgba(232,168,56,0.15);
+      border-color: #e8a838;
+      color: #e8a838;
+    }
+
+    /* Chart animations */
+    .chart-bar {
+      transition: height 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .chart-line-path {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: drawLine 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes drawLine {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Result card pulse */
+    .result-highlight {
+      animation: resultPulse 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes resultPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+      100% { transform: scale(1); }
+    }
+
+    /* Print styles */
+    @media print {
+      body::before { display: none; }
+      nav, .no-print, footer { display: none !important; }
+      body { background: white !important; color: #1a1a1a !important; }
+      .print-break { page-break-before: always; }
+      section { padding: 1rem 0 !important; }
+      .bg-navy-900\/50, .bg-navy-900\/30 { background: #f5f5f5 !important; }
+      .border-white\/5, .border-white\/10 { border-color: #ddd !important; }
+      .text-white { color: #1a1a1a !important; }
+      .text-navy-200, .text-navy-300 { color: #444 !important; }
+      .text-navy-400, .text-navy-500 { color: #666 !important; }
+      .text-amber-400 { color: #b87a1e !important; -webkit-text-fill-color: #b87a1e !important; }
+      .stat-number { -webkit-text-fill-color: #b87a1e !important; }
+      .bg-navy-950 { background: white !important; }
+      .bg-amber-400\/10, .bg-emerald-400\/10 { background: #f0f0f0 !important; }
+      svg text { fill: #333 !important; }
+      svg rect[fill="#1e3660"] { fill: #e0e0e0 !important; }
+      svg line[stroke="#1e3660"] { stroke: #ccc !important; }
+      h1, h2, h3 { color: #1a1a1a !important; }
+      .font-display { -webkit-text-fill-color: currentColor !important; }
+      .hero-mesh { display: none; }
+      @page {
+        margin: 0.75in;
+        size: letter;
+      }
+    }
+  </style>
+</head>
+<body class="bg-navy-950 text-white antialiased overflow-x-hidden">
+
+  <!-- NAVIGATION -->
+  <nav class="fixed top-0 w-full z-50 nav-blur bg-navy-950/80 border-b border-white/5 no-print">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-shadow">
+          <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <span class="font-display text-xl tracking-tight">CivicLens</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-navy-200">
+        <a href="index.html" class="hover:text-amber-400 transition-colors">Home</a>
+        <a href="demo.html" class="hover:text-amber-400 transition-colors">Try Demo</a>
+        <a href="index.html#features" class="hover:text-amber-400 transition-colors">Features</a>
+        <a href="index.html#pricing" class="hover:text-amber-400 transition-colors">Pricing</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="index.html#pricing" class="text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-navy-950 px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/20">
+          Start Free Trial
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="relative pt-28 pb-12">
+    <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+    <div class="relative max-w-4xl mx-auto px-6 text-center">
+      <div class="hero-line inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400 text-sm font-medium mb-6">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        ROI Calculator
+      </div>
+      <h1 class="hero-line font-display text-4xl md:text-5xl lg:text-6xl leading-[1.08] tracking-tight mb-5">
+        Build your business case<br><span class="text-amber-400">with real numbers</span>
+      </h1>
+      <p class="hero-line text-lg text-navy-200 leading-relaxed max-w-2xl mx-auto">
+        Procurement officers need hard data. Enter your city's details below and get a defensible ROI analysis you can present to your council.
+      </p>
+    </div>
+  </section>
+
+  <div class="glow-line max-w-4xl mx-auto"></div>
+
+  <!-- PRESET SELECTORS -->
+  <section class="pt-10 pb-4">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 reveal">
+        <span class="text-navy-400 text-sm font-medium mr-2">Quick start:</span>
+        <button onclick="applyPreset('small')" class="preset-btn px-5 py-2.5 rounded-xl border border-white/10 text-sm font-medium text-navy-200 hover:border-amber-400/50 hover:text-amber-400" data-preset="small">
+          Small City (&lt;25k)
+        </button>
+        <button onclick="applyPreset('medium')" class="preset-btn px-5 py-2.5 rounded-xl border border-white/10 text-sm font-medium text-navy-200 hover:border-amber-400/50 hover:text-amber-400" data-preset="medium">
+          Mid-Size (25k-100k)
+        </button>
+        <button onclick="applyPreset('large')" class="preset-btn px-5 py-2.5 rounded-xl border border-white/10 text-sm font-medium text-navy-200 hover:border-amber-400/50 hover:text-amber-400" data-preset="large">
+          Large City (100k+)
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CALCULATOR -->
+  <section class="py-8">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="grid lg:grid-cols-5 gap-8">
+
+        <!-- INPUTS (left column) -->
+        <div class="lg:col-span-2 space-y-6 reveal">
+          <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-6 space-y-6">
+            <h3 class="font-display text-xl tracking-tight">Your City</h3>
+
+            <!-- Population -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">City population</label>
+                <span class="text-amber-400 font-semibold text-sm tabular-nums" id="populationDisplay">50,000</span>
+              </div>
+              <input type="range" id="population" min="5000" max="500000" step="1000" value="50000" oninput="onPopulationChange(this.value)">
+              <div class="flex justify-between text-xs text-navy-500 mt-1">
+                <span>5,000</span>
+                <span>500,000</span>
+              </div>
+            </div>
+
+            <!-- Meetings per month -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">Meetings per month</label>
+                <div class="flex items-center gap-2">
+                  <input type="number" id="meetingsPerMonth" min="1" max="100" value="12"
+                    class="w-16 bg-navy-800 border border-white/10 rounded-lg px-3 py-1.5 text-right text-amber-400 font-semibold text-sm focus:border-amber-400/50 focus:outline-none"
+                    oninput="calculate()">
+                  <span class="text-navy-500 text-xs">auto-estimated</span>
+                </div>
+              </div>
+              <p class="text-navy-500 text-xs">Council, committees, boards, commissions, and work sessions</p>
+            </div>
+
+            <!-- Average meeting length -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">Avg. meeting length</label>
+                <span class="text-amber-400 font-semibold text-sm tabular-nums" id="meetingLengthDisplay">2.0 hrs</span>
+              </div>
+              <input type="range" id="meetingLength" min="0.5" max="5" step="0.25" value="2" oninput="updateMeetingLength(this.value)">
+              <div class="flex justify-between text-xs text-navy-500 mt-1">
+                <span>30 min</span>
+                <span>5 hrs</span>
+              </div>
+            </div>
+
+            <!-- Staff hourly rate -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">Staff hourly rate</label>
+                <span class="text-amber-400 font-semibold text-sm tabular-nums" id="hourlyRateDisplay">$45/hr</span>
+              </div>
+              <input type="range" id="hourlyRate" min="25" max="75" step="1" value="45" oninput="updateHourlyRate(this.value)">
+              <div class="flex justify-between text-xs text-navy-500 mt-1">
+                <span>$25/hr</span>
+                <span>$75/hr</span>
+              </div>
+              <p class="text-navy-500 text-xs mt-1">Fully loaded cost (salary + benefits) for clerk or admin staff</p>
+            </div>
+          </div>
+
+          <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-6 space-y-6">
+            <h3 class="font-display text-xl tracking-tight">Current Costs</h3>
+
+            <!-- Current monthly documentation spend -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">Monthly documentation spend</label>
+              </div>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-navy-400 text-sm">$</span>
+                <input type="number" id="currentMonthlySpend" min="0" max="100000" value="3500"
+                  class="w-full bg-navy-800 border border-white/10 rounded-lg pl-7 pr-4 py-2.5 text-white text-sm focus:border-amber-400/50 focus:outline-none"
+                  oninput="calculate()">
+              </div>
+              <p class="text-navy-500 text-xs mt-1">Transcription services, minutes prep, contract staff, overtime</p>
+            </div>
+
+            <!-- FOIA requests -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">FOIA/public records requests per year</label>
+              </div>
+              <input type="number" id="foiaRequests" min="0" max="5000" value="120"
+                class="w-full bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm focus:border-amber-400/50 focus:outline-none"
+                oninput="calculate()">
+            </div>
+
+            <!-- Time per FOIA request -->
+            <div>
+              <div class="flex justify-between items-baseline mb-2">
+                <label class="text-sm font-medium text-navy-200">Avg. hours per FOIA request</label>
+                <span class="text-amber-400 font-semibold text-sm tabular-nums" id="foiaHoursDisplay">4.0 hrs</span>
+              </div>
+              <input type="range" id="foiaHours" min="1" max="12" step="0.5" value="4" oninput="updateFoiaHours(this.value)">
+              <div class="flex justify-between text-xs text-navy-500 mt-1">
+                <span>1 hr</span>
+                <span>12 hrs</span>
+              </div>
+              <p class="text-navy-500 text-xs mt-1">Searching archives, reviewing recordings, redacting, compiling response</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULTS (right column) -->
+        <div class="lg:col-span-3 space-y-6 reveal reveal-delay-2">
+
+          <!-- Headline metrics -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-5">
+              <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">Annual Staff Hours Saved</p>
+              <p class="stat-number font-display text-3xl md:text-4xl counter-value" id="hoursSaved">0</p>
+              <p class="text-navy-500 text-xs mt-1">on transcription &amp; minutes</p>
+            </div>
+            <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-5">
+              <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">FOIA Hours Saved</p>
+              <p class="stat-number font-display text-3xl md:text-4xl counter-value" id="foiaHoursSaved">0</p>
+              <p class="text-navy-500 text-xs mt-1">per year on records requests</p>
+            </div>
+          </div>
+
+          <!-- Financial summary -->
+          <div class="bg-navy-900/30 border border-white/5 rounded-2xl p-6" id="financialSummary">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">Total Annual Savings</p>
+                <p class="text-emerald-400 font-display text-2xl md:text-3xl counter-value" id="totalSavings">$0</p>
+              </div>
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">CivicLens Annual Cost</p>
+                <p class="text-amber-400 font-display text-2xl md:text-3xl counter-value" id="civiclensAnnualCost">$0</p>
+                <p class="text-navy-500 text-xs mt-1" id="recommendedPlan">-</p>
+              </div>
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">Net Annual Savings</p>
+                <p class="font-display text-2xl md:text-3xl counter-value" id="netSavings">$0</p>
+              </div>
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">ROI</p>
+                <p class="stat-number font-display text-2xl md:text-3xl counter-value" id="roiPercent">0%</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">Payback Period</p>
+                <p class="text-white font-semibold text-lg counter-value" id="paybackPeriod">-</p>
+              </div>
+              <div>
+                <p class="text-navy-400 text-xs font-medium uppercase tracking-wider mb-1">3-Year Total Savings</p>
+                <p class="text-emerald-400 font-semibold text-lg counter-value" id="threeYearSavings">$0</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bar chart: Current vs CivicLens -->
+          <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-6">
+            <h4 class="text-sm font-semibold text-navy-200 mb-4">Annual Cost Comparison</h4>
+            <div id="barChart" class="h-52"></div>
+          </div>
+
+          <!-- Line chart: Cumulative savings -->
+          <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-6 print-break">
+            <h4 class="text-sm font-semibold text-navy-200 mb-4">Cumulative Savings Over 36 Months</h4>
+            <div id="lineChart" class="h-52"></div>
+          </div>
+
+          <!-- Pie chart: Cost breakdown -->
+          <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-6">
+            <h4 class="text-sm font-semibold text-navy-200 mb-4">Current Cost Breakdown</h4>
+            <div id="pieChart" class="flex items-center justify-center gap-8 flex-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- METHODOLOGY NOTE -->
+  <section class="py-8">
+    <div class="max-w-5xl mx-auto px-6 reveal">
+      <div class="bg-navy-900/30 border border-white/5 rounded-2xl p-6">
+        <h3 class="font-display text-lg mb-3">How we calculate</h3>
+        <div class="grid md:grid-cols-3 gap-6 text-sm text-navy-300">
+          <div>
+            <p class="text-navy-200 font-medium mb-1">Transcription savings</p>
+            <p>Traditional transcription takes roughly 4x real-time for trained staff plus review time. CivicLens uses automated speech recognition and delivers within minutes. We estimate <strong class="text-navy-100">5 staff-hours saved per meeting hour</strong> (transcription + review + formatting).</p>
+          </div>
+          <div>
+            <p class="text-navy-200 font-medium mb-1">FOIA / records request savings</p>
+            <p>With a searchable full-text archive and structured data extraction, requests that previously required manual archive searches can be resolved in minutes. We estimate a <strong class="text-navy-100">75% reduction</strong> in staff time per request.</p>
+          </div>
+          <div>
+            <p class="text-navy-200 font-medium mb-1">Additional value not calculated</p>
+            <p>This estimate excludes harder-to-quantify benefits: reduced legal risk from better record-keeping, faster onboarding of new council members, improved public engagement, and time savings for council aides preparing briefings.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIONS -->
+  <section class="py-8 no-print">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="bg-navy-900/50 border border-white/5 rounded-2xl p-8 reveal">
+        <div class="grid md:grid-cols-2 gap-8">
+
+          <!-- Download / Print -->
+          <div>
+            <h3 class="font-display text-xl tracking-tight mb-2">Download this estimate</h3>
+            <p class="text-navy-300 text-sm mb-4">Generate a clean PDF you can attach to a budget request or share with your council finance committee.</p>
+            <button onclick="window.print()" class="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-6 py-3 rounded-xl transition-all text-sm">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              Download as PDF
+            </button>
+          </div>
+
+          <!-- Email estimate -->
+          <div>
+            <h3 class="font-display text-xl tracking-tight mb-2">Email this estimate</h3>
+            <p class="text-navy-300 text-sm mb-4">We will send a formatted ROI summary to your inbox along with a link to revisit and adjust the numbers.</p>
+            <form onsubmit="handleEmailSubmit(event)" class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <input type="text" placeholder="Name" required
+                  class="bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder:text-navy-500 focus:border-amber-400/50 focus:outline-none">
+                <input type="text" placeholder="Title / Role"
+                  class="bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder:text-navy-500 focus:border-amber-400/50 focus:outline-none">
+              </div>
+              <input type="email" placeholder="Email address" required
+                class="w-full bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder:text-navy-500 focus:border-amber-400/50 focus:outline-none">
+              <input type="text" placeholder="City / Organization"
+                class="w-full bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder:text-navy-500 focus:border-amber-400/50 focus:outline-none">
+              <button type="submit" id="emailSubmitBtn" class="w-full inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-6 py-3 rounded-xl transition-all hover:shadow-lg hover:shadow-amber-500/20 text-sm">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                Send ROI Summary
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-16 no-print">
+    <div class="max-w-3xl mx-auto px-6 text-center reveal">
+      <h2 class="font-display text-3xl md:text-4xl tracking-tight mb-4">Ready to see the savings in action?</h2>
+      <p class="text-navy-300 text-lg mb-8">Start a free 30-day trial. No credit card required. Process your first meeting in under 10 minutes.</p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="index.html#pricing" class="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-navy-950 font-bold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5">
+          Start Free Trial
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="demo.html" class="inline-flex items-center justify-center gap-2 border border-amber-400/40 hover:border-amber-400 text-amber-400 font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:bg-amber-400/5">
+          Try Live Demo
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-white/5 bg-navy-950 no-print">
+    <div class="max-w-7xl mx-auto px-6 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+            <svg class="w-5 h-5 text-navy-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+          <span class="font-display text-xl tracking-tight">CivicLens</span>
+        </div>
+        <p class="text-navy-500 text-xs">&copy; 2026 CivicLens, Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  // ==========================================================
+  // STATE & CONSTANTS
+  // ==========================================================
+
+  const PLANS = {
+    starter:    { name: 'Starter', monthly: 299, maxMeetings: 50 },
+    pro:        { name: 'Professional', monthly: 799, maxMeetings: 200 },
+    enterprise: { name: 'Enterprise', monthly: 1999, maxMeetings: Infinity }
+  };
+
+  // 5 staff-hours saved per hour of meeting (transcription + review + formatting + distribution)
+  const HOURS_SAVED_PER_MEETING_HOUR = 5;
+  // FOIA time reduction factor (75% reduction)
+  const FOIA_REDUCTION = 0.75;
+
+  const PRESETS = {
+    small:  { population: 15000,  meetings: 6,  length: 1.5, rate: 35, spend: 1500,  foia: 40,  foiaHrs: 3 },
+    medium: { population: 60000,  meetings: 14, length: 2.0, rate: 45, spend: 4000,  foia: 150, foiaHrs: 4 },
+    large:  { population: 250000, meetings: 30, length: 2.5, rate: 55, spend: 10000, foia: 500, foiaHrs: 5 }
+  };
+
+  let activePreset = null;
+  let animationFrameId = null;
+
+  // ==========================================================
+  // HELPERS
+  // ==========================================================
+
+  function fmt(n) {
+    return n.toLocaleString('en-US');
+  }
+
+  function fmtDollars(n) {
+    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return '$' + fmt(Math.round(n));
+    return '$' + n.toFixed(0);
+  }
+
+  function fmtDollarsExact(n) {
+    return '$' + fmt(Math.round(n));
+  }
+
+  function estimateMeetings(pop) {
+    // Realistic meeting volume by population
+    // Small towns ~4-8, mid-size ~10-20, large cities ~25-40
+    if (pop <= 10000) return Math.max(4, Math.round(pop / 2500));
+    if (pop <= 50000) return Math.round(8 + (pop - 10000) / 6000);
+    if (pop <= 100000) return Math.round(15 + (pop - 50000) / 8000);
+    if (pop <= 250000) return Math.round(21 + (pop - 100000) / 15000);
+    return Math.round(31 + (pop - 250000) / 25000);
+  }
+
+  function recommendPlan(meetingsPerMonth) {
+    if (meetingsPerMonth <= 50) return PLANS.starter;
+    if (meetingsPerMonth <= 200) return PLANS.pro;
+    return PLANS.enterprise;
+  }
+
+  // ==========================================================
+  // INPUT UPDATERS
+  // ==========================================================
+
+  function onPopulationChange(val) {
+    val = parseInt(val);
+    document.getElementById('populationDisplay').textContent = fmt(val);
+    // Auto-estimate meetings unless user manually changed it
+    const est = estimateMeetings(val);
+    document.getElementById('meetingsPerMonth').value = est;
+    calculate();
+  }
+
+  function updateMeetingLength(val) {
+    document.getElementById('meetingLengthDisplay').textContent = parseFloat(val).toFixed(1) + ' hrs';
+    calculate();
+  }
+
+  function updateHourlyRate(val) {
+    document.getElementById('hourlyRateDisplay').textContent = '$' + parseInt(val) + '/hr';
+    calculate();
+  }
+
+  function updateFoiaHours(val) {
+    document.getElementById('foiaHoursDisplay').textContent = parseFloat(val).toFixed(1) + ' hrs';
+    calculate();
+  }
+
+  // ==========================================================
+  // PRESETS
+  // ==========================================================
+
+  function applyPreset(size) {
+    const p = PRESETS[size];
+    activePreset = size;
+
+    // Update all preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.preset === size);
+    });
+
+    // Set values with smooth visual feedback
+    document.getElementById('population').value = p.population;
+    document.getElementById('populationDisplay').textContent = fmt(p.population);
+    document.getElementById('meetingsPerMonth').value = p.meetings;
+    document.getElementById('meetingLength').value = p.length;
+    document.getElementById('meetingLengthDisplay').textContent = p.length.toFixed(1) + ' hrs';
+    document.getElementById('hourlyRate').value = p.rate;
+    document.getElementById('hourlyRateDisplay').textContent = '$' + p.rate + '/hr';
+    document.getElementById('currentMonthlySpend').value = p.spend;
+    document.getElementById('foiaRequests').value = p.foia;
+    document.getElementById('foiaHours').value = p.foiaHrs;
+    document.getElementById('foiaHoursDisplay').textContent = p.foiaHrs.toFixed(1) + ' hrs';
+
+    calculate();
+  }
+
+  // ==========================================================
+  // CORE CALCULATION
+  // ==========================================================
+
+  function getInputs() {
+    return {
+      population:       parseInt(document.getElementById('population').value) || 0,
+      meetingsPerMonth: parseInt(document.getElementById('meetingsPerMonth').value) || 0,
+      meetingLength:    parseFloat(document.getElementById('meetingLength').value) || 0,
+      hourlyRate:       parseInt(document.getElementById('hourlyRate').value) || 0,
+      currentSpend:     parseFloat(document.getElementById('currentMonthlySpend').value) || 0,
+      foiaRequests:     parseInt(document.getElementById('foiaRequests').value) || 0,
+      foiaHours:        parseFloat(document.getElementById('foiaHours').value) || 0
+    };
+  }
+
+  function computeROI(inp) {
+    // Transcription hours saved per year
+    const meetingHoursPerMonth = inp.meetingsPerMonth * inp.meetingLength;
+    const transcriptionHoursSavedPerMonth = meetingHoursPerMonth * HOURS_SAVED_PER_MEETING_HOUR;
+    const transcriptionHoursSavedPerYear = transcriptionHoursSavedPerMonth * 12;
+
+    // Transcription cost savings
+    const transcriptionSavingsPerYear = transcriptionHoursSavedPerYear * inp.hourlyRate;
+
+    // Current documentation spend elimination (assumes CivicLens replaces existing services)
+    // We count 80% replacement - some costs remain (paper distribution, physical archival, etc.)
+    const docSpendSavingsPerYear = inp.currentSpend * 12 * 0.80;
+
+    // FOIA savings
+    const foiaHoursSavedPerYear = inp.foiaRequests * inp.foiaHours * FOIA_REDUCTION;
+    const foiaSavingsPerYear = foiaHoursSavedPerYear * inp.hourlyRate;
+
+    // Total savings
+    const totalSavingsPerYear = transcriptionSavingsPerYear + docSpendSavingsPerYear + foiaSavingsPerYear;
+
+    // CivicLens cost
+    const plan = recommendPlan(inp.meetingsPerMonth);
+    const civiclensAnnualCost = plan.monthly * 12;
+
+    // Net savings
+    const netSavingsPerYear = totalSavingsPerYear - civiclensAnnualCost;
+
+    // ROI percentage = (net savings / cost) * 100
+    const roiPercent = civiclensAnnualCost > 0 ? (netSavingsPerYear / civiclensAnnualCost) * 100 : 0;
+
+    // Payback period in months
+    const monthlySavings = totalSavingsPerYear / 12;
+    const paybackMonths = monthlySavings > 0 ? plan.monthly / monthlySavings : Infinity;
+
+    // 3-year total savings
+    const threeYearSavings = netSavingsPerYear * 3;
+
+    return {
+      transcriptionHoursSaved: Math.round(transcriptionHoursSavedPerYear),
+      foiaHoursSaved: Math.round(foiaHoursSavedPerYear),
+      transcriptionSavings: Math.round(transcriptionSavingsPerYear),
+      docSpendSavings: Math.round(docSpendSavingsPerYear),
+      foiaSavings: Math.round(foiaSavingsPerYear),
+      totalSavings: Math.round(totalSavingsPerYear),
+      plan: plan,
+      civiclensAnnualCost: civiclensAnnualCost,
+      netSavings: Math.round(netSavingsPerYear),
+      roiPercent: Math.round(roiPercent),
+      paybackMonths: paybackMonths,
+      threeYearSavings: Math.round(threeYearSavings),
+      currentAnnualCost: Math.round((inp.currentSpend * 12) + (inp.foiaRequests * inp.foiaHours * inp.hourlyRate) + transcriptionSavingsPerYear)
+    };
+  }
+
+  // ==========================================================
+  // ANIMATED NUMBER COUNTER
+  // ==========================================================
+
+  const counterTargets = {};
+  const counterCurrents = {};
+
+  function animateCounter(id, target, formatter) {
+    if (counterTargets[id] === target) return;
+    counterTargets[id] = target;
+    if (counterCurrents[id] === undefined) counterCurrents[id] = 0;
+
+    const el = document.getElementById(id);
+    const start = counterCurrents[id];
+    const diff = target - start;
+    const duration = 400;
+    const startTime = performance.now();
+
+    function tick(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = start + diff * eased;
+      counterCurrents[id] = current;
+      el.textContent = formatter(Math.round(current));
+
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ==========================================================
+  // SVG CHARTS
+  // ==========================================================
+
+  function renderBarChart(results) {
+    const container = document.getElementById('barChart');
+    const currentCost = results.currentAnnualCost;
+    const civiclensTotal = results.civiclensAnnualCost;
+    const maxVal = Math.max(currentCost, civiclensTotal, 1);
+
+    const W = 520, H = 200, padL = 72, padR = 20, padT = 20, padB = 40;
+    const chartW = W - padL - padR;
+    const chartH = H - padT - padB;
+    const barW = 80;
+
+    const currentBarH = (currentCost / maxVal) * chartH;
+    const civicBarH = (civiclensTotal / maxVal) * chartH;
+
+    const cx1 = padL + chartW * 0.3;
+    const cx2 = padL + chartW * 0.7;
+
+    container.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-full">
+        <!-- Y axis labels -->
+        <text x="${padL - 8}" y="${padT + 4}" text-anchor="end" fill="#5e7faf" font-size="11" font-family="Instrument Sans">${fmtDollars(maxVal)}</text>
+        <text x="${padL - 8}" y="${padT + chartH / 2 + 4}" text-anchor="end" fill="#5e7faf" font-size="11" font-family="Instrument Sans">${fmtDollars(maxVal / 2)}</text>
+        <text x="${padL - 8}" y="${padT + chartH + 4}" text-anchor="end" fill="#5e7faf" font-size="11" font-family="Instrument Sans">$0</text>
+
+        <!-- Grid lines -->
+        <line x1="${padL}" y1="${padT}" x2="${padL + chartW}" y2="${padT}" stroke="#1e3660" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="${padL}" y1="${padT + chartH / 2}" x2="${padL + chartW}" y2="${padT + chartH / 2}" stroke="#1e3660" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="${padL}" y1="${padT + chartH}" x2="${padL + chartW}" y2="${padT + chartH}" stroke="#1e3660" stroke-width="1"/>
+
+        <!-- Current cost bar -->
+        <rect x="${cx1 - barW / 2}" y="${padT + chartH - currentBarH}" width="${barW}" height="${currentBarH}" rx="4" fill="#ef4444" opacity="0.8" class="chart-bar"/>
+        <text x="${cx1}" y="${padT + chartH - currentBarH - 8}" text-anchor="middle" fill="#ef4444" font-size="13" font-weight="600" font-family="Instrument Sans">${fmtDollarsExact(currentCost)}</text>
+        <text x="${cx1}" y="${H - 8}" text-anchor="middle" fill="#8ba3c8" font-size="12" font-family="Instrument Sans">Current Cost</text>
+
+        <!-- CivicLens cost bar -->
+        <rect x="${cx2 - barW / 2}" y="${padT + chartH - civicBarH}" width="${barW}" height="${civicBarH}" rx="4" fill="#e8a838" opacity="0.9" class="chart-bar"/>
+        <text x="${cx2}" y="${padT + chartH - civicBarH - 8}" text-anchor="middle" fill="#e8a838" font-size="13" font-weight="600" font-family="Instrument Sans">${fmtDollarsExact(civiclensTotal)}</text>
+        <text x="${cx2}" y="${H - 8}" text-anchor="middle" fill="#8ba3c8" font-size="12" font-family="Instrument Sans">CivicLens</text>
+
+        ${results.netSavings > 0 ? `
+        <!-- Savings annotation -->
+        <line x1="${cx2 + barW / 2 + 12}" y1="${padT + chartH - currentBarH}" x2="${cx2 + barW / 2 + 12}" y2="${padT + chartH - civicBarH}" stroke="#34d399" stroke-width="2" stroke-dasharray="4"/>
+        <text x="${cx2 + barW / 2 + 18}" y="${padT + chartH - (currentBarH + civicBarH) / 2 + 4}" fill="#34d399" font-size="11" font-weight="600" font-family="Instrument Sans">Save ${fmtDollarsExact(results.netSavings)}/yr</text>
+        ` : ''}
+      </svg>
+    `;
+  }
+
+  function renderLineChart(results) {
+    const container = document.getElementById('lineChart');
+    const monthlySavings = results.netSavings / 12;
+    const months = 36;
+
+    const W = 520, H = 200, padL = 72, padR = 20, padT = 20, padB = 35;
+    const chartW = W - padL - padR;
+    const chartH = H - padT - padB;
+
+    // Build cumulative data points
+    const points = [];
+    for (let m = 0; m <= months; m++) {
+      points.push({ month: m, savings: monthlySavings * m });
+    }
+
+    const maxSavings = Math.max(points[months].savings, 1);
+
+    function px(m) { return padL + (m / months) * chartW; }
+    function py(s) { return padT + chartH - (s / maxSavings) * chartH; }
+
+    const pathD = points.map((p, i) => (i === 0 ? 'M' : 'L') + px(p.month).toFixed(1) + ',' + py(p.savings).toFixed(1)).join(' ');
+
+    // Fill area path
+    const areaD = pathD + ` L${px(months).toFixed(1)},${(padT + chartH).toFixed(1)} L${px(0).toFixed(1)},${(padT + chartH).toFixed(1)} Z`;
+
+    const yearLabels = [0, 12, 24, 36].map(m => `<text x="${px(m)}" y="${H - 6}" text-anchor="middle" fill="#5e7faf" font-size="11" font-family="Instrument Sans">${m === 0 ? 'Start' : 'Year ' + (m / 12)}</text>`).join('');
+
+    // Y-axis labels
+    const ySteps = 4;
+    const yLabels = Array.from({length: ySteps + 1}, (_, i) => {
+      const val = (maxSavings / ySteps) * i;
+      const y = padT + chartH - (i / ySteps) * chartH;
+      return `
+        <text x="${padL - 8}" y="${y + 4}" text-anchor="end" fill="#5e7faf" font-size="10" font-family="Instrument Sans">${fmtDollars(val)}</text>
+        <line x1="${padL}" y1="${y}" x2="${padL + chartW}" y2="${y}" stroke="#1e3660" stroke-width="1" ${i === 0 ? '' : 'stroke-dasharray="4"'}/>
+      `;
+    }).join('');
+
+    // Breakeven marker
+    const breakevenMonth = results.paybackMonths;
+    let breakevenMarker = '';
+    if (breakevenMonth > 0 && breakevenMonth <= 36 && isFinite(breakevenMonth)) {
+      breakevenMarker = `
+        <line x1="${px(breakevenMonth)}" y1="${padT}" x2="${px(breakevenMonth)}" y2="${padT + chartH}" stroke="#34d399" stroke-width="1" stroke-dasharray="4" opacity="0.6"/>
+        <circle cx="${px(breakevenMonth)}" cy="${py(0)}" r="4" fill="#34d399"/>
+        <text x="${px(breakevenMonth)}" y="${padT - 4}" text-anchor="middle" fill="#34d399" font-size="10" font-weight="600" font-family="Instrument Sans">Breakeven</text>
+      `;
+    }
+
+    // Endpoint marker
+    const endVal = points[months].savings;
+
+    container.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-full">
+        ${yLabels}
+        ${yearLabels}
+
+        <!-- Area fill -->
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34d399" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaD}" fill="url(#areaGrad)"/>
+
+        <!-- Line -->
+        <path d="${pathD}" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" class="chart-line-path"/>
+
+        ${breakevenMarker}
+
+        <!-- Endpoint -->
+        <circle cx="${px(months)}" cy="${py(endVal)}" r="5" fill="#34d399" stroke="#0c1a33" stroke-width="2"/>
+        <text x="${px(months) - 8}" y="${py(endVal) - 10}" text-anchor="end" fill="#34d399" font-size="12" font-weight="700" font-family="Instrument Sans">${fmtDollarsExact(endVal)}</text>
+      </svg>
+    `;
+  }
+
+  function renderPieChart(results) {
+    const container = document.getElementById('pieChart');
+    const data = [
+      { label: 'Transcription labor', value: results.transcriptionSavings, color: '#3d5f94' },
+      { label: 'Documentation services', value: results.docSpendSavings, color: '#e8a838' },
+      { label: 'FOIA compliance', value: results.foiaSavings, color: '#34d399' }
+    ].filter(d => d.value > 0);
+
+    if (data.length === 0) {
+      container.innerHTML = '<p class="text-navy-500 text-sm">Enter your current costs to see the breakdown</p>';
+      return;
+    }
+
+    const total = data.reduce((s, d) => s + d.value, 0);
+    const R = 80, cx = 100, cy = 100;
+    let currentAngle = -Math.PI / 2; // Start at top
+
+    const slices = data.map(d => {
+      const angle = (d.value / total) * 2 * Math.PI;
+      const startAngle = currentAngle;
+      const endAngle = currentAngle + angle;
+      currentAngle = endAngle;
+
+      const x1 = cx + R * Math.cos(startAngle);
+      const y1 = cy + R * Math.sin(startAngle);
+      const x2 = cx + R * Math.cos(endAngle);
+      const y2 = cy + R * Math.sin(endAngle);
+      const largeArc = angle > Math.PI ? 1 : 0;
+
+      return `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${d.color}" opacity="0.85" stroke="#0c1a33" stroke-width="2"/>`;
+    });
+
+    const legend = data.map(d => {
+      const pct = Math.round((d.value / total) * 100);
+      return `
+        <div class="flex items-center gap-3">
+          <div class="w-3 h-3 rounded-full shrink-0" style="background:${d.color}"></div>
+          <div>
+            <p class="text-sm font-medium text-navy-200">${d.label}</p>
+            <p class="text-xs text-navy-400">${fmtDollarsExact(d.value)}/yr <span class="text-navy-500">(${pct}%)</span></p>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <svg viewBox="0 0 200 200" class="w-40 h-40 shrink-0">
+        ${slices.join('')}
+        <!-- Center hole for donut effect -->
+        <circle cx="${cx}" cy="${cy}" r="40" fill="#0c1a33"/>
+        <text x="${cx}" y="${cy - 4}" text-anchor="middle" fill="#e8a838" font-size="14" font-weight="700" font-family="Instrument Sans">${fmtDollars(total)}</text>
+        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="#5e7faf" font-size="9" font-family="Instrument Sans">total/year</text>
+      </svg>
+      <div class="space-y-4">
+        ${legend}
+      </div>
+    `;
+  }
+
+  // ==========================================================
+  // MAIN CALCULATE
+  // ==========================================================
+
+  function calculate() {
+    const inp = getInputs();
+    const r = computeROI(inp);
+
+    // Animate counters
+    animateCounter('hoursSaved', r.transcriptionHoursSaved, n => fmt(n));
+    animateCounter('foiaHoursSaved', r.foiaHoursSaved, n => fmt(n));
+
+    // Financial summary
+    document.getElementById('totalSavings').textContent = fmtDollarsExact(r.totalSavings);
+    document.getElementById('civiclensAnnualCost').textContent = fmtDollarsExact(r.civiclensAnnualCost);
+    document.getElementById('recommendedPlan').textContent = r.plan.name + ' plan';
+
+    const netEl = document.getElementById('netSavings');
+    if (r.netSavings >= 0) {
+      netEl.textContent = fmtDollarsExact(r.netSavings);
+      netEl.className = 'text-emerald-400 font-display text-2xl md:text-3xl counter-value';
+    } else {
+      netEl.textContent = '-' + fmtDollarsExact(Math.abs(r.netSavings));
+      netEl.className = 'text-red-400 font-display text-2xl md:text-3xl counter-value';
+    }
+
+    document.getElementById('roiPercent').textContent = r.roiPercent + '%';
+
+    const paybackEl = document.getElementById('paybackPeriod');
+    if (r.paybackMonths <= 0 || !isFinite(r.paybackMonths)) {
+      paybackEl.textContent = '-';
+    } else if (r.paybackMonths < 1) {
+      paybackEl.textContent = '< 1 month';
+    } else {
+      paybackEl.textContent = r.paybackMonths.toFixed(1) + ' months';
+    }
+
+    const threeYearEl = document.getElementById('threeYearSavings');
+    if (r.threeYearSavings >= 0) {
+      threeYearEl.textContent = fmtDollarsExact(r.threeYearSavings);
+      threeYearEl.className = 'text-emerald-400 font-semibold text-lg counter-value';
+    } else {
+      threeYearEl.textContent = '-' + fmtDollarsExact(Math.abs(r.threeYearSavings));
+      threeYearEl.className = 'text-red-400 font-semibold text-lg counter-value';
+    }
+
+    // Render charts
+    renderBarChart(r);
+    renderLineChart(r);
+    renderPieChart(r);
+
+    // Pulse the financial summary
+    const summary = document.getElementById('financialSummary');
+    summary.classList.remove('result-highlight');
+    void summary.offsetWidth; // force reflow
+    summary.classList.add('result-highlight');
+  }
+
+  // ==========================================================
+  // EMAIL FORM
+  // ==========================================================
+
+  function handleEmailSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('emailSubmitBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+      Sent! Check your inbox
+    `;
+    btn.classList.remove('bg-amber-400', 'hover:bg-amber-500');
+    btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+    btn.disabled = true;
+
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+      btn.classList.add('bg-amber-400', 'hover:bg-amber-500');
+      btn.disabled = false;
+    }, 3000);
+  }
+
+  // ==========================================================
+  // SCROLL REVEAL
+  // ==========================================================
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  // ==========================================================
+  // INIT
+  // ==========================================================
+
+  // Run initial calculation on load
+  calculate();
+  </script>
+</body>
+</html>
