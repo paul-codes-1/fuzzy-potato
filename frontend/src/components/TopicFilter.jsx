@@ -16,8 +16,9 @@ function TopicFilter({
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
-          <option value="date-desc">Newest first</option>
-          <option value="date-asc">Oldest first</option>
+          <option value="clip-desc">Latest clips first</option>
+          <option value="date-desc">Newest by date</option>
+          <option value="date-asc">Oldest by date</option>
           <option value="title">Title A-Z</option>
         </select>
       </div>
