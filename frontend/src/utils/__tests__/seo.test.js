@@ -4,6 +4,7 @@ import {
   formatLongDate,
   buildSeoTitle,
   buildSeoDescription,
+  buildMeetingGraph,
 } from '../seo'
 
 describe('cleanTitle', () => {
@@ -110,5 +111,90 @@ describe('buildSeoDescription', () => {
     const result = buildSeoDescription(summary)
     expect(result).toContain('Real content')
     expect(result).not.toContain('short')
+  })
+})
+
+describe('buildMeetingGraph', () => {
+  const baseMeeting = {
+    clipId: 6757,
+    title: 'Urban County Council (1)',
+    date: '2026-04-30',
+    meetingBody: 'Council',
+    description: 'Two ordinances on second reading.',
+    granicusUrl: 'https://lfucg.granicus.com/player/clip/6757?view_id=14',
+    summaryUpdatedAt: '2026-04-30T20:34:59',
+    processedAt: '2026-04-30T20:00:00',
+    transcriptWords: 11300,
+  }
+
+  it('returns null when clipId is missing', () => {
+    expect(buildMeetingGraph({ ...baseMeeting, clipId: null })).toBeNull()
+  })
+
+  it('emits a coherent @graph with Article + Event + Organization + WebSite', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    expect(graph['@context']).toBe('https://schema.org')
+    const types = graph['@graph'].map((n) => n['@type'])
+    expect(types).toContain('Article')
+    expect(types).toContain('Event')
+    expect(types).toContain('Organization')
+    expect(types).toContain('WebSite')
+  })
+
+  it('Article carries datePublished = meeting date and dateModified = revision', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    expect(article.datePublished).toBe('2026-04-30')
+    expect(article.dateModified).toBe('2026-04-30T20:34:59')
+  })
+
+  it('Article falls back to processedAt when summaryUpdatedAt missing', () => {
+    const graph = buildMeetingGraph({ ...baseMeeting, summaryUpdatedAt: null })
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    expect(article.dateModified).toBe('2026-04-30T20:00:00')
+  })
+
+  it('Article carries auto-transcribed status + producer naming the AI stack', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    expect(article.creativeWorkStatus).toBe('Auto-transcribed')
+    expect(article.producer.name).toContain('Whisper')
+    expect(article.producer.name).toContain('GPT-4o')
+    expect(article.producer.name).toContain('Claude Sonnet')
+  })
+
+  it('Article uses cleaned SEO title in headline', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    expect(article.headline).toBe('Urban County Council - April 30, 2026')
+    expect(article.headline).not.toContain('(1)')
+  })
+
+  it('Event names the LFUCG and links Granicus video', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const event = graph['@graph'].find((n) => n['@type'] === 'Event')
+    expect(event.organizer.name).toBe('Lexington-Fayette Urban County Government')
+    expect(event.recordedIn.url).toContain('granicus')
+    expect(event.startDate).toBe('2026-04-30T18:00:00-04:00')
+  })
+
+  it('Event omits recordedIn when no Granicus URL provided', () => {
+    const graph = buildMeetingGraph({ ...baseMeeting, granicusUrl: null })
+    const event = graph['@graph'].find((n) => n['@type'] === 'Event')
+    expect(event.recordedIn).toBeUndefined()
+  })
+
+  it('Article includes wordCount when transcriptWords provided', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    expect(article.wordCount).toBe(11300)
+  })
+
+  it('Organization references @id consistently across nodes', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const article = graph['@graph'].find((n) => n['@type'] === 'Article')
+    const org = graph['@graph'].find((n) => n['@type'] === 'Organization')
+    expect(article.author['@id']).toBe(org['@id'])
+    expect(article.publisher['@id']).toBe(org['@id'])
   })
 })

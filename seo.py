@@ -64,6 +64,167 @@ def build_seo_title(title: Optional[str], iso_date: Optional[str]) -> str:
     return cleaned or formatted or "LFUCG Meeting"
 
 
+def _format_revision_date(iso: Optional[str]) -> str:
+    """ISO timestamp (`2026-04-30T20:34:59`) → `April 30, 2026`. Falls
+    back to the date prefix on parse failure so we never emit garbage.
+    """
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+    except ValueError:
+        return iso[:10] if len(iso) >= 10 else iso
+
+
+def build_clip_markdown(
+    entry: Dict[str, Any],
+    output_dir: Path,
+    site_url: str,
+) -> Optional[str]:
+    """Render a per-clip Markdown alternate combining summary + facts + transcript.
+
+    Returns None if the clip directory is missing entirely; otherwise always
+    returns at least a frontmatter block — the AI disclosure must appear on
+    every Markdown page, even when the source files are sparse.
+
+    Format mirrors what an LLM agent would want to ingest:
+      1. SEO title as H1
+      2. Metadata block (source, date, body, last-revised, permalink)
+      3. AI disclosure callout (mirrors the on-page <aside>)
+      4. Narrative summary (from summary.txt) — kept verbatim
+      5. Decisions list (from extracted_facts.json motions_and_votes)
+      6. Full transcript (from transcript.txt) — last so length-capped
+         agents that read top-to-bottom still get the structured data.
+    """
+    clip_id = entry.get("clip_id")
+    if clip_id is None:
+        return None
+    clip_dir = output_dir / "clips" / str(clip_id)
+    if not clip_dir.exists():
+        return None
+
+    title = entry.get("title")
+    iso_date = entry.get("date")
+    body = entry.get("meeting_body") or ""
+    seo_title = build_seo_title(title, iso_date)
+    long_date = format_long_date(iso_date)
+    permalink = f"{site_url}/meeting/{clip_id}"
+
+    # Pull metadata for source URL + revision timestamp + transcript word count.
+    metadata: Dict[str, Any] = {}
+    metadata_path = clip_dir / "metadata.json"
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception:
+            metadata = {}
+    granicus_url = metadata.get("url") or ""
+    revised_iso = metadata.get("summary_updated_at") or metadata.get("processed_at") or iso_date
+    revised_human = _format_revision_date(revised_iso)
+    word_count = metadata.get("transcript_words") or 0
+
+    lines: List[str] = [
+        f"# {seo_title}",
+        "",
+    ]
+    meta_bits = []
+    if body:
+        meta_bits.append(body)
+    if long_date:
+        meta_bits.append(long_date)
+    if meta_bits:
+        lines.append(f"> Auto-transcribed civic record · {' · '.join(meta_bits)}")
+        lines.append("")
+
+    lines.append(f"- **Permalink**: {permalink}")
+    if granicus_url:
+        lines.append(f"- **Source video**: {granicus_url}")
+    if iso_date:
+        lines.append(f"- **Date**: {iso_date}")
+    if body:
+        lines.append(f"- **Body**: {body}")
+    if revised_human:
+        lines.append(f"- **Last revised**: {revised_human}")
+    if word_count:
+        lines.append(f"- **Length**: {word_count:,} words")
+    lines.append("")
+
+    lines += [
+        "> ⚠️ **Auto-generated content.** Audio from the official Granicus video was "
+        "auto-transcribed by OpenAI Whisper-1. Structured facts were extracted with "
+        "GPT-4o; the narrative summary was written by Anthropic Claude Sonnet. "
+        "Speaker labels and verbatim wording may contain errors. See "
+        f"[methodology]({site_url}/about/methodology) or "
+        "[report a correction](mailto:editor@lexingtonky.news).",
+        "",
+        "---",
+        "",
+    ]
+
+    # Narrative summary — verbatim, headers and all.
+    summary_path = clip_dir / "summary.txt"
+    if summary_path.exists():
+        try:
+            summary_text = summary_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            summary_text = ""
+        if summary_text:
+            lines.append(summary_text)
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+    # Structured decisions — extracted_facts is canonical for vote outcomes.
+    facts_path = clip_dir / "extracted_facts.json"
+    if facts_path.exists():
+        try:
+            with open(facts_path, "r", encoding="utf-8") as f:
+                facts = json.load(f)
+        except Exception:
+            facts = {}
+        votes = facts.get("motions_and_votes") or []
+        if votes:
+            lines.append("## Decisions")
+            lines.append("")
+            for v in votes:
+                ident = v.get("identifier") or "Motion"
+                desc = v.get("description") or ""
+                outcome = v.get("outcome") or "unknown"
+                tally = ""
+                if v.get("ayes") is not None:
+                    tally = f" ({v.get('ayes', 0)}-{v.get('nays', 0)})"
+                line = f"- **{ident}** — {outcome}{tally}"
+                if desc:
+                    line += f": {desc}"
+                lines.append(line)
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+    # Full transcript — last because it's the longest section.
+    transcript_file = (
+        metadata.get("files", {}).get("transcript")
+        if isinstance(metadata.get("files"), dict)
+        else None
+    )
+    if transcript_file:
+        transcript_path = clip_dir / transcript_file
+        if transcript_path.exists():
+            try:
+                transcript_text = transcript_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                transcript_text = ""
+            if transcript_text:
+                lines.append("## Full transcript")
+                lines.append("")
+                lines.append(transcript_text)
+                lines.append("")
+
+    return "\n".join(lines)
+
+
 def build_seo_description(
     summary_path: Optional[Path] = None,
     *,
@@ -137,6 +298,9 @@ def generate_seo_artifacts(
         ("/", "daily", "1.0"),
         ("/ask", "weekly", "0.7"),
         ("/chat", "weekly", "0.6"),
+        ("/about", "monthly", "0.6"),
+        ("/about/methodology", "monthly", "0.5"),
+        ("/corrections", "monthly", "0.4"),
     ]
     sitemap_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -220,14 +384,38 @@ def generate_seo_artifacts(
         "## About",
         "",
         f"- Site: [{site_url}]({site_url})",
+        f"- About page (operator + mission): [{site_url}/about]({site_url}/about)",
+        f"- Methodology (audio source, model versions, accuracy caveats): [{site_url}/about/methodology]({site_url}/about/methodology)",
+        f"- Corrections workflow: [{site_url}/corrections]({site_url}/corrections)",
         f"- Search index (JSON): [{site_url}/data/index.json]({site_url}/data/index.json)",
         f"- RAG Q&A (HTML): [{site_url}/ask]({site_url}/ask) — natural-language Q&A over the archive",
         f"- Sitemap: [{site_url}/sitemap_index.xml]({site_url}/sitemap_index.xml)",
         f"- Full meeting dump: [{site_url}/llms-full.txt]({site_url}/llms-full.txt)",
         "",
+        "## Per-meeting Markdown alternate",
+        "",
+        f"Every meeting has a Markdown alternate at `{site_url}/data/clips/<clip_id>/clip.md` "
+        "served with `Content-Type: text/markdown` and open CORS. Combines the SEO-formatted "
+        "title, source-video link, AI-generation disclosure, narrative summary, decisions list, "
+        "and full transcript in one fetch. Preferable to scraping the HTML for agent ingestion.",
+        "",
+        "## Operator",
+        "",
+        f"Operated by Paul Oliva as a civic-tech side project — see [{site_url}/about]({site_url}/about). "
+        f"Editorial contact: editor@lexingtonky.news.",
+        "",
         "## How content is generated",
         "",
-        "Each meeting page contains: an AI-generated narrative summary (Claude Sonnet, sectioned with `[timestamp: MM:SS]` markers for video deep-linking), structured fact extraction (votes with roll calls, financial items, attendance, agenda items, public comments — all in `extracted_facts.json`), the official agenda PDF, the official minutes PDF (when published), and a full Whisper transcript with segment timestamps. Summaries cite specific timestamps that link back to the Granicus video player.",
+        "Audio is pulled from the official LFUCG Granicus video stream and transcribed by "
+        "OpenAI Whisper-1. A two-pass summarization pipeline runs over each transcript: GPT-4o "
+        "extracts structured facts (votes, motions, financial items, attendance, agenda items, "
+        "public comments) into `extracted_facts.json`; Anthropic Claude Sonnet then writes a "
+        "section-by-section narrative summary with `[timestamp: MM:SS]` markers for video "
+        "deep-linking. Topic tags are generated by GPT-4o-mini. Agenda PDFs and official "
+        "minutes are downloaded from Granicus when available; text extraction uses pdfplumber "
+        "with Tesseract OCR fallback for scanned PDFs. Known accuracy limitations and the "
+        f"corrections workflow are documented at [{site_url}/about/methodology]({site_url}/about/methodology). "
+        "Every meeting page links back to the canonical Granicus video for verification.",
         "",
         "## Recent meetings",
         "",
@@ -315,7 +503,26 @@ def generate_seo_artifacts(
         full_lines += block
     (public_dir / "llms-full.txt").write_text("\n".join(full_lines), encoding="utf-8")
 
+    # ---- Per-clip Markdown alternates — written next to each clip's
+    # other artifacts so deploy.sh syncs them to S3 alongside the rest.
+    # AI agents fetching `/data/clips/<id>/clip.md` get the same content
+    # the HTML page renders, plus the disclosure and decisions block,
+    # without parsing JS-rendered markup.
+    md_written = 0
+    for entry in valid_clips:
+        markdown = build_clip_markdown(entry, output_dir, site_url)
+        if markdown is None:
+            continue
+        try:
+            (output_dir / "clips" / str(entry["clip_id"]) / "clip.md").write_text(
+                markdown, encoding="utf-8"
+            )
+            md_written += 1
+        except OSError as e:
+            log(f"Failed to write clip.md for clip {entry['clip_id']}: {e}", "WARNING")
+
     log(
         f"Generated SEO artifacts: sitemap.xml ({len(valid_clips) + len(static_routes)} urls), "
-        f"sitemap_index.xml, news-sitemap.xml ({len(news_clips)} urls), llms.txt, llms-full.txt"
+        f"sitemap_index.xml, news-sitemap.xml ({len(news_clips)} urls), llms.txt, "
+        f"llms-full.txt, {md_written} per-clip clip.md alternates"
     )
