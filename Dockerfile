@@ -6,6 +6,11 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY rag/ rag/
 COPY main.py .
+# Top-level modules pulled out of main.py during the cleanup PRs (#6, #7).
+# `clients.py` is imported by rag/server.py + rag/query.py + rag/ingest.py
+# so it MUST be in the image; the others are main.py-only but small and
+# kept here so the image faithfully mirrors the repo root.
+COPY clients.py documents.py seo.py summary_v2.py ./
 
 # Install project with rag dependencies
 RUN pip install --no-cache-dir ".[rag]"
