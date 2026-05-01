@@ -7,5 +7,10 @@ __pycache__
 
 frontend/dist
 frontend/node_modules
+frontend/public/sitemap.xml
+frontend/public/sitemap_index.xml
+frontend/public/news-sitemap.xml
+frontend/public/llms.txt
+frontend/public/llms-full.txt
 
 .env
