@@ -566,6 +566,30 @@ a:hover {
   font-size: 0.875rem;
 }
 
+.ai-disclosure {
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: #422006;
+}
+
+.ai-disclosure strong {
+  color: #78350f;
+}
+
+.ai-disclosure a {
+  color: #92400e;
+  text-decoration: underline;
+}
+
+.ai-disclosure a:hover {
+  color: #78350f;
+}
+
 .meeting-files {
   background: var(--surface);
   border-radius: var(--radius-lg);
@@ -1123,19 +1147,22 @@ a:hover {
    Footer
    ================== */
 .site-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   padding: 32px 20px;
   color: var(--text-tertiary);
   font-size: 0.8125rem;
+  border-top: 1px solid var(--border, #e5e7eb);
+  margin-top: 48px;
+}
+
+.site-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 12px;
 }
 
 .site-footer a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   color: var(--text-secondary);
   font-weight: 500;
   transition: color var(--transition);
@@ -1143,11 +1170,83 @@ a:hover {
 
 .site-footer a:hover {
   color: var(--text-primary);
-  text-decoration: none;
+  text-decoration: underline;
+}
+
+.site-footer-disclosure {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto;
+  line-height: 1.5;
 }
 
 .site-footer svg {
   flex-shrink: 0;
+}
+
+/* Static text pages: About, Methodology, Corrections. Constrained
+   reading width + heavier line-height so long-form prose is comfortable. */
+.static-page {
+  max-width: 760px;
+  margin: 32px auto 64px;
+  line-height: 1.65;
+}
+
+.static-page h1 {
+  font-size: 2rem;
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+}
+
+.static-page h2 {
+  font-size: 1.25rem;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.static-page p,
+.static-page ul,
+.static-page ol {
+  margin-bottom: 16px;
+}
+
+.static-page ul,
+.static-page ol {
+  padding-left: 1.4em;
+}
+
+.static-page li {
+  margin-bottom: 6px;
+}
+
+.static-page .lede {
+  font-size: 1.0625rem;
+  color: var(--text-secondary);
+}
+
+.static-page code {
+  background: var(--surface, #f3f4f6);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+
+.static-page-footer-links {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+.profile-links {
+  list-style: none;
+  padding-left: 0;
+}
+
+.profile-links li {
+  margin-bottom: 4px;
 }
 
 /* ==================

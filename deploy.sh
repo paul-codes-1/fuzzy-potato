@@ -25,6 +25,17 @@ aws s3 sync frontend/dist/ "$S3_BUCKET" \
   --exclude "data/*" --exclude "assets/*" --delete \
   --cache-control "no-cache"
 
+# Per-clip Markdown alternates: served at /data/clips/<id>/clip.md for AI
+# agents and discoverable via <link rel="alternate" type="text/markdown">.
+# Synced first with the right Content-Type so the main sync below can
+# treat them as already-uploaded and skip them via --exclude.
+echo "==> Syncing per-clip Markdown alternates (text/markdown)..."
+aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
+  --exclude "*" \
+  --include "clips/*/clip.md" \
+  --content-type "text/markdown; charset=utf-8" \
+  --cache-control "public, max-age=600"
+
 # Data JSON — must revalidate every load (otherwise stale meetings list)
 echo "==> Syncing data (no-cache)..."
 aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
@@ -33,7 +44,8 @@ aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
   --exclude "*.mp4" \
   --exclude "*.part" \
   --exclude "*.ytdl" \
-  --exclude "chroma_db/*"
+  --exclude "chroma_db/*" \
+  --exclude "clips/*/clip.md"
 
 # Ensure existing top-level data JSON files have no-cache header
 # (sync --size-only skips unchanged files, leaving their old metadata)

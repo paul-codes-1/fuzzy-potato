@@ -75,3 +75,165 @@ export function setCanonical(url) {
   }
   el.setAttribute('href', url)
 }
+
+export function setMarkdownAlternate(url) {
+  if (typeof document === 'undefined') return
+  let el = document.head.querySelector('link[rel="alternate"][type="text/markdown"]')
+  if (!url) {
+    if (el) el.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement('link')
+    el.setAttribute('rel', 'alternate')
+    el.setAttribute('type', 'text/markdown')
+    document.head.appendChild(el)
+  }
+  el.setAttribute('href', url)
+}
+
+const SITE_URL = 'https://meetings.lexingtonky.news'
+const ORG_ID = `${SITE_URL}#organization`
+const SITE_ID = `${SITE_URL}#website`
+
+// Stable Organization + WebSite nodes — referenced by per-page Article
+// via @id so Google sees a coherent graph across the archive.
+export const ORGANIZATION_NODE = {
+  '@type': 'Organization',
+  '@id': ORG_ID,
+  name: 'LFUCG Meeting Archive',
+  url: SITE_URL,
+  description:
+    'Searchable archive of Lexington-Fayette Urban County Government council and committee meetings.',
+  founder: {
+    '@type': 'Person',
+    '@id': `${SITE_URL}/about/paul-oliva#person`,
+    name: 'Paul Oliva',
+    url: 'https://pauloliva.com',
+    sameAs: [
+      'https://pauloliva.com',
+      'https://github.com/paul-codes-1',
+      'https://lexingtonky.news/author/paulmoliva/',
+    ],
+  },
+}
+
+export const WEBSITE_NODE = {
+  '@type': 'WebSite',
+  '@id': SITE_ID,
+  url: SITE_URL,
+  name: 'LFUCG Meeting Archive',
+  publisher: { '@id': ORG_ID },
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: `${SITE_URL}/?q={search_term_string}`,
+    },
+    'query-input': 'required name=search_term_string',
+  },
+}
+
+// Build a coherent JSON-LD @graph for a meeting detail page. Article
+// carries the auto-transcription disclosure via creativeWorkStatus +
+// producer; Event names the underlying civic proceeding so Google
+// treats the page as both reporting and primary record.
+export function buildMeetingGraph({
+  clipId,
+  title,
+  date,
+  meetingBody,
+  description,
+  granicusUrl,
+  summaryUpdatedAt,
+  processedAt,
+  transcriptWords,
+}) {
+  if (!clipId) return null
+  const url = `${SITE_URL}/meeting/${clipId}`
+  const seoTitle = buildSeoTitle(title, date)
+  const dateModified = summaryUpdatedAt || processedAt || date
+  // 6 PM local Eastern is the standard council meeting time. Granicus
+  // titles don't carry a reliable start time and a missing startDate
+  // downgrades the Event signal — better to use the canonical default.
+  const startDate = date ? `${date}T18:00:00-04:00` : undefined
+  const cleaned = cleanTitle(title) || 'LFUCG Meeting'
+
+  const article = {
+    '@type': 'Article',
+    '@id': `${url}#article`,
+    headline: seoTitle,
+    name: seoTitle,
+    url,
+    mainEntityOfPage: url,
+    datePublished: date,
+    dateModified,
+    author: { '@id': ORG_ID },
+    publisher: { '@id': ORG_ID },
+    isPartOf: { '@id': SITE_ID },
+    inLanguage: 'en-US',
+    creativeWorkStatus: 'Auto-transcribed',
+    producer: {
+      '@type': 'Organization',
+      name: 'OpenAI Whisper-1 (audio→text), GPT-4o (fact extraction), Anthropic Claude Sonnet (narrative summary)',
+    },
+    isBasedOn: granicusUrl || undefined,
+    description: description || undefined,
+  }
+  if (transcriptWords && transcriptWords > 0) {
+    article.wordCount = transcriptWords
+  }
+
+  const event = {
+    '@type': 'Event',
+    '@id': `${url}#event`,
+    name: cleaned,
+    startDate,
+    eventAttendanceMode: 'https://schema.org/MixedEventAttendanceMode',
+    eventStatus: 'https://schema.org/EventScheduled',
+    location: {
+      '@type': 'Place',
+      name: 'Government Center, Lexington, KY',
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: 'Lexington',
+        addressRegion: 'KY',
+        addressCountry: 'US',
+      },
+    },
+    organizer: {
+      '@type': 'GovernmentOrganization',
+      name: 'Lexington-Fayette Urban County Government',
+      url: 'https://www.lexingtonky.gov/',
+    },
+    about: meetingBody || undefined,
+    subjectOf: { '@id': `${url}#article` },
+  }
+  if (granicusUrl) {
+    event.recordedIn = { '@type': 'CreativeWork', url: granicusUrl }
+  }
+
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [article, event, ORGANIZATION_NODE, WEBSITE_NODE],
+  }
+}
+
+// Inject (or replace) a JSON-LD <script> tag keyed by id so other
+// components can own their own graph blocks (e.g. /about emits a
+// separate Person graph) without stepping on this one.
+export function setJsonLdScript(id, graph) {
+  if (typeof document === 'undefined') return
+  let el = document.getElementById(id)
+  if (!graph) {
+    if (el) el.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement('script')
+    el.type = 'application/ld+json'
+    el.id = id
+    document.head.appendChild(el)
+  }
+  el.textContent = JSON.stringify(graph)
+}

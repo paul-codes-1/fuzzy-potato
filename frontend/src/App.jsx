@@ -5,6 +5,7 @@ import MeetingList from './components/MeetingList'
 import MeetingDetail from './components/MeetingDetail'
 import AskQuestion from './components/AskQuestion'
 import ChatLFUCG from './components/ChatLFUCG'
+import { About, Methodology, Corrections } from './components/StaticPages'
 
 const LOADING_MESSAGES = [
   'Loading meeting archive...',
@@ -73,10 +74,28 @@ function App() {
           <Route path="/meeting/:clipId" element={<MeetingDetail />} />
           <Route path="/chat" element={<ChatLFUCG />} />
           <Route path="/ask" element={<AskQuestion />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/about/methodology" element={<Methodology />} />
+          <Route path="/corrections" element={<Corrections />} />
         </Routes>
       </main>
 
-      <footer className="site-footer" />
+      <footer className="site-footer">
+        <div className="container">
+          <nav className="site-footer-nav" aria-label="Site information">
+            <Link to="/about">About</Link>
+            <Link to="/about/methodology">Methodology</Link>
+            <Link to="/corrections">Corrections</Link>
+            <a href="/llms.txt">llms.txt</a>
+            <a href="/sitemap_index.xml">Sitemap</a>
+          </nav>
+          <p className="site-footer-disclosure">
+            Operated by Paul Oliva as a civic-tech side project. Transcripts and
+            summaries are auto-generated from public LFUCG Granicus video; verify
+            against the official video and minutes for high-stakes use.
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }
