@@ -844,6 +844,34 @@ class LFUCGPipeline:
 
         return result
 
+    def fetch_date_from_listing(self, clip_id: int) -> Optional[str]:
+        """Fetch the Granicus ViewPublisher listing and extract the authoritative meeting date for clip_id.
+
+        Each row has a hidden <span> containing the unix timestamp in addition to the displayed MM/DD/YY date.
+        Falls back when the clip title/agenda don't include a parseable date (e.g. titles like "Rural Land Management Board (1)").
+        """
+        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={self.view_id}"
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+        except Exception as e:
+            self.log(f"fetch_date_from_listing failed: {e}", "WARNING")
+            return None
+
+        for row in response.text.split("</tr>"):
+            if f"clip_id={clip_id}" not in row:
+                continue
+            m = re.search(r'<span\s+style="display:\s*none;\s*">\s*(\d{9,11})\s*</span>', row)
+            if not m:
+                return None
+            try:
+                from datetime import datetime, timezone
+                ts = int(m.group(1))
+                return datetime.fromtimestamp(ts, timezone.utc).date().isoformat()
+            except Exception:
+                return None
+        return None
+
     def scrape_clip_metadata(self, clip_id: int, title: Optional[str] = None, agenda_text: Optional[str] = None) -> Dict[str, Any]:
         """Extract metadata from clip title and agenda. Returns dict with date, meeting_body, title."""
         metadata = {
@@ -899,6 +927,12 @@ class LFUCGPipeline:
                         break
                     except ValueError:
                         pass
+
+        # Final fallback: look up the clip in Granicus ViewPublisher for the authoritative timestamp
+        if not metadata["date"]:
+            listing_date = self.fetch_date_from_listing(clip_id)
+            if listing_date:
+                metadata["date"] = listing_date
 
         # Extract meeting body - common abbreviations and names (search title first)
         body_patterns = [
@@ -1618,7 +1652,52 @@ Guidelines:
                 self.log(f"Error loading available_clips.json: {e}", "WARNING")
         return []
 
-    def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None) -> dict:
+    MAX_AUTO_RETRIES = 3
+    RETRY_RECENCY_DAYS = 7
+
+    def _retry_candidates(self, processed_set: set, available_set: set = None) -> list:
+        """Clips that failed recently, are under the retry cap, and aren't yet processed.
+
+        Only considers clips whose most-recent failure timestamp is within
+        RETRY_RECENCY_DAYS — this avoids re-attempting ancient failures every
+        run while still catching transient failures (e.g. download blips).
+        Returns clip IDs sorted ascending. If available_set is given, restricts
+        to clips known to exist on Granicus.
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.now() - timedelta(days=self.RETRY_RECENCY_DAYS)
+        failed_counts = {}
+        latest_ts = {}
+        for entry in self.state.get("failed_clips", []):
+            if not isinstance(entry, dict):
+                continue
+            cid = entry.get("clip_id")
+            if cid is None:
+                continue
+            failed_counts[cid] = failed_counts.get(cid, 0) + 1
+            ts_str = entry.get("timestamp")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    continue
+                if cid not in latest_ts or ts > latest_ts[cid]:
+                    latest_ts[cid] = ts
+
+        eligible = [
+            cid for cid, count in failed_counts.items()
+            if cid not in processed_set
+            and count < self.MAX_AUTO_RETRIES
+            and latest_ts.get(cid) is not None
+            and latest_ts[cid] >= cutoff
+        ]
+        if available_set is not None:
+            eligible = [c for c in eligible if c in available_set]
+        return sorted(eligible)
+
+    def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None,
+                     retry_failed: bool = True) -> dict:
         """Auto-process clips starting from last processed + 1 or FIRST_CLIP_ID.
 
         If available_clips.json exists, only processes clips from that list.
@@ -1628,10 +1707,20 @@ Guidelines:
             reverse: If True, process all unprocessed clips from most recent
                      backwards (useful for filling gaps in the middle).
             start: If set, override last_processed_clip_id and begin from this clip ID.
+            retry_failed: If True (default) and not in --reverse/--start mode,
+                          retry clips in failed_clips (up to MAX_AUTO_RETRIES times)
+                          before advancing past last_processed_clip_id.
         """
         available_clips = self.load_available_clips()
         processed_set = set(self.state.get("processed_clips", []))
         last_id = start - 1 if start else self.state["last_processed_clip_id"]
+
+        # Only auto-retry in the default forward path (not reverse, not explicit --start)
+        do_retry = retry_failed and not reverse and start is None
+        retries = self._retry_candidates(
+            processed_set,
+            set(available_clips) if available_clips else None
+        ) if do_retry else []
 
         if available_clips:
             if reverse:
@@ -1641,8 +1730,13 @@ Guidelines:
                     candidates = [c for c in candidates if c <= start]
                 candidates = list(reversed(candidates))
             else:
-                # Default: unprocessed clips after last_id, oldest first
-                candidates = [c for c in available_clips if c > last_id and c not in processed_set]
+                # Default: retries first (oldest first), then unprocessed clips after last_id
+                retry_set = set(retries)
+                new_candidates = [
+                    c for c in available_clips
+                    if c > last_id and c not in processed_set and c not in retry_set
+                ]
+                candidates = retries + new_candidates
 
             clips_to_process = candidates[:max_clips]
 
@@ -1653,6 +1747,10 @@ Guidelines:
             order = "newest first" if reverse else "oldest first"
             self.log(f"Auto-processing {len(clips_to_process)} clips from available_clips.json ({order})")
             self.log(f"Clips: {clips_to_process}")
+            if not reverse and retries:
+                retried = [c for c in clips_to_process if c in set(retries)]
+                if retried:
+                    self.log(f"Retrying {len(retried)} previously failed clip(s): {retried}")
 
             results = {"processed": [], "failed": [], "skipped": []}
             for idx, clip_id in enumerate(clips_to_process, 1):
@@ -1681,12 +1779,30 @@ Guidelines:
             else:
                 start_id = last_id + 1
 
-            end_id = start_id + max_clips - 1
-
             self.log(f"Auto-processing from clip {start_id} (max {max_clips} clips)")
             self.log("Tip: Run probe_clips.py to create available_clips.json for smarter processing")
 
-            return self.process_range(start_id, end_id, stop_on_failure=False)
+            results = {"processed": [], "failed": [], "skipped": []}
+            remaining = max_clips
+
+            if retries:
+                retry_slice = retries[:remaining]
+                self.log(f"Retrying {len(retry_slice)} previously failed clip(s) first: {retry_slice}")
+                for clip_id in retry_slice:
+                    success = self.process_clip(clip_id)
+                    if success:
+                        results["processed"].append(clip_id)
+                    else:
+                        results["failed"].append(clip_id)
+                remaining -= len(retry_slice)
+
+            if remaining > 0:
+                end_id = start_id + remaining - 1
+                range_results = self.process_range(start_id, end_id, stop_on_failure=False)
+                for key in ("processed", "failed", "skipped"):
+                    results.setdefault(key, []).extend(range_results.get(key, []))
+
+            return results
 
     def update_transcript_timestamps(self, max_clips: int = 0) -> dict:
         """Re-transcribe clips that have audio but no timestamp segments.
@@ -1869,6 +1985,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--no-retry-failed",
+        action="store_true",
+        help="In --auto mode, skip retrying clips in failed_clips (default: retry up to 3 times)"
+    )
+
+    parser.add_argument(
         "--output-dir",
         default="./lfucg_output",
         help="Output directory (default: ./lfucg_output)"
@@ -1957,7 +2079,7 @@ Examples:
     parser.add_argument(
         "--upgrade-summaries",
         action="store_true",
-        help="Run two-pass summary (GPT-4o extraction + Claude Sonnet narration) on all clips, saving in-place. Skips clips that already have extracted_facts.json."
+        help="Run two-pass summary (GPT-4o extraction + Claude Sonnet narration), saving in-place. With no clip IDs: runs on all clips, skipping ones that already have extracted_facts.json. With a single clip ID or start/end range: runs on those specific clips (reprocessed even if already done)."
     )
 
     parser.add_argument(
@@ -2241,26 +2363,45 @@ Examples:
             print(f"Error (--upgrade-summaries): {e}")
             sys.exit(1)
 
-        # Find all clips with metadata, sorted by ID ascending
         clips_dir = pipeline.output_dir / "clips"
-        all_clip_ids = []
-        for name in sorted(os.listdir(clips_dir), key=lambda x: int(x) if x.isdigit() else 99999):
-            meta_path = clips_dir / name / "metadata.json"
-            if meta_path.exists():
-                try:
-                    all_clip_ids.append(int(name))
-                except ValueError:
-                    continue
 
-        # Apply --max limit
-        all_clip_ids = all_clip_ids[:args.max]
+        # Determine candidate clip IDs: explicit args take precedence over scanning all clips
+        if args.clip_ids:
+            if len(args.clip_ids) == 1:
+                candidate_ids = [args.clip_ids[0]]
+            elif len(args.clip_ids) == 2:
+                start, end = args.clip_ids
+                candidate_ids = list(range(start, end + 1))
+            else:
+                print("Error: --upgrade-summaries accepts at most 2 clip IDs (single ID or start end range)")
+                sys.exit(1)
 
-        # Skip clips that already have extracted_facts.json
+            # Keep only those with metadata on disk
+            all_clip_ids = []
+            for cid in candidate_ids:
+                if (clips_dir / str(cid) / "metadata.json").exists():
+                    all_clip_ids.append(cid)
+                else:
+                    print(f"Skipping clip {cid}: no metadata.json found")
+            explicit = True
+        else:
+            all_clip_ids = []
+            for name in sorted(os.listdir(clips_dir), key=lambda x: int(x) if x.isdigit() else 99999):
+                meta_path = clips_dir / name / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        all_clip_ids.append(int(name))
+                    except ValueError:
+                        continue
+            all_clip_ids = all_clip_ids[:args.max]
+            explicit = False
+
+        # Skip clips that already have extracted_facts.json, unless explicitly named or --force
         clip_ids = []
         skipped = 0
         for cid in all_clip_ids:
             facts_path = clips_dir / str(cid) / "extracted_facts.json"
-            if facts_path.exists():
+            if facts_path.exists() and not explicit and not args.force:
                 skipped += 1
             else:
                 clip_ids.append(cid)
@@ -2448,7 +2589,12 @@ Examples:
 
     elif args.auto:
         # Auto mode
-        results = pipeline.auto_process(args.max, reverse=args.reverse, start=args.start)
+        results = pipeline.auto_process(
+            args.max,
+            reverse=args.reverse,
+            start=args.start,
+            retry_failed=not args.no_retry_failed,
+        )
 
     elif len(args.clip_ids) == 1:
         # Single clip
