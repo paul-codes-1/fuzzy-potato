@@ -1,6 +1,17 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
+import {
+  cleanTitle,
+  buildSeoTitle,
+  buildSeoDescription,
+  setMetaTag,
+  setCanonical,
+} from '../utils/seo'
+
+const SITE_URL = 'https://meetings.lexingtonky.news'
+const DEFAULT_DESCRIPTION =
+  'Searchable archive of Lexington-Fayette Urban County Government council and committee meetings — transcripts, summaries, agendas, and minutes.'
 
 // Format seconds to MM:SS or HH:MM:SS
 function formatTimestamp(seconds) {
@@ -172,8 +183,56 @@ function MeetingDetail() {
   const [activeTab, setActiveTab] = useState('overview')
   const [videoStartTime, setVideoStartTime] = useState(null)
   const [videoLoading, setVideoLoading] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
   const videoContainerRef = useRef(null)
   const firstMatchRef = useRef(null)
+
+  // Pull summary.txt for the SEO description. Separate from useMeeting so
+  // browsers/agents that read the meta tag get real summary text without
+  // making the listing page ever fetch it.
+  useEffect(() => {
+    if (!meeting?.files?.summary_txt) {
+      setSummaryText('')
+      return
+    }
+    let cancelled = false
+    fetch(`/data/clips/${clipId}/${meeting.files.summary_txt}`)
+      .then(r => (r.ok ? r.text() : ''))
+      .then(t => { if (!cancelled) setSummaryText(t) })
+      .catch(() => { if (!cancelled) setSummaryText('') })
+    return () => { cancelled = true }
+  }, [clipId, meeting])
+
+  // Drive document.title, meta description, and og:/twitter: tags off the
+  // currently-loaded meeting. SPA serves the same index.html for every
+  // route, so without this clip pages would all share the site-level
+  // defaults baked into index.html. (Social-card crawlers that don't run
+  // JS still get the defaults — per-clip social previews need pre-render
+  // or Lambda@Edge, tracked separately.)
+  useEffect(() => {
+    if (!meeting) return
+    const seoTitle = buildSeoTitle(meeting.title, meeting.date)
+    const description =
+      buildSeoDescription(summaryText, meeting.agenda_preview || meeting.transcript_preview || '') ||
+      DEFAULT_DESCRIPTION
+    const url = `${SITE_URL}/meeting/${clipId}`
+
+    const previousTitle = document.title
+    document.title = `${seoTitle} | LFUCG Meeting Archive`
+    setMetaTag('name', 'description', description)
+    setMetaTag('property', 'og:title', seoTitle)
+    setMetaTag('property', 'og:description', description)
+    setMetaTag('property', 'og:url', url)
+    setMetaTag('property', 'og:type', 'article')
+    setMetaTag('name', 'twitter:card', 'summary')
+    setMetaTag('name', 'twitter:title', seoTitle)
+    setMetaTag('name', 'twitter:description', description)
+    setCanonical(url)
+
+    return () => {
+      document.title = previousTitle
+    }
+  }, [meeting, summaryText, clipId])
 
   // Check if a word appears at a word boundary in text (prefix match, like FlexSearch forward tokenizer)
   const wordStartMatch = (text, word) => {
@@ -333,7 +392,7 @@ function MeetingDetail() {
         <Link to="/" className="back-link">
           ← Back to all meetings
         </Link>
-        <h1>{meeting.title}</h1>
+        <h1>{cleanTitle(meeting.title)}</h1>
         <div className="meeting-meta">
           <span>{formatDate(meeting.date)}</span>
           {meeting.meeting_body && <span>• {meeting.meeting_body}</span>}

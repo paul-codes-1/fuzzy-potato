@@ -11,15 +11,92 @@ where `lfucg_output/clips/<id>/summary.txt` lives.
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from xml.sax.saxutils import escape
 
+# Granicus appends a part-number suffix like " (1)" to every clip title.
+# Strip it for SEO so titles read naturally on Google / social cards.
+_GRANICUS_SUFFIX_RE = re.compile(r"\s*\(\d+\)\s*$")
+# `## Header` lines and `[timestamp: MM:SS]` markers come from the v2
+# narrative summary; remove both before pulling description text.
+_TIMESTAMP_RE = re.compile(r"\[timestamp:\s*\d+:\d+\]")
+_HEADER_RE = re.compile(r"^##\s.*$", flags=re.MULTILINE)
+
 
 def _default_log(message: str, level: str = "INFO") -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {level}: {message}")
+
+
+def clean_title(title: Optional[str]) -> str:
+    """Strip the Granicus ` (1)` part-number suffix from a clip title."""
+    return _GRANICUS_SUFFIX_RE.sub("", (title or "").strip())
+
+
+def format_long_date(iso_date: Optional[str]) -> str:
+    """ISO `YYYY-MM-DD` → `Month Day, Year` (e.g. `April 30, 2026`).
+
+    Falls back to the raw input on parse failure so callers don't need
+    to special-case missing/malformed dates.
+    """
+    if not iso_date:
+        return ""
+    try:
+        dt = datetime.strptime(iso_date, "%Y-%m-%d")
+    except ValueError:
+        return iso_date
+    return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+
+
+def build_seo_title(title: Optional[str], iso_date: Optional[str]) -> str:
+    """`{cleaned_title} - {Month Day, Year}` for sitemap/social/SERP titles.
+
+    Example: `Urban County Council - April 30, 2026`. Drops either side
+    when missing rather than emit a stray dash.
+    """
+    cleaned = clean_title(title)
+    formatted = format_long_date(iso_date)
+    if cleaned and formatted:
+        return f"{cleaned} - {formatted}"
+    return cleaned or formatted or "LFUCG Meeting"
+
+
+def build_seo_description(
+    summary_path: Optional[Path] = None,
+    *,
+    fallback: str = "",
+    max_chars: int = 200,
+) -> str:
+    """First substantive paragraph of `summary.txt`, cleaned + truncated.
+
+    Strips `## ` section headers and `[timestamp: MM:SS]` markers so the
+    description reads as natural prose. Truncated on a word boundary at
+    `max_chars` to stay under Twitter's 200-char og:description cap while
+    leaving Google's ~160-char snippet some headroom.
+    """
+    text = ""
+    if summary_path and summary_path.exists():
+        try:
+            text = summary_path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+    if not text:
+        text = fallback or ""
+
+    text = _HEADER_RE.sub("", text)
+    text = _TIMESTAMP_RE.sub("", text)
+    paragraphs = re.split(r"\n\s*\n", text)
+    for para in paragraphs:
+        cleaned = " ".join(para.split())
+        if len(cleaned) >= 50:
+            if len(cleaned) > max_chars:
+                truncated = cleaned[: max_chars - 1].rsplit(" ", 1)[0]
+                cleaned = truncated.rstrip(",.;:") + "…"
+            return cleaned
+    return ""
 
 
 def generate_seo_artifacts(
@@ -115,7 +192,7 @@ def generate_seo_artifacts(
     for entry in news_clips:
         clip_id = entry["clip_id"]
         date = entry.get("date") or today
-        title = entry.get("title") or f"LFUCG Meeting {clip_id}"
+        seo_title = build_seo_title(entry.get("title"), entry.get("date"))
         news_lines += [
             "  <url>",
             f"    <loc>{site_url}/meeting/{escape(str(clip_id))}</loc>",
@@ -125,7 +202,7 @@ def generate_seo_artifacts(
             "        <news:language>en</news:language>",
             "      </news:publication>",
             f"      <news:publication_date>{escape(str(date))}</news:publication_date>",
-            f"      <news:title>{escape(str(title))}</news:title>",
+            f"      <news:title>{escape(seo_title)}</news:title>",
             "    </news:news>",
             "  </url>",
         ]
@@ -157,10 +234,8 @@ def generate_seo_artifacts(
     ]
     for entry in recent:
         clip_id = entry["clip_id"]
-        date = entry.get("date") or "unknown date"
-        body = entry.get("meeting_body") or "Meeting"
-        title = entry.get("title") or f"Clip {clip_id}"
-        llms_lines.append(f"- [{date} — {body}: {title}]({site_url}/meeting/{clip_id})")
+        seo_title = build_seo_title(entry.get("title"), entry.get("date"))
+        llms_lines.append(f"- [{seo_title}]({site_url}/meeting/{clip_id})")
     llms_lines += [
         "",
         "## Meeting bodies covered",
@@ -194,10 +269,8 @@ def generate_seo_artifacts(
     clips_dir = output_dir / "clips"
     for entry in valid_clips[:200]:
         clip_id = entry["clip_id"]
-        date = entry.get("date") or "unknown date"
-        body = entry.get("meeting_body") or "Meeting"
-        title = entry.get("title") or f"Clip {clip_id}"
         clip_dir = clips_dir / str(clip_id)
+        seo_title = build_seo_title(entry.get("title"), entry.get("date"))
 
         # Prefer the v2 narrative summary — fall back to the indexed previews if missing.
         preview = ""
@@ -226,7 +299,7 @@ def generate_seo_artifacts(
                 pass
 
         block = [
-            f"## {date} — {body}: {title}",
+            f"## {seo_title}",
             "",
             f"- URL: {site_url}/meeting/{clip_id}",
         ]
