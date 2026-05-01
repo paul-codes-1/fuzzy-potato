@@ -1,0 +1,59 @@
+User-agent: *
+Allow: /
+
+# Explicit welcome for AI crawlers. We want these meetings surfaced in
+# ChatGPT search, Claude web fetches, Perplexity answers, etc. Opting IN
+# rather than relying on default silent-allow because several of these
+# bots back off when the response is ambiguous.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+# Agent-friendly markdown index — see llmstxt.org
+LLM: https://meetings.lexingtonky.news/llms.txt
+LLM-Full: https://meetings.lexingtonky.news/llms-full.txt
+
+Sitemap: https://meetings.lexingtonky.news/sitemap_index.xml
+Sitemap: https://meetings.lexingtonky.news/sitemap.xml
+Sitemap: https://meetings.lexingtonky.news/news-sitemap.xml
