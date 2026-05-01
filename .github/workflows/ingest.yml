@@ -1,0 +1,148 @@
+name: ingest-meetings
+
+# Polls Granicus (lfucg.granicus.com) every 6 hours for new clips and
+# runs the full ingest_all.sh pipeline: probe → download / transcribe /
+# summarize new clips → backfill missing minutes/agenda for older clips →
+# upgrade any clips still on a v1 summary → ingest new content into
+# ChromaDB → rebuild search index + sitemaps → sync to S3 → rebuild +
+# push the RAG API Docker image → trigger App Runner redeploy → ping
+# the feeds.lexingtonky.news webhook so it pulls the new archive items.
+#
+# State source-of-truth is S3 (`s3://public-meetings/data/`). The job
+# pulls existing state down before running and pushes new state back
+# via the `deploy.sh` step inside the pipeline.
+
+on:
+  schedule:
+    # Every 6 hours, on the hour, in UTC. GH cron min granularity is 5 min;
+    # 6h gives reasonable freshness without burning tokens on no-ops.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_clips:
+        description: "Cap on new clips per run (blank = no cap)"
+        required: false
+        default: "10"
+
+concurrency:
+  # Two runs at once would race on the S3 → local → S3 sync. Cancel
+  # in-flight runs on a new trigger so the latest poll wins.
+  group: ingest-meetings
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_REGION: us-east-1
+      AWS_PAGER: ""
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      FEEDS_API_TOKEN: ${{ secrets.FEEDS_API_TOKEN }}
+      CLOUDFRONT_DISTRIBUTION_ID: E8OIXOXDRETLZ
+      MAX_CLIPS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_clips || '10' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up runner disk
+        # GH-hosted runners ship with ~6GB of cached images we don't need.
+        # The state pull is ~9GB so reclaim space up-front.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          df -h
+
+      - name: Install system deps (ffmpeg, tesseract, poppler)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg tesseract-ocr poppler-utils
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install Python deps
+        run: uv sync --extra rag
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      # ChromaDB is the single biggest piece of state (~4GB) and changes
+      # incrementally each run. Use the GH Actions cache as a fast-path
+      # so we don't re-pull all 4GB from S3 every cron tick. Cache key
+      # rotates daily so we save at most once per UTC day; restore-keys
+      # falls back to the most recent cache when the day-key misses.
+      - name: Compute cache date
+        id: date
+        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore chroma_db from cache
+        id: chromadb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: lfucg_output/chroma_db
+          key: chromadb-${{ steps.date.outputs.today }}
+          restore-keys: |
+            chromadb-
+
+      - name: Pull meeting state from S3 (excl. PDFs and chroma_db)
+        # PDFs (~5GB of the 10GB total) are not read by the pipeline —
+        # only their .txt extracts are. ChromaDB is handled separately
+        # via the cache step above. This brings the typical pull from
+        # ~9GB down to ~420MB (json + txt + html). Existing PDFs in S3
+        # remain there; backfill checks metadata.json for whether a
+        # clip already has its agenda/minutes PDFs, not local disk.
+        run: |
+          mkdir -p lfucg_output
+          aws s3 sync \
+            s3://public-meetings/data/ \
+            ./lfucg_output/ \
+            --exclude "*.mp3" \
+            --exclude "*.mp4" \
+            --exclude "*.part" \
+            --exclude "*.pdf" \
+            --exclude "chroma_db/*" \
+            --no-progress
+          echo "==> Disk after state pull:"
+          df -h .
+
+      - name: Pull chroma_db from S3 (cold-start fallback)
+        # Only runs when the GH Actions cache missed entirely (e.g.
+        # first run, or cache evicted after 7 days idle). Normal cron
+        # operation hits the cache and skips this step.
+        if: steps.chromadb-cache.outputs.cache-hit != 'true' && steps.chromadb-cache.outputs.cache-matched-key == ''
+        run: |
+          echo "==> Cache cold — pulling chroma_db from S3"
+          aws s3 sync \
+            s3://public-meetings/data/chroma_db/ \
+            ./lfucg_output/chroma_db/ \
+            --no-progress
+
+      - name: Run ingest pipeline
+        run: ./ingest_all.sh
+
+      - name: Save chroma_db to cache
+        # `if: always()` so the cache still saves when later steps (S3
+        # push, App Runner deploy, feeds webhook) fail — losing the
+        # work the pipeline already did would be much worse than the
+        # downstream error.
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: lfucg_output/chroma_db
+          key: chromadb-${{ steps.date.outputs.today }}
