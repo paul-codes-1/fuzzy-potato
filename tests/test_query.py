@@ -31,31 +31,26 @@ class TestBuildChromaFilter:
         result = build_chroma_filter({"meeting_body": "Council"})
         assert result == {"meeting_body": "Council"}
 
-    def test_date_after_filter(self):
+    def test_date_only_filters_skip_chroma_clause(self):
+        """Date filters are applied post-retrieval, not pushed into ChromaDB —
+        the installed ChromaDB version rejects string $gte/$lte clauses."""
         from rag.query import build_chroma_filter
 
-        result = build_chroma_filter({"date_after": "2025-01-01"})
-        assert result == {"date": {"$gte": "2025-01-01"}}
+        assert build_chroma_filter({"date_after": "2025-01-01"}) is None
+        assert build_chroma_filter({"date_before": "2026-01-01"}) is None
+        assert build_chroma_filter({"date_after": "2025-01-01", "date_before": "2026-06-01"}) is None
 
-    def test_date_before_filter(self):
+    def test_combined_filters_only_pass_meeting_body(self):
         from rag.query import build_chroma_filter
 
-        result = build_chroma_filter({"date_before": "2026-01-01"})
-        assert result == {"date": {"$lte": "2026-01-01"}}
-
-    def test_combined_filters(self):
-        from rag.query import build_chroma_filter
-
+        # meeting_body is the only non-date field, so the result is the body
+        # condition alone — date filters are dropped (handled post-retrieval).
         result = build_chroma_filter({
             "meeting_body": "Council",
             "date_after": "2025-01-01",
             "date_before": "2026-06-01",
         })
-        assert "$and" in result
-        conditions = result["$and"]
-        assert {"meeting_body": "Council"} in conditions
-        assert {"date": {"$gte": "2025-01-01"}} in conditions
-        assert {"date": {"$lte": "2026-06-01"}} in conditions
+        assert result == {"meeting_body": "Council"}
 
     def test_meeting_body_with_date_after(self):
         from rag.query import build_chroma_filter
@@ -64,9 +59,98 @@ class TestBuildChromaFilter:
             "meeting_body": "Committee",
             "date_after": "2025-06-01",
         })
-        assert "$and" in result
-        conditions = result["$and"]
-        assert len(conditions) == 2
+        assert result == {"meeting_body": "Committee"}
+
+
+class TestDateInRange:
+    """Date filtering happens post-retrieval, so the helper is exercised directly."""
+
+    def test_no_filters_includes_everything(self):
+        from rag.query import _date_in_range
+
+        assert _date_in_range("2026-04-30", None, None) is True
+        assert _date_in_range("", None, None) is True
+
+    def test_date_after_excludes_earlier(self):
+        from rag.query import _date_in_range
+
+        assert _date_in_range("2025-12-31", "2026-01-01", None) is False
+        assert _date_in_range("2026-01-01", "2026-01-01", None) is True
+        assert _date_in_range("2026-04-30", "2026-01-01", None) is True
+
+    def test_date_before_excludes_later(self):
+        from rag.query import _date_in_range
+
+        assert _date_in_range("2026-05-01", None, "2026-04-30") is False
+        assert _date_in_range("2026-04-30", None, "2026-04-30") is True
+        assert _date_in_range("2026-04-29", None, "2026-04-30") is True
+
+    def test_combined_range(self):
+        from rag.query import _date_in_range
+
+        assert _date_in_range("2026-03-15", "2026-01-01", "2026-06-30") is True
+        assert _date_in_range("2025-12-31", "2026-01-01", "2026-06-30") is False
+        assert _date_in_range("2026-07-01", "2026-01-01", "2026-06-30") is False
+
+    def test_empty_date_excluded_when_range_set(self):
+        from rag.query import _date_in_range
+
+        assert _date_in_range("", "2026-01-01", None) is False
+        assert _date_in_range("", None, "2026-12-31") is False
+
+
+class TestExtractTemporalSignals:
+    """Pulls date filters and a recency hint out of a user's question so the
+    RAG pipeline can narrow the chunk set without a separate filter UI."""
+
+    def test_no_signals_returns_empty(self):
+        from rag.query import extract_temporal_signals
+
+        assert extract_temporal_signals("what did the council vote on") == {}
+
+    def test_month_year_yields_full_month_range(self):
+        from rag.query import extract_temporal_signals
+
+        result = extract_temporal_signals("what happened in April 2026")
+        assert result["date_after"] == "2026-04-01"
+        assert result["date_before"] == "2026-04-30"
+
+    def test_since_year_sets_only_lower_bound(self):
+        from rag.query import extract_temporal_signals
+
+        result = extract_temporal_signals("zoning changes since 2023")
+        assert result.get("date_after") == "2023-01-01"
+        assert "date_before" not in result
+
+    def test_before_year_sets_upper_bound_to_end_of_prior_year(self):
+        from rag.query import extract_temporal_signals
+
+        result = extract_temporal_signals("ordinances before 2020")
+        assert result.get("date_before") == "2019-12-31"
+        assert "date_after" not in result
+
+    def test_bare_year_yields_full_year_range(self):
+        from rag.query import extract_temporal_signals
+
+        result = extract_temporal_signals("budget in 2025")
+        assert result["date_after"] == "2025-01-01"
+        assert result["date_before"] == "2025-12-31"
+
+    def test_recency_keyword_sets_prefer_recent(self):
+        from rag.query import extract_temporal_signals
+
+        for q in ["latest council meeting", "most recent vote", "what happened lately"]:
+            assert extract_temporal_signals(q).get("prefer_recent") is True
+
+    def test_february_handles_leap_and_non_leap(self):
+        from rag.query import extract_temporal_signals
+
+        # 2024 is a leap year — last day of Feb should be 29.
+        leap = extract_temporal_signals("February 2024 meeting")
+        assert leap["date_before"] == "2024-02-29"
+        # 2025 is not — last day of Feb should be 28.
+        non_leap = extract_temporal_signals("February 2025 meeting")
+        assert non_leap["date_before"] == "2025-02-28"
 
 
 # ============================================================

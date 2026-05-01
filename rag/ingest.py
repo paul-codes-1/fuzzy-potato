@@ -95,8 +95,9 @@ def chunk_extracted_facts(facts: dict, clip_id: int, date: str, meeting_body: st
             line += f" — {v.get('outcome', 'unknown')}"
             if v.get("ayes") is not None:
                 line += f" (Ayes: {v['ayes']}, Nays: {v.get('nays', 0)})"
-            if v.get("votes_against"):
-                line += f" Opposed: {', '.join(v['votes_against'])}"
+            votes_against = [x for x in (v.get("votes_against") or []) if x]
+            if votes_against:
+                line += f" Opposed: {', '.join(votes_against)}"
             if v.get("motion_by"):
                 line += f" Motion by {v['motion_by']}"
             lines.append(line)
@@ -156,10 +157,12 @@ def chunk_extracted_facts(facts: dict, clip_id: int, date: str, meeting_body: st
 
     # Attendance (compact, but useful for "was X present?" queries)
     attendance = facts.get("attendance", {})
-    if attendance.get("present"):
-        text = f"Attendance\nPresent: {', '.join(attendance['present'])}"
-        if attendance.get("absent"):
-            text += f"\nAbsent: {', '.join(attendance['absent'])}"
+    present = [x for x in (attendance.get("present") or []) if x]
+    absent = [x for x in (attendance.get("absent") or []) if x]
+    if present:
+        text = f"Attendance\nPresent: {', '.join(present)}"
+        if absent:
+            text += f"\nAbsent: {', '.join(absent)}"
         chunks.append({
             "text": text,
             "clip_id": clip_id, "date": date, "meeting_body": meeting_body,
@@ -514,7 +517,7 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
 
             metadatas.append(meta)
 
-        collection.add(
+        collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=documents,
@@ -605,6 +608,10 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
             all_chunks.extend(chunk_transcript(segments, clip_id, date, meeting_body))
 
     if all_chunks:
+        try:
+            collection.delete(where={"clip_id": clip_id})
+        except Exception:
+            pass
         store_chunks(all_chunks, collection, openai_client)
         if verbose:
             print(f"  Ingested clip {clip_id}: {len(all_chunks)} chunks")

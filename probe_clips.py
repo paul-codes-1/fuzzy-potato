@@ -60,6 +60,9 @@ def main():
 
     found_count = len(available)
     consecutive_failures = 0
+    last_found = max((c["clip_id"] for c in available), default=0)
+    MAX_CONSECUTIVE_FAILURES = 5
+    clip_id = start - 1
 
     try:
         for clip_id in range(start, end + 1):
@@ -69,21 +72,27 @@ def main():
                 available.append(result)
                 found_count += 1
                 consecutive_failures = 0
+                last_found = clip_id
                 print(f"[{clip_id}] FOUND: {result['title']}")
             else:
                 consecutive_failures += 1
                 if clip_id % 100 == 0:
                     print(f"[{clip_id}] ... ({found_count} found so far)")
 
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    print(f"\nHit {MAX_CONSECUTIVE_FAILURES} consecutive 404s at clip {clip_id}. Stopping.")
+                    break
+
             # Save progress every 50 clips
             if clip_id % 50 == 0:
-                save_progress(output_file, available, clip_id)
+                save_progress(output_file, available, last_found)
 
     except KeyboardInterrupt:
         print("\nInterrupted! Saving progress...")
 
-    save_progress(output_file, available, clip_id)
+    save_progress(output_file, available, last_found)
     print(f"\nDone! Found {len(available)} available clips")
+    print(f"last_checked reset to last found clip: {last_found}")
     print(f"Saved to {output_file}")
 
 

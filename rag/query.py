@@ -1,10 +1,13 @@
 """Retrieval and synthesis logic for RAG Q&A."""
 
 import argparse
+import calendar
 import json
 import logging
 import os
+import re
 from collections import defaultdict
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +27,68 @@ def granicus_clip_url(clip_id, timestamp: int = 0) -> str:
     view_id = os.getenv("GRANICUS_VIEW_ID", "14")
     return f"https://{host}/player/clip/{clip_id}?view_id={view_id}&entrytime={timestamp}"
 
+_MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
+_MONTHS.update({name.lower(): i for i, name in enumerate(calendar.month_abbr) if name})
+_RECENCY_RE = re.compile(r"\b(most recent|latest|newest|last|recent|recently|lately)\b", re.IGNORECASE)
+
+
+def extract_temporal_signals(question: str) -> dict:
+    """Pull date filters and a recency hint out of the user's question.
+
+    Returns a dict with any of: `date_after`, `date_before`, `prefer_recent`.
+    Recognized patterns: year ("in 2025"), month+year ("April 2025"),
+    since/before ("since 2023", "before 2020"), "past year"/"last 12 months",
+    and recency keywords ("last", "recent", "latest").
+    """
+    signals: dict = {}
+    q = question.lower()
+
+    # Specific month + year: "April 2025", "in April 2025", "April of 2025"
+    m = re.search(r"\b(" + "|".join(_MONTHS.keys()) + r")\w*\s+(?:of\s+)?(\d{4})\b", q)
+    if m:
+        month = _MONTHS[m.group(1)]
+        year = int(m.group(2))
+        last_day = calendar.monthrange(year, month)[1]
+        signals["date_after"] = f"{year:04d}-{month:02d}-01"
+        signals["date_before"] = f"{year:04d}-{month:02d}-{last_day:02d}"
+    else:
+        # "since 2023"
+        m = re.search(r"\bsince\s+(\d{4})\b", q)
+        if m:
+            signals["date_after"] = f"{int(m.group(1)):04d}-01-01"
+        # "before 2020" (but not "before 2020-01")
+        m = re.search(r"\bbefore\s+(\d{4})\b", q)
+        if m:
+            signals["date_before"] = f"{int(m.group(1)) - 1:04d}-12-31"
+        # Bare year — only if no month+year matched and no since/before
+        if "date_after" not in signals and "date_before" not in signals:
+            years = re.findall(r"\b(19|20)(\d{2})\b", q)
+            if len(years) == 1:
+                year = int(years[0][0] + years[0][1])
+                signals["date_after"] = f"{year:04d}-01-01"
+                signals["date_before"] = f"{year:04d}-12-31"
+
+    # "past year", "last 12 months", "past 6 months"
+    m = re.search(r"\b(?:past|last)\s+(\d+)\s+months?\b", q)
+    if m:
+        cutoff = date.today() - timedelta(days=int(m.group(1)) * 31)
+        signals["date_after"] = cutoff.isoformat()
+    elif re.search(r"\b(?:past|last)\s+year\b", q):
+        signals["date_after"] = (date.today() - timedelta(days=365)).isoformat()
+
+    # Recency keywords → post-retrieval re-rank toward newest
+    if _RECENCY_RE.search(q):
+        signals["prefer_recent"] = True
+
+    return signals
+
 
 def build_chroma_filter(filters: dict | None) -> dict | None:
-    """Build a ChromaDB where clause from filter parameters."""
+    """Build a ChromaDB where clause from filter parameters.
+
+    Note: date_after/date_before are NOT passed to ChromaDB (this version rejects
+    string comparisons on $gte/$lte). They're applied post-retrieval in Python instead.
+    """
     if not filters:
         return None
 
@@ -35,12 +97,6 @@ def build_chroma_filter(filters: dict | None) -> dict | None:
     if "meeting_body" in filters:
         conditions.append({"meeting_body": filters["meeting_body"]})
 
-    if "date_after" in filters:
-        conditions.append({"date": {"$gte": filters["date_after"]}})
-
-    if "date_before" in filters:
-        conditions.append({"date": {"$lte": filters["date_before"]}})
-
     if not conditions:
         return None
 
@@ -48,6 +104,21 @@ def build_chroma_filter(filters: dict | None) -> dict | None:
         return conditions[0]
 
     return {"$and": conditions}
+
+
+def _date_in_range(date_str: str, date_after: str | None, date_before: str | None) -> bool:
+    """Check if an ISO date string falls within an optional [date_after, date_before] range.
+
+    Empty/missing dates are EXCLUDED when any range is set. String comparison is
+    safe because dates are stored in ISO format (YYYY-MM-DD).
+    """
+    if not date_str:
+        return date_after is None and date_before is None
+    if date_after and date_str < date_after:
+        return False
+    if date_before and date_str > date_before:
+        return False
+    return True
 
 
 def deduplicate_results(results: dict, max_per_clip: int = 4,
@@ -178,8 +249,18 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     )
     embeddings = [item.embedding for item in q_response.data]
 
-    # 3. Build metadata filter
-    where_clause = build_chroma_filter(filters)
+    # 3. Build metadata filter (merge explicit filters with temporal signals from the question)
+    temporal = extract_temporal_signals(question)
+    prefer_recent = temporal.pop("prefer_recent", False)
+    merged_filters = {**temporal, **(filters or {})}  # explicit filters win on conflicts
+    if temporal:
+        logger.info("Temporal signals from question: %r (prefer_recent=%s)", temporal, prefer_recent)
+    where_clause = build_chroma_filter(merged_filters)
+    # Dates are filtered in Python (this ChromaDB version rejects $gte/$lte on strings).
+    date_after = merged_filters.get("date_after")
+    date_before = merged_filters.get("date_before")
+    # Over-fetch so post-filter still leaves a useful set
+    fetch_multiplier = 4 if (date_after or date_before) else 1
 
     # 4. Query ChromaDB for each rewritten query and merge results
     all_ids = []
@@ -188,7 +269,7 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     all_distances = []
     seen_ids = set()
 
-    per_query_k = max(top_k, 10)
+    per_query_k = max(top_k, 10) * fetch_multiplier
 
     for i, embedding in enumerate(embeddings):
         query_kwargs = {
@@ -206,12 +287,17 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
                 results["ids"][0], results["documents"][0],
                 results["metadatas"][0], results["distances"][0]
             ):
-                if id_ not in seen_ids:
-                    seen_ids.add(id_)
-                    all_ids.append(id_)
-                    all_documents.append(doc)
-                    all_metadatas.append(meta)
-                    all_distances.append(dist)
+                if id_ in seen_ids:
+                    continue
+                if (date_after or date_before) and not _date_in_range(
+                    meta.get("date", ""), date_after, date_before
+                ):
+                    continue
+                seen_ids.add(id_)
+                all_ids.append(id_)
+                all_documents.append(doc)
+                all_metadatas.append(meta)
+                all_distances.append(dist)
 
             logger.info("  Query %d/%d %r: %d results",
                         i + 1, len(embeddings), search_queries[i][:60],
@@ -226,6 +312,22 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
 
     # 5. Deduplicate
     deduped = deduplicate_results(merged)
+
+    # 5b. Recency re-rank: for "last/recent/latest" queries, prefer newer clips
+    # (dated chunks first, sorted by date desc; undated chunks trail in original order).
+    if prefer_recent and deduped["metadatas"]:
+        bundle = list(zip(deduped["ids"], deduped["documents"],
+                          deduped["metadatas"], deduped["distances"]))
+        dated = [x for x in bundle if x[2].get("date")]
+        undated = [x for x in bundle if not x[2].get("date")]
+        dated.sort(key=lambda x: x[2].get("date", ""), reverse=True)
+        reordered = dated + undated
+        deduped = {
+            "ids": [x[0] for x in reordered],
+            "documents": [x[1] for x in reordered],
+            "metadatas": [x[2] for x in reordered],
+            "distances": [x[3] for x in reordered],
+        }
 
     deduped_count = len(deduped["ids"])
     logger.info("Retrieved %d unique chunks (%d after dedup) for question: %s",
