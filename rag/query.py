@@ -468,10 +468,10 @@ def main():
     parser.add_argument("--output-dir", default="./lfucg_output", help="Output directory")
     args = parser.parse_args()
 
-    from openai import OpenAI
     from dotenv import load_dotenv
     load_dotenv()
-    openai_client = OpenAI()
+    from clients import get_openai
+    openai_client = get_openai()
 
     collection = get_chroma_collection(args.output_dir)
     clip_metadata = load_clip_metadata(args.output_dir)

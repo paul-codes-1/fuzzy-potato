@@ -8,9 +8,9 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
 from pydantic import BaseModel, field_validator
 
+from clients import get_anthropic, get_openai
 from rag.ingest import get_chroma_collection
 from rag.query import ask, chat, load_clip_metadata
 
@@ -22,10 +22,10 @@ logging.getLogger("rag.query").setLevel(logging.INFO)
 
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
-# Singletons — initialized lazily on first request
+# Per-process caches for things only this server needs (Chroma collection,
+# clip metadata). The OpenAI/Anthropic clients are cached in clients.py.
 _collection = None
 _clip_metadata = None
-_openai_client = None
 
 
 def _get_collection():
@@ -42,22 +42,9 @@ def _get_clip_metadata():
     return _clip_metadata
 
 
-def _get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = OpenAI()
-    return _openai_client
-
-
-_anthropic_client = None
-
-
-def _get_anthropic_client():
-    global _anthropic_client
-    if _anthropic_client is None:
-        from anthropic import Anthropic
-        _anthropic_client = Anthropic()
-    return _anthropic_client
+# Local aliases so the rest of the server code reads naturally.
+_get_openai_client = get_openai
+_get_anthropic_client = get_anthropic
 
 
 @asynccontextmanager
