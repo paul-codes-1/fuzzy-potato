@@ -82,12 +82,31 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Pull existing meeting state from S3
-        # The pipeline needs every clip's metadata.json + transcript.txt +
-        # agenda.txt to regenerate index.json correctly (otherwise old clips
-        # disappear from the SPA), and chroma_db/ to extend the vector store.
-        # MP3s are excluded — they're already not kept in this pipeline.
-        # ~9GB transfer per run; expensive on bandwidth, so check S3 metrics.
+      # ChromaDB is the single biggest piece of state (~4GB) and changes
+      # incrementally each run. Use the GH Actions cache as a fast-path
+      # so we don't re-pull all 4GB from S3 every cron tick. Cache key
+      # rotates daily so we save at most once per UTC day; restore-keys
+      # falls back to the most recent cache when the day-key misses.
+      - name: Compute cache date
+        id: date
+        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore chroma_db from cache
+        id: chromadb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: lfucg_output/chroma_db
+          key: chromadb-${{ steps.date.outputs.today }}
+          restore-keys: |
+            chromadb-
+
+      - name: Pull meeting state from S3 (excl. PDFs and chroma_db)
+        # PDFs (~5GB of the 10GB total) are not read by the pipeline —
+        # only their .txt extracts are. ChromaDB is handled separately
+        # via the cache step above. This brings the typical pull from
+        # ~9GB down to ~420MB (json + txt + html). Existing PDFs in S3
+        # remain there; backfill checks metadata.json for whether a
+        # clip already has its agenda/minutes PDFs, not local disk.
         run: |
           mkdir -p lfucg_output
           aws s3 sync \
@@ -96,9 +115,34 @@ jobs:
             --exclude "*.mp3" \
             --exclude "*.mp4" \
             --exclude "*.part" \
+            --exclude "*.pdf" \
+            --exclude "chroma_db/*" \
             --no-progress
           echo "==> Disk after state pull:"
           df -h .
 
+      - name: Pull chroma_db from S3 (cold-start fallback)
+        # Only runs when the GH Actions cache missed entirely (e.g.
+        # first run, or cache evicted after 7 days idle). Normal cron
+        # operation hits the cache and skips this step.
+        if: steps.chromadb-cache.outputs.cache-hit != 'true' && steps.chromadb-cache.outputs.cache-matched-key == ''
+        run: |
+          echo "==> Cache cold — pulling chroma_db from S3"
+          aws s3 sync \
+            s3://public-meetings/data/chroma_db/ \
+            ./lfucg_output/chroma_db/ \
+            --no-progress
+
       - name: Run ingest pipeline
         run: ./ingest_all.sh
+
+      - name: Save chroma_db to cache
+        # `if: always()` so the cache still saves when later steps (S3
+        # push, App Runner deploy, feeds webhook) fail — losing the
+        # work the pipeline already did would be much worse than the
+        # downstream error.
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: lfucg_output/chroma_db
+          key: chromadb-${{ steps.date.outputs.today }}
