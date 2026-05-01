@@ -11,10 +11,18 @@ logger = logging.getLogger(__name__)
 from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
 from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT, QUERY_REWRITE_PROMPT
 
-GRANICUS_HOST = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
-GRANICUS_URL_TEMPLATE = f"https://{GRANICUS_HOST}/player/clip/{{clip_id}}?view_id=14&entrytime={{timestamp}}"
 DEFAULT_MODEL = "gpt-4o"
 MAX_HISTORY_PAIRS = 10
+MAX_REWRITTEN_QUERIES = 3
+
+
+def granicus_clip_url(clip_id, timestamp: int = 0) -> str:
+    """Build a Granicus deep-link URL. Reads GRANICUS_HOST / GRANICUS_VIEW_ID
+    at call time so deployments that load .env after import still pick up
+    the right tenant."""
+    host = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+    view_id = os.getenv("GRANICUS_VIEW_ID", "14")
+    return f"https://{host}/player/clip/{clip_id}?view_id={view_id}&entrytime={timestamp}"
 
 
 def build_chroma_filter(filters: dict | None) -> dict | None:
@@ -94,7 +102,13 @@ def _fmt_timestamp(seconds: float) -> str:
 
 
 def rewrite_query(question: str, openai_client) -> list[str]:
-    """Use LLM to rewrite a user question into focused search queries."""
+    """Use LLM to rewrite a user question into focused search queries.
+
+    Returns at most MAX_REWRITTEN_QUERIES so a misbehaving model can't fan
+    out to dozens of ChromaDB queries per request. On any failure we log
+    and fall back to the original question — but with enough signal that
+    a broken rewrite pass surfaces in production logs.
+    """
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -107,11 +121,15 @@ def rewrite_query(question: str, openai_client) -> list[str]:
         )
         raw = response.choices[0].message.content.strip()
         queries = json.loads(raw)
-        if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
+        if isinstance(queries, list) and all(isinstance(q, str) for q in queries) and queries:
+            queries = queries[:MAX_REWRITTEN_QUERIES]
             logger.info("Query rewrite: %r -> %r", question[:80], queries)
             return queries
-    except (json.JSONDecodeError, Exception) as e:
-        logger.warning("Query rewrite failed, falling back to original: %s", e)
+        logger.error("Query rewrite returned unexpected shape: %r", raw[:200])
+    except json.JSONDecodeError:
+        logger.error("Query rewrite returned non-JSON, falling back: raw=%r", raw[:200])
+    except Exception:
+        logger.exception("Query rewrite call failed, falling back to original")
 
     return [question]
 
@@ -257,10 +275,7 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
             "title": clip_meta.get("title", "Unknown Meeting"),
             "meeting_body": meta.get("meeting_body", ""),
             "excerpt": doc[:200] + "..." if len(doc) > 200 else doc,
-            "granicus_url": GRANICUS_URL_TEMPLATE.format(
-                clip_id=clip_id,
-                timestamp=timestamp or 0,
-            ),
+            "granicus_url": granicus_clip_url(clip_id, timestamp or 0),
         }
         if timestamp is not None:
             source_entry["timestamp"] = timestamp

@@ -94,6 +94,10 @@ class AskRequest(BaseModel):
         return v
 
 
+MAX_CHAT_MESSAGE_CHARS = 4000
+MAX_CHAT_MESSAGES = 24
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -103,6 +107,16 @@ class ChatMessage(BaseModel):
     def role_must_be_valid(cls, v: str) -> str:
         if v not in ("user", "assistant"):
             raise ValueError("role must be 'user' or 'assistant'")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def content_not_too_long(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("message content must not be empty")
+        if len(v) > MAX_CHAT_MESSAGE_CHARS:
+            raise ValueError(f"message content must be under {MAX_CHAT_MESSAGE_CHARS} characters")
         return v
 
 
@@ -118,6 +132,8 @@ class ChatRequest(BaseModel):
     def messages_not_empty(cls, v):
         if not v:
             raise ValueError("messages must not be empty")
+        if len(v) > MAX_CHAT_MESSAGES:
+            raise ValueError(f"messages must contain no more than {MAX_CHAT_MESSAGES} entries")
         if v[-1].role != "user":
             raise ValueError("last message must be from the user")
         return v

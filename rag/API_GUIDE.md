@@ -204,7 +204,7 @@ while True:
 - **First request is slow.** ChromaDB and clip metadata load lazily on the first `/ask` or `/chat` call. Warm it with a cheap question at startup if latency matters.
 - **Typical latency:** 2–6 s for `/ask` (query rewrite + embed + 1–3 Chroma queries + GPT-4o synthesis). Anthropic path is comparable.
 - **Concurrency:** singletons are not locked, but initialization is idempotent. Concurrent first requests may each build a client; harmless but wasteful. Warm before opening traffic.
-- **Required env:** `OPENAI_API_KEY`. `ANTHROPIC_API_KEY` only needed if callers request `model_provider: "anthropic"`. `LFUCG_OUTPUT_DIR` defaults to `./lfucg_output`. `GRANICUS_HOST` defaults to `lfucg.granicus.com` and controls the host in returned `granicus_url` values.
+- **Required env:** `OPENAI_API_KEY`. `ANTHROPIC_API_KEY` only needed if callers request `model_provider: "anthropic"`. `LFUCG_OUTPUT_DIR` defaults to `./lfucg_output`. `GRANICUS_HOST` (default `lfucg.granicus.com`) and `GRANICUS_VIEW_ID` (default `14`) control the host and view in returned `granicus_url` values; both are read at request time.
 - **No auth.** The service assumes a trusted network or upstream gateway. Do not expose directly to the public internet without adding authentication.
 
 ---
