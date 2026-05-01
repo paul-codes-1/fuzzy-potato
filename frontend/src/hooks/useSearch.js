@@ -5,7 +5,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   // Read state from URL params (single source of truth)
   const query = searchParams.get('q') || ''
   const selectedBody = searchParams.get('body') || null
-  const sortBy = searchParams.get('sort') || 'date-desc'
+  const sortBy = searchParams.get('sort') || 'clip-desc'
 
   // Setters that update URL params
   const updateParam = useCallback((key, value, defaultValue) => {
@@ -26,7 +26,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
 
   const setQuery = useCallback((v) => updateParam('q', v, ''), [updateParam])
   const setSelectedBody = useCallback((v) => updateParam('body', v, null), [updateParam])
-  const setSortBy = useCallback((v) => updateParam('sort', v, 'date-desc'), [updateParam])
+  const setSortBy = useCallback((v) => updateParam('sort', v, 'clip-desc'), [updateParam])
 
   // FlexSearch from context (already loading on app mount)
   const {
@@ -57,6 +57,8 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   const sortMeetings = (meetingList) => {
     const sorted = [...meetingList]
     switch (sortBy) {
+      case 'clip-desc':
+        return sorted.sort((a, b) => (b.clip_id || 0) - (a.clip_id || 0))
       case 'date-desc':
         return sorted.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       case 'date-asc':

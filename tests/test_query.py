@@ -691,7 +691,8 @@ class TestChat:
         )
 
         assert result["model_used"] == "gpt-4o"
-        mock_openai_client.chat.completions.create.assert_called_once()
+        # 2 calls: query rewrite (gpt-4o-mini) + synthesis (gpt-4o)
+        assert mock_openai_client.chat.completions.create.call_count == 2
 
     def test_chat_with_anthropic(self, mock_openai_client, mock_anthropic_client):
         from rag.query import chat

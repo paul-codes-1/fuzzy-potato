@@ -2,13 +2,17 @@
 
 import argparse
 import json
+import logging
 import os
 from collections import defaultdict
 
-from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
-from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT
+logger = logging.getLogger(__name__)
 
-GRANICUS_URL_TEMPLATE = "https://lfucg.granicus.com/player/clip/{clip_id}?view_id=14&entrytime={timestamp}"
+from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
+from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT, QUERY_REWRITE_PROMPT
+
+GRANICUS_HOST = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+GRANICUS_URL_TEMPLATE = f"https://{GRANICUS_HOST}/player/clip/{{clip_id}}?view_id=14&entrytime={{timestamp}}"
 DEFAULT_MODEL = "gpt-4o"
 MAX_HISTORY_PAIRS = 10
 
@@ -89,6 +93,29 @@ def _fmt_timestamp(seconds: float) -> str:
     return f"{m}:{s:02d}"
 
 
+def rewrite_query(question: str, openai_client) -> list[str]:
+    """Use LLM to rewrite a user question into focused search queries."""
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": QUERY_REWRITE_PROMPT},
+                {"role": "user", "content": question},
+            ],
+            temperature=0,
+            max_tokens=200,
+        )
+        raw = response.choices[0].message.content.strip()
+        queries = json.loads(raw)
+        if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
+            logger.info("Query rewrite: %r -> %r", question[:80], queries)
+            return queries
+    except (json.JSONDecodeError, Exception) as e:
+        logger.warning("Query rewrite failed, falling back to original: %s", e)
+
+    return [question]
+
+
 def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
     """Build the messages array for the LLM synthesis call."""
     context_parts = []
@@ -113,39 +140,92 @@ def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
 def _retrieve_and_prepare(question: str, collection, openai_client,
                           clip_metadata: dict = None, filters: dict = None,
                           top_k: int = 15) -> tuple[list[dict], list[dict]] | None:
-    """Embed question, retrieve from ChromaDB, deduplicate, build chunks and sources.
+    """Rewrite query, embed, retrieve from ChromaDB, deduplicate, build chunks and sources.
 
     Returns (synthesis_chunks, sources) or None if collection is empty.
     """
     clip_metadata = clip_metadata or {}
 
-    # 1. Embed the question
-    q_response = openai_client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=[question],
-    )
-    q_embedding = q_response.data[0].embedding
-
-    # 2. Build metadata filter
-    where_clause = build_chroma_filter(filters)
-
-    # 3. Query ChromaDB
     total_chunks = collection.count()
     if total_chunks == 0:
         return None
 
-    query_kwargs = {
-        "query_embeddings": [q_embedding],
-        "n_results": min(top_k, total_chunks),
-        "include": ["documents", "metadatas", "distances"],
+    # 1. Rewrite the question into focused search queries
+    search_queries = rewrite_query(question, openai_client)
+
+    # 2. Embed all queries
+    q_response = openai_client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=search_queries,
+    )
+    embeddings = [item.embedding for item in q_response.data]
+
+    # 3. Build metadata filter
+    where_clause = build_chroma_filter(filters)
+
+    # 4. Query ChromaDB for each rewritten query and merge results
+    all_ids = []
+    all_documents = []
+    all_metadatas = []
+    all_distances = []
+    seen_ids = set()
+
+    per_query_k = max(top_k, 10)
+
+    for i, embedding in enumerate(embeddings):
+        query_kwargs = {
+            "query_embeddings": [embedding],
+            "n_results": min(per_query_k, total_chunks),
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where_clause:
+            query_kwargs["where"] = where_clause
+
+        results = collection.query(**query_kwargs)
+
+        if results["ids"] and results["ids"][0]:
+            for id_, doc, meta, dist in zip(
+                results["ids"][0], results["documents"][0],
+                results["metadatas"][0], results["distances"][0]
+            ):
+                if id_ not in seen_ids:
+                    seen_ids.add(id_)
+                    all_ids.append(id_)
+                    all_documents.append(doc)
+                    all_metadatas.append(meta)
+                    all_distances.append(dist)
+
+            logger.info("  Query %d/%d %r: %d results",
+                        i + 1, len(embeddings), search_queries[i][:60],
+                        len(results["ids"][0]))
+
+    merged = {
+        "ids": [all_ids],
+        "documents": [all_documents],
+        "metadatas": [all_metadatas],
+        "distances": [all_distances],
     }
-    if where_clause:
-        query_kwargs["where"] = where_clause
 
-    results = collection.query(**query_kwargs)
+    # 5. Deduplicate
+    deduped = deduplicate_results(merged)
 
-    # 4. Deduplicate
-    deduped = deduplicate_results(results)
+    deduped_count = len(deduped["ids"])
+    logger.info("Retrieved %d unique chunks (%d after dedup) for question: %s",
+                len(all_ids), deduped_count, question[:120])
+
+    for i, (doc, meta, dist) in enumerate(zip(
+        deduped["documents"], deduped["metadatas"], deduped["distances"]
+    )):
+        logger.info(
+            "  Chunk %d: clip=%s source=%s dist=%.4f date=%s body=%s | %s",
+            i + 1,
+            meta.get("clip_id"),
+            meta.get("source", "?"),
+            dist,
+            meta.get("date", "?"),
+            meta.get("meeting_body", "?"),
+            doc[:100].replace("\n", " "),
+        )
 
     # 5. Build chunks with metadata for synthesis
     synthesis_chunks = []
@@ -206,11 +286,19 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
 
     # Synthesize answer via LLM
     messages = build_synthesis_messages(question, synthesis_chunks)
+
+    logger.info("=== LLM Prompt (%s) ===", model)
+    for msg in messages:
+        logger.info("[%s] %s", msg["role"], msg["content"][:500])
+        if len(msg["content"]) > 500:
+            logger.info("  ... (%d chars total)", len(msg["content"]))
+
     chat_response = openai_client.chat.completions.create(
         model=model,
         messages=messages,
     )
     answer = chat_response.choices[0].message.content
+    logger.info("=== LLM Response (%d chars) ===", len(answer))
 
     return {
         "answer": answer,
@@ -298,6 +386,12 @@ def chat(messages: list[dict], collection, openai_client,
     # Build chat messages with context
     synth_messages = build_chat_synthesis_messages(messages, synthesis_chunks)
 
+    logger.info("=== Chat LLM Prompt (%s, %d messages) ===", model_provider, len(synth_messages))
+    for msg in synth_messages:
+        logger.info("[%s] %s", msg["role"], msg["content"][:500])
+        if len(msg["content"]) > 500:
+            logger.info("  ... (%d chars total)", len(msg["content"]))
+
     # Route to appropriate provider
     if model_provider == "anthropic":
         if anthropic_client is None:
@@ -311,6 +405,8 @@ def chat(messages: list[dict], collection, openai_client,
         )
         content = chat_response.choices[0].message.content
         model_used = "gpt-4o"
+
+    logger.info("=== Chat LLM Response (%s, %d chars) ===", model_used, len(content))
 
     return {
         "role": "assistant",

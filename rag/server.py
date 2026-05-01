@@ -16,7 +16,9 @@ from rag.query import ask, chat, load_clip_metadata
 
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+logging.getLogger("rag.query").setLevel(logging.INFO)
 
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
