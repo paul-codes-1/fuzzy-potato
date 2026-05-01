@@ -124,6 +124,8 @@ def build_clip_markdown(
     revised_iso = metadata.get("summary_updated_at") or metadata.get("processed_at") or iso_date
     revised_human = _format_revision_date(revised_iso)
     word_count = metadata.get("transcript_words") or 0
+    transcript_source = metadata.get("transcript_source") or "whisper-1"
+    speakers = metadata.get("speakers") or []
 
     lines: List[str] = [
         f"# {seo_title}",
@@ -149,19 +151,40 @@ def build_clip_markdown(
         lines.append(f"- **Last revised**: {revised_human}")
     if word_count:
         lines.append(f"- **Length**: {word_count:,} words")
+    if speakers:
+        lines.append(f"- **Speakers**: {', '.join(speakers)}")
     lines.append("")
 
-    lines += [
-        "> ⚠️ **Auto-generated content.** Audio from the official Granicus video was "
-        "auto-transcribed by OpenAI Whisper-1. Structured facts were extracted with "
-        "GPT-4o; the narrative summary was written by Anthropic Claude Sonnet. "
-        "Speaker labels and verbatim wording may contain errors. See "
-        f"[methodology]({site_url}/about/methodology) or "
-        "[report a correction](mailto:editor@lexingtonky.news).",
-        "",
-        "---",
-        "",
-    ]
+    if transcript_source == "granicus_vtt":
+        disclosure = (
+            "> ⚠️ **Closed-caption placeholder.** This transcript was captured live "
+            "by a Granicus stenographer (typos and broken sentences common). A "
+            "higher-quality OpenAI Whisper-1 pass replaces it later, at which "
+            "point structured facts and a narrative summary are also generated. "
+            f"See [methodology]({site_url}/about/methodology) or "
+            "[report a correction](mailto:editor@lexingtonky.news)."
+        )
+    elif transcript_source == "whisper-1+vtt-speakers":
+        disclosure = (
+            "> ⚠️ **Auto-generated content.** Audio from the official Granicus "
+            "video was auto-transcribed by OpenAI Whisper-1, with speaker labels "
+            "folded in from Granicus closed-captioning. Structured facts were "
+            "extracted with GPT-4o; the narrative summary was written by "
+            "Anthropic Claude Sonnet. Speaker labels and verbatim wording may "
+            f"contain errors. See [methodology]({site_url}/about/methodology) "
+            "or [report a correction](mailto:editor@lexingtonky.news)."
+        )
+    else:
+        disclosure = (
+            "> ⚠️ **Auto-generated content.** Audio from the official Granicus "
+            "video was auto-transcribed by OpenAI Whisper-1. Structured facts "
+            "were extracted with GPT-4o; the narrative summary was written by "
+            "Anthropic Claude Sonnet. Speaker labels and verbatim wording may "
+            f"contain errors. See [methodology]({site_url}/about/methodology) "
+            "or [report a correction](mailto:editor@lexingtonky.news)."
+        )
+
+    lines += [disclosure, "", "---", ""]
 
     # Narrative summary — verbatim, headers and all.
     summary_path = clip_dir / "summary.txt"

@@ -888,6 +888,12 @@ a:hover {
   font-size: 0.9375rem;
 }
 
+.segment-speaker {
+  color: var(--accent, #1d4ed8);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
 /* Search Highlight */
 .search-highlight-banner {
   background: #fffbeb;

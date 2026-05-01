@@ -6,6 +6,7 @@ import os
 import re
 import hashlib
 from pathlib import Path
+from typing import Optional
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMS = 1536
@@ -276,8 +277,26 @@ def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body
         return False
 
     def _emit_chunk(segs: list[dict]) -> dict:
-        text = " ".join(s["text"] for s in segs)
-        return {
+        # Prefix each speaker change with "Speaker:" so the embedded text
+        # captures attribution; otherwise speakers only live in metadata
+        # and don't influence retrieval relevance.
+        parts: list[str] = []
+        speakers_in_chunk: list[str] = []
+        last_speaker: Optional[str] = None
+        for s in segs:
+            sp = s.get("speaker")
+            seg_text = s["text"].strip()
+            if sp and sp != last_speaker:
+                parts.append(f"{sp}: {seg_text}")
+                last_speaker = sp
+                if sp not in speakers_in_chunk:
+                    speakers_in_chunk.append(sp)
+            else:
+                parts.append(seg_text)
+                if sp and sp not in speakers_in_chunk:
+                    speakers_in_chunk.append(sp)
+        text = " ".join(parts)
+        chunk = {
             "text": text,
             "clip_id": clip_id,
             "date": date,
@@ -286,6 +305,9 @@ def chunk_transcript(segments: list[dict], clip_id: int, date: str, meeting_body
             "start_time": segs[0]["start"],
             "end_time": segs[-1]["end"],
         }
+        if speakers_in_chunk:
+            chunk["speakers"] = speakers_in_chunk
+        return chunk
 
     def _overlap_tail(segs: list[dict]) -> list[dict]:
         """Return trailing segments worth ~overlap_words."""
@@ -514,6 +536,15 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
                 meta["start_time"] = chunk["start_time"]
             if "end_time" in chunk:
                 meta["end_time"] = chunk["end_time"]
+            # Provenance: which transcript source produced this chunk's
+            # text. "granicus_vtt" lets the frontend / synthesis layer
+            # warn when a citation comes from a stenographer placeholder
+            # rather than a Whisper transcript.
+            if chunk.get("transcript_source"):
+                meta["transcript_source"] = chunk["transcript_source"]
+            # ChromaDB metadata is scalar-only — join speaker list.
+            if chunk.get("speakers"):
+                meta["speakers"] = ", ".join(chunk["speakers"])
 
             metadatas.append(meta)
 
@@ -562,6 +593,7 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
     date = metadata.get("date") or ""
     meeting_body = metadata.get("meeting_body") or ""
     files = metadata.get("files", {})
+    transcript_source = metadata.get("transcript_source")
 
     all_chunks = []
 
@@ -605,7 +637,11 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
         if segments_path.exists() and segments_path.stat().st_size > 0:
             with open(segments_path) as f:
                 segments = json.load(f)
-            all_chunks.extend(chunk_transcript(segments, clip_id, date, meeting_body))
+            transcript_chunks = chunk_transcript(segments, clip_id, date, meeting_body)
+            if transcript_source:
+                for c in transcript_chunks:
+                    c["transcript_source"] = transcript_source
+            all_chunks.extend(transcript_chunks)
 
     if all_chunks:
         try:
