@@ -8,7 +8,8 @@ LFUCG Meeting Pipeline - Downloads, transcribes, and generates comprehensive sum
 
 ## Reference Documentation
 
-- **`granicus.md`** - Granicus API documentation including video player URL parameters (entrytime/stoptime for seeking), Legistar Web API, MediaManager SOAP API, RSS feeds, and embed options
+- **`granicus.md`** - Granicus API documentation including video player URL parameters (entrytime/stoptime for seeking), Legistar Web API, MediaManager SOAP API, RSS feeds, embed options, and the WebVTT closed-captioning track
+- **`granicus_captions.py`** - WebVTT parsing, speaker turn coalescing, max-overlap alignment onto Whisper segments, and VTT-as-placeholder transcript rendering
 
 ## Commands
 
@@ -66,6 +67,14 @@ uv run python main.py --test-summary --test-summary-dir ./my_test  # Custom test
 
 # Clean up old v1 summaries
 uv run python main.py --clean-v1-summaries               # Remove summary.html everywhere + summary.txt from non-upgraded clips
+
+# Granicus closed-caption (VTT) backfill
+# Speaker enrichment for clips that have Whisper segments + VTT
+# OR VTT-as-placeholder transcript for clips that haven't been Whispered yet
+uv run python scripts/backfill_captions.py --dry-run     # Inventory what would change
+uv run python scripts/backfill_captions.py --workers 6   # Run with 6 parallel yt-dlp workers
+uv run python scripts/backfill_captions.py --clip 6757   # Single clip
+uv run python scripts/backfill_captions.py --force       # Re-fetch + re-parse (after parser fixes)
 
 # RAG Q&A system
 uv sync --extra rag --extra dev                          # Install RAG + test dependencies (includes anthropic)
@@ -125,11 +134,33 @@ Single-file pipeline with `LFUCGPipeline` class that orchestrates:
 3. **Download** - Uses yt-dlp to download audio as MP3 (48kbps, 22kHz mono)
 4. **Compression** - Compresses audio via ffmpeg if >24MB (Whisper API limit is 25MB)
 5. **Transcription** - Uses OpenAI Whisper API with segment timestamps (new transcriptions get timestamped segments for video seeking)
+5b. **Closed-caption ingestion** - Pulls Granicus WebVTT (live-CC stenographer track) via yt-dlp. Available on ~50% of clips. Used to attach speaker labels to Whisper segments via timestamp max-overlap, OR to synthesize a placeholder transcript when Whisper hasn't run yet. See "Granicus Captions" below.
 6. **Agenda Download** - Downloads PDF agenda and extracts text with pdfplumber (falls back to OCR via pytesseract for scanned PDFs)
 7. **Minutes Download** - Downloads official meeting minutes (PDF or HTML) if available and extracts text
 8. **Topic Extraction** - Uses gpt-4o-mini to extract 3-8 topics
 9. **Summary Generation** - See "Two-Pass Summary System" below
 10. **Index Generation** - Creates searchable index.json for frontend
+
+### Granicus Captions (`granicus_captions.py`)
+
+Two-mode integration with Granicus's live-CC WebVTT track:
+
+- **Speaker enrichment** — for clips that already have Whisper segments, parse VTT into speaker turns (`>> Mayor Gorton:` / `>> councilmember hale:` markers) and align speakers onto Whisper segments by timestamp max-overlap. The Whisper text remains canonical; only attribution is added. `transcript_source` becomes `"whisper-1+vtt-speakers"`.
+- **VTT-as-placeholder** — for un-Whispered clips, render the VTT directly as a transcript so the meeting page is searchable / RAG-ingestible immediately. The page disclosure says "Closed-caption placeholder — Whisper transcription pending." `transcript_source` becomes `"granicus_vtt"`. Replaced when Whisper runs.
+
+VTT URL discovery uses yt-dlp (`--write-subs --sub-langs en --skip-download`). Result is cached in `lfucg_output/clips/<id>/captions.vtt`.
+
+Parser hardened against four real-world VTT quirks observed during the full-archive backfill:
+- **Stenographer interjection mis-attribution** — stop-list rejects `>> thank you:` etc. as speaker names.
+- **Rolling-caption duplication** — Granicus live-CC repeats the steno's buffer window; consecutive duplicate lines within a cue are collapsed.
+- **ASCII control-byte corruption** — older clips have `\x7f` (DEL) runs from malformed encoders; control bytes are stripped before further processing.
+- **Stenographer keystroke noise** — lines like `ww ww www` lack a 3+ letter word with 2+ distinct letters, so they're dropped.
+
+Frontend renders speaker labels in the Transcript tab and varies the AI-disclosure aside by `transcript_source`. The `clip.md` Markdown alternate emits a "Speakers:" line and a source-specific disclosure paragraph.
+
+RAG ingestion prefixes speaker changes (`Mayor Gorton: ...`) into transcript chunk text so attribution influences retrieval, and writes `transcript_source` + comma-joined `speakers` into ChromaDB metadata.
+
+One-shot backfill: `scripts/backfill_captions.py` (idempotent, parallel via `--workers N`, supports `--dry-run` / `--clip <id>` / `--force`). Skips clips that already have the target state.
 
 ### Two-Pass Summary System (`summary_v2.py`)
 
@@ -159,7 +190,7 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
   - **facts** — structured data from `extracted_facts.json` converted to searchable text (votes, financial items, attendance, agenda items, public comments, contentious items)
   - **minutes** — official minutes split by section boundaries with ~100-word overlap
   - **agenda** — agenda text split by section boundaries with ~100-word overlap
-  - **transcript** — topic-aware chunks (~500 words) with silence gap and procedural phrase boundary detection, ~100-word overlap
+  - **transcript** — topic-aware chunks (~500 words) with silence gap and procedural phrase boundary detection, ~100-word overlap. When per-segment speakers exist, speaker changes are prefixed (`Mayor Gorton: ...`) into the embedded text, and `transcript_source` + comma-joined `speakers` are written to ChromaDB metadata.
 - **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 4 chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations
 - **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling.
 - **`rag/prompts.py`** - System prompts for LLM synthesis. Instructs `[Clip ID, MM:SS]` citation format, prefers facts and minutes for precise data.
@@ -217,8 +248,10 @@ lfucg_output/
       {date}_minutes_{title}.pdf          # Official meeting minutes PDF (if available)
       {date}_minutes_{title}.html         # Official meeting minutes HTML (if available)
       {date}_minutes_{title}.txt          # Extracted minutes text
+      captions.vtt                        # Raw Granicus closed-captioning (if available)
       metadata.json                       # Processing metadata
 
+granicus_captions.py                      # WebVTT parsing + speaker alignment module
 summary_v2.py                             # Two-pass summary generation module
 
 rag/
@@ -235,6 +268,11 @@ tests/
   test_server.py                          # Tests for FastAPI endpoints (TestClient)
   test_integration.py                     # Tests for main.py pipeline hooks
   test_summary_v2.py                      # Tests for two-pass summary extraction + narration
+  test_captions.py                        # Tests for VTT parsing, speaker alignment, garbage-filter
+
+scripts/
+  backfill_captions.py                    # One-shot VTT backfill: speaker enrichment + placeholder transcripts
+  restamp-cache-headers.sh                # S3 cache-control header retrofit
 
 frontend/
   dist/                                   # Built React SPA
@@ -280,12 +318,15 @@ lambda/
     "agenda_pdf": "2026-01-08_agenda_January_8_2026_WQFB_meeting.pdf",
     "agenda_txt": "2026-01-08_agenda_January_8_2026_WQFB_meeting.txt",
     "minutes_pdf": "2026-01-08_minutes_January_8_2026_WQFB_meeting.pdf",
-    "minutes_txt": "2026-01-08_minutes_January_8_2026_WQFB_meeting.txt"
+    "minutes_txt": "2026-01-08_minutes_January_8_2026_WQFB_meeting.txt",
+    "captions_vtt": "captions.vtt"
   },
   "processed_at": "...",
   "processing_time_seconds": 120.5,
   "transcript_words": 6660,
   "audio_kept": true,
+  "transcript_source": "whisper-1+vtt-speakers",
+  "speakers": ["Mayor Gorton", "Councilmember Hale"],
   "models": {
     "transcribe": "whisper-1",
     "summary": "gpt-4o+claude-sonnet",
@@ -293,6 +334,11 @@ lambda/
   }
 }
 ```
+
+`transcript_source` is one of:
+- `"whisper-1"` — Whisper transcript only, no captions track available
+- `"whisper-1+vtt-speakers"` — Whisper transcript + speaker labels folded in from VTT
+- `"granicus_vtt"` — Placeholder transcript synthesized from VTT (Whisper hasn't run yet)
 
 ## Extracted Facts JSON Structure
 

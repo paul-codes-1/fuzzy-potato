@@ -2,12 +2,15 @@
 
 ## Dataset at a Glance
 
-- ~4,670 clips identified (Granicus), spanning **2007–2026**
-- 2,620 with metadata; 337 fully transcribed + summarized so far
-- ~3.8M words of transcript text currently; estimated **50M+ words** when complete
+- ~4,716 clips identified (Granicus), spanning **2007–2026**
+- 2,737 with metadata
+- Transcript coverage (May 2026 backfill):
+  - **411** clips with Whisper transcripts + VTT-aligned speaker labels
+  - **909** clips with placeholder transcripts synthesized from Granicus VTT (until Whisper runs)
+  - **1,417** clips with no transcript (no audio + no captions, or both)
 - 1,502 unique extracted topics, 2,406 agendas, 1,467 sets of minutes
 - Meeting bodies: Council, Planning Commission, Budget & Finance, Board of Adjustment, and more
-- Timestamped transcript segments enable deep-linking into Granicus video player
+- Timestamped transcript segments enable deep-linking into Granicus video player; speaker-attributed segments enable per-person queries on covered clips
 
 ---
 
@@ -48,12 +51,13 @@ For council members, staff, lobbyists, or engaged citizens.
 
 ## 5. Speaker Identification & Attribution
 
-Currently transcripts are undiarized — a wall of text with no speaker labels.
+**Partially shipped (May 2026).** The pipeline now pulls Granicus's live-CC WebVTT track, which carries `>> Speaker:` attributions from the stenographer. ~411 clips have Whisper transcripts with VTT-aligned speaker labels (`whisper-1+vtt-speakers`); ~909 un-Whispered clips have placeholder transcripts synthesized directly from VTT (`granicus_vtt`). See `granicus_captions.py` and the VTT section in `granicus.md`.
 
-- Add speaker diarization (pyannote.audio, AWS Transcribe, or AssemblyAI) to attribute statements to individuals.
-- Enables queries like _"What has Council Member X said about the police budget over the last 5 years?"_
-- Dramatically increases the dataset's usefulness for journalism and accountability.
-- **Trade-off:** Significant compute cost and complexity. Could be done incrementally (new meetings first, backfill later).
+What's still open:
+- ~1,400 clips have audio but no VTT track (Granicus didn't capture stenography). True acoustic diarization (pyannote.audio, AWS Transcribe, AssemblyAI) would attribute these.
+- VTT speaker quality varies — many turns are marked `>>` without a name. Acoustic diarization on top of VTT would add granularity.
+- Even with speaker labels, named-entity resolution across clips ("Councilmember Hale" → a canonical person ID) is needed for queries like _"What has Council Member X said over the last 5 years?"_
+- **Trade-off:** Acoustic diarization on the audio backlog is significant compute. Could be done incrementally (new meetings first, backfill later).
 
 ## 6. Notification & Alert System
 
@@ -92,6 +96,7 @@ Once transcription is complete, these three things would add the most value soon
 
 ## Remaining Work to Complete the Dataset
 
-- ~4,300 clips still need transcription (primarily an OpenAI Whisper API token budget issue)
+- ~1,400 clips still need a Whisper pass (down from ~4,300 — the rest are now covered by either Whisper or Granicus VTT placeholder transcripts; see section 5)
 - ~170 failed transcriptions and ~86 failed downloads to retry
 - 2,283 clips have "unknown" meeting body classification — could be backfilled from titles
+- 8 clips with corrupted Granicus VTT (DEL-byte streams) have no captions usable as a placeholder; they show as "no transcript" until Whisper runs on their audio

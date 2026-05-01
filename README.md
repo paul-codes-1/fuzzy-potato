@@ -120,6 +120,27 @@ uv run python main.py --clean-v1-summaries
 
 The `--upgrade-summaries` command is resumable: if it crashes or runs out of API credits, re-run the same command and it picks up where it left off (skips clips that already have `extracted_facts.json`).
 
+### Granicus Closed-Caption Backfill
+
+Granicus serves a live-CC WebVTT track for ~50% of clips. The pipeline pulls it on every new clip (`process_clip` automatically), but for the existing archive there's a one-shot backfill that does two things:
+
+1. **Speaker enrichment** — for clips that already have a Whisper transcript, fold `>> Speaker:` attributions from VTT onto each Whisper segment by timestamp max-overlap
+2. **VTT-as-placeholder** — for un-Whispered clips, synthesize a transcript directly from the VTT so the meeting page is searchable until Whisper runs
+
+```bash
+# Inventory what would change (no network calls)
+uv run python scripts/backfill_captions.py --dry-run
+
+# Run for real with 6 parallel workers (~30 min for full archive)
+uv run python scripts/backfill_captions.py --workers 6
+
+# Specific clip / re-fetch after parser fixes
+uv run python scripts/backfill_captions.py --clip 6757
+uv run python scripts/backfill_captions.py --force --workers 6
+```
+
+The script is idempotent — clips that are already in the target state are skipped.
+
 ### Run in Background
 
 For long-running jobs:
@@ -311,8 +332,11 @@ lfucg_output/
       {date}_agenda_{title}.txt           # Extracted agenda text
       {date}_minutes_{title}.pdf          # Meeting minutes (if available)
       {date}_minutes_{title}.txt          # Extracted minutes text
+      captions.vtt                        # Granicus closed-caption track (if available)
       metadata.json                       # Clip metadata
 ```
+
+`metadata.json` carries a `transcript_source` field — one of `whisper-1`, `whisper-1+vtt-speakers` (Whisper + Granicus speaker labels), or `granicus_vtt` (placeholder transcript synthesized from VTT until Whisper runs). The `speakers` field lists distinct attributed speakers when known.
 
 ## Architecture
 

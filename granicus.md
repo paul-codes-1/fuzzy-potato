@@ -6,6 +6,7 @@ This document covers known Granicus APIs, URL parameters, embed options, and int
 
 - [Video Player URL Parameters](#video-player-url-parameters)
 - [Page Endpoints](#page-endpoints)
+- [Closed-Captioning (WebVTT)](#closed-captioning-webvtt)
 - [RSS Feeds](#rss-feeds)
 - [Legistar Web API](#legistar-web-api)
 - [MediaManager SOAP API](#mediamanager-soap-api)
@@ -114,6 +115,49 @@ Windows Media Player compatible stream URL.
 ```
 https://{subdomain}.granicus.com/ASX.php?view_id={view_id}&clip_id={clip_id}
 ```
+
+---
+
+## Closed-Captioning (WebVTT)
+
+Roughly half of Granicus clips have a live-CC stenographer track delivered as WebVTT alongside the m3u8 video stream. The track quality varies by clip but it has one feature Whisper-1 doesn't: speaker attributions, marked with `>> Speaker Name:` at each speaker change.
+
+### Discovery
+
+There's no public endpoint that exposes the VTT URL directly — it lives inside the m3u8 master manifest as a `SUBTITLES` rendition. `yt-dlp` parses the manifest and downloads it:
+
+```bash
+yt-dlp \
+  --write-subs --sub-langs en --skip-download --quiet \
+  -o "captions.%(ext)s" \
+  "https://{subdomain}.granicus.com/player/clip/{clip_id}?view_id={view_id}&redirect=true"
+# Writes captions.en.vtt
+```
+
+If no captions track exists, yt-dlp exits cleanly with no output file (not an error).
+
+### Format quirks
+
+The captions are useful but messy. Real-world quirks observed across the LFUCG archive (~4,700 clips):
+
+- **Speaker markers** — `>> Mayor Gorton: welcome` introduces a turn. Continuation cues without a `:` inherit the previous speaker. `>>` alone (no name) marks an unattributed turn change.
+- **Inconsistent speaker capitalization** — same speaker appears as `Mayor Gorton`, `mayor gorton`, and `MAYOR GORTON` across cues. Title-case before deduping.
+- **Stenographer interjection mis-attribution** — lines like `>> thank you: this question is for staff.` look like a "Thank You" speaker turn but are really continuations. Maintain a stop-list of common interjection phrases (`thank you`, `yes`, `welcome`, etc.).
+- **Rolling-caption duplication** — the steno's buffer window is repeated across cues. A 2-second cue may carry the same line dozens of times. Dedupe consecutive identical lines within each cue.
+- **ASCII control-byte corruption** — older clips have VTT bodies stuffed with `\x7f` (DEL) bytes from a malformed live-CC encoder, sometimes with stray real letters mixed in. Strip control bytes from every line before processing.
+- **Stenographer keystroke noise** — lines like `ww ww www` or `oo ~`. Reject any body line lacking a 3+ letter word with at least 2 distinct letters.
+
+### Example cue
+
+```
+00:01:23.820 --> 00:01:25.820
+>> Mayor Gorton: welcome
+
+00:01:26.000 --> 00:01:28.000
+everyone, it's 6:00 I will call to order
+```
+
+The second cue inherits speaker "Mayor Gorton" because there's no `>>` marker.
 
 ---
 
