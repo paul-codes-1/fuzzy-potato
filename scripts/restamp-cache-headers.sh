@@ -28,6 +28,7 @@ aws s3 cp "$DATA_PREFIX" "$DATA_PREFIX" \
   --include "*.pdf" \
   --metadata-directive REPLACE \
   --cache-control "$PDF_CACHE" \
+  --content-type "application/pdf" \
   --no-progress
 
 echo "==> Restamping clip.md alternates (1d fresh, 7d SWR, text/markdown)"
