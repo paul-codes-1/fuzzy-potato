@@ -1276,7 +1276,10 @@ Guidelines:
             # Update metadata
             end_time = datetime.now()
             metadata["summary_updated_at"] = end_time.isoformat()
-            metadata["models"]["summary"] = self.summary_model
+            # Placeholder clips (VTT-as-transcript) won't have a models
+            # dict from the original processing — setdefault avoids a
+            # KeyError when summarizing them.
+            metadata.setdefault("models", {})["summary"] = self.summary_model
 
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -2586,7 +2589,7 @@ Examples:
                 if summary:
                     (clip_dir / "summary.txt").write_text(summary)
                     metadata["files"]["summary_txt"] = "summary.txt"
-                    metadata["models"]["summary"] = f"{args.summary_model}+claude-sonnet"
+                    metadata.setdefault("models", {})["summary"] = f"{args.summary_model}+claude-sonnet"
 
                 # Save updated metadata
                 with open(meta_path, "w") as f:
