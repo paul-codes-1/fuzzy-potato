@@ -42,9 +42,15 @@ def _get_clip_metadata():
     return _clip_metadata
 
 
-# Local aliases so the rest of the server code reads naturally.
-_get_openai_client = get_openai
-_get_anthropic_client = get_anthropic
+# Wrappers (not aliases) so test patches against `rag.server.get_openai`
+# / `rag.server.get_anthropic` are honored — direct assignment would
+# resolve the function object at import time and bypass the patch.
+def _get_openai_client():
+    return get_openai()
+
+
+def _get_anthropic_client():
+    return get_anthropic()
 
 
 @asynccontextmanager

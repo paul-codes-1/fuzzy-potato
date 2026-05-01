@@ -2049,7 +2049,7 @@ Examples:
         try:
             anthropic_client = get_anthropic()
         except MissingAPIKey as e:
-            print(f"Error: {e}")
+            print(f"Error (--test-summary): {e}")
             sys.exit(1)
         test_dir = Path(args.test_summary_dir)
         test_dir.mkdir(parents=True, exist_ok=True)
@@ -2238,7 +2238,7 @@ Examples:
         try:
             anthropic_client = get_anthropic()
         except MissingAPIKey as e:
-            print(f"Error: {e}")
+            print(f"Error (--upgrade-summaries): {e}")
             sys.exit(1)
 
         # Find all clips with metadata, sorted by ID ascending
