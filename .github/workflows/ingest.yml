@@ -1,14 +1,16 @@
 name: ingest-meetings
 
-# Polls Granicus (lfucg.granicus.com) every 6 hours for new clips,
-# downloads + transcribes + summarizes them, ingests into ChromaDB,
-# rebuilds the search index and sitemaps, syncs to S3, and pings the
-# feeds.lexingtonky.news webhook so it pulls the new archive items.
+# Polls Granicus (lfucg.granicus.com) every 6 hours for new clips and
+# runs the full ingest_all.sh pipeline: probe → download / transcribe /
+# summarize new clips → backfill missing minutes/agenda for older clips →
+# upgrade any clips still on a v1 summary → ingest new content into
+# ChromaDB → rebuild search index + sitemaps → sync to S3 → rebuild +
+# push the RAG API Docker image → trigger App Runner redeploy → ping
+# the feeds.lexingtonky.news webhook so it pulls the new archive items.
 #
-# Skips the heavy maintenance steps (backfill-docs, upgrade-summaries)
-# and the RAG API redeploy (Docker push + App Runner) — the cron only
-# touches data, not the API code. Run those manually via
-# `workflow_dispatch` or locally when needed.
+# State source-of-truth is S3 (`s3://public-meetings/data/`). The job
+# pulls existing state down before running and pushes new state back
+# via the `deploy.sh` step inside the pipeline.
 
 on:
   schedule:
@@ -21,14 +23,6 @@ on:
         description: "Cap on new clips per run (blank = no cap)"
         required: false
         default: "10"
-      run_backfill:
-        description: "Also run --backfill-docs --regenerate-summary"
-        type: boolean
-        default: false
-      run_upgrade_summaries:
-        description: "Also run --upgrade-summaries"
-        type: boolean
-        default: false
 
 concurrency:
   # Two runs at once would race on the S3 → local → S3 sync. Cancel
@@ -52,10 +46,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       FEEDS_API_TOKEN: ${{ secrets.FEEDS_API_TOKEN }}
       CLOUDFRONT_DISTRIBUTION_ID: E8OIXOXDRETLZ
-      # Skip heavy steps in the routine cron — these run separately on demand.
-      SKIP_RAG_DEPLOY: "1"
-      SKIP_BACKFILL: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_backfill) && '0' || '1' }}
-      SKIP_UPGRADE_SUMMARIES: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_upgrade_summaries) && '0' || '1' }}
       MAX_CLIPS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_clips || '10' }}
     steps:
       - uses: actions/checkout@v4
