@@ -25,19 +25,50 @@ aws s3 sync frontend/dist/ "$S3_BUCKET" \
   --exclude "data/*" --exclude "assets/*" --delete \
   --cache-control "no-cache"
 
-# Per-clip Markdown alternates: served at /data/clips/<id>/clip.md for AI
+# Cache strategy for /data/* — split into pools by mutability so CloudFront
+# can serve the per-clip tree from edge instead of revalidating against S3
+# on every request. Every deploy already runs an `--paths "/*"`
+# invalidation below, so even with year-long TTLs the next deploy still
+# flushes everything. Existing files (uploaded before this layout) keep
+# their old headers because `--size-only` skips them — run
+# `scripts/restamp-cache-headers.sh` once after merge to retro-fix the
+# tree (~13k objects, 1–2 min).
+
+# Per-clip PDFs (agendas + minutes): never change after processing → 1y
+# immutable. Run first because the sync below excludes them.
+echo "==> Syncing per-clip PDFs (immutable, 1y cache)..."
+aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
+  --exclude "*" \
+  --include "clips/*/*.pdf" \
+  --cache-control "public, max-age=31536000, immutable"
+
+# Per-clip Markdown alternate: served at /data/clips/<id>/clip.md for AI
 # agents and discoverable via <link rel="alternate" type="text/markdown">.
-# Synced first with the right Content-Type so the main sync below can
-# treat them as already-uploaded and skip them via --exclude.
-echo "==> Syncing per-clip Markdown alternates (text/markdown)..."
+# Functionally immutable per processing run → 1d fresh + 7d
+# stale-while-revalidate. Content-Type override so it isn't served as
+# octet-stream.
+echo "==> Syncing per-clip Markdown alternates..."
 aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
   --exclude "*" \
   --include "clips/*/clip.md" \
   --content-type "text/markdown; charset=utf-8" \
-  --cache-control "public, max-age=600"
+  --cache-control "public, max-age=86400, stale-while-revalidate=604800"
 
-# Data JSON — must revalidate every load (otherwise stale meetings list)
-echo "==> Syncing data (no-cache)..."
+# Per-clip text + JSON data (transcripts, summaries, agenda txt, minutes
+# txt, metadata.json, extracted_facts.json): functionally immutable per
+# processing run → 1d fresh + 7d SWR. The cron CloudFront invalidation
+# still flushes them on the rare reprocess.
+echo "==> Syncing per-clip text + JSON data (1d fresh, 7d SWR)..."
+aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
+  --exclude "*" \
+  --include "clips/*/*.txt" \
+  --include "clips/*/*.json" \
+  --include "clips/*/*.html" \
+  --cache-control "public, max-age=86400, stale-while-revalidate=604800"
+
+# Top-level data — index.json mutates every cron, search_index chunks
+# rotate, rag_state.json updates per ingest. Must revalidate.
+echo "==> Syncing top-level data (no-cache)..."
 aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
   --cache-control "no-cache" \
   --exclude "*.mp3" \
@@ -45,11 +76,12 @@ aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
   --exclude "*.part" \
   --exclude "*.ytdl" \
   --exclude "chroma_db/*" \
-  --exclude "clips/*/clip.md"
+  --exclude "clips/*"
 
-# Ensure existing top-level data JSON files have no-cache header
-# (sync --size-only skips unchanged files, leaving their old metadata)
-echo "==> Ensuring no-cache header on top-level data JSON..."
+# Re-stamp top-level JSON: --size-only skips unchanged files, which
+# leaves their old metadata in place; re-cp with REPLACE forces the
+# no-cache header to take effect even when the file content is stable.
+echo "==> Re-stamping top-level data JSON..."
 aws s3 ls "$S3_BUCKET/data/" | awk '/\.json$/ {print $4}' | while read -r f; do
   aws s3 cp "$S3_BUCKET/data/$f" "$S3_BUCKET/data/$f" \
     --metadata-directive REPLACE \
