@@ -707,11 +707,10 @@ def main():
         print(f"Unique clips: {stats['unique_clips']}")
         return
 
-    # Initialize OpenAI client
-    from openai import OpenAI
     from dotenv import load_dotenv
     load_dotenv()
-    openai_client = OpenAI()
+    from clients import get_openai
+    openai_client = get_openai()
 
     collection = get_chroma_collection(output_dir)
 

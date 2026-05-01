@@ -18,7 +18,7 @@ class TestAskEndpoint:
         with patch("rag.server.ask") as mock_ask, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_ask.return_value = {
                 "answer": "Test answer",
                 "sources": [],
@@ -38,7 +38,7 @@ class TestAskEndpoint:
     def test_ask_returns_422_with_missing_question(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -50,7 +50,7 @@ class TestAskEndpoint:
         with patch("rag.server.ask") as mock_ask, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_ask.return_value = {
                 "answer": "Zoning was discussed.",
                 "sources": [
@@ -86,7 +86,7 @@ class TestAskEndpoint:
         with patch("rag.server.ask") as mock_ask, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_ask.return_value = {
                 "answer": "Answer",
                 "sources": [],
@@ -122,7 +122,7 @@ class TestHealthEndpoint:
     def test_health_returns_200(self):
         with patch("rag.server.get_chroma_collection") as mock_coll, \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_collection = MagicMock()
             mock_collection.count.return_value = 1000
             mock_coll.return_value = mock_collection
@@ -139,7 +139,7 @@ class TestHealthEndpoint:
 
         with patch("rag.server.get_chroma_collection") as mock_coll, \
              patch("rag.server.load_clip_metadata") as mock_meta, \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_collection = MagicMock()
             mock_collection.count.return_value = 5000
             mock_coll.return_value = mock_collection
@@ -174,7 +174,7 @@ class TestDirectRoutes:
         with patch("rag.server.ask") as mock_ask, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_ask.return_value = {
                 "answer": "Direct route answer",
                 "sources": [],
@@ -193,7 +193,7 @@ class TestDirectRoutes:
     def test_direct_health_route_returns_200(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -206,7 +206,7 @@ class TestDirectRoutes:
         with patch("rag.server.chat") as mock_chat, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_chat.return_value = {
                 "role": "assistant",
                 "content": "Direct route answer",
@@ -233,7 +233,7 @@ class TestDirectRoutes:
 
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             # Reset the cached globals to simulate pre-load state
             old_coll = server_module._collection
             old_meta = server_module._clip_metadata
@@ -263,7 +263,7 @@ class TestChatEndpoint:
         with patch("rag.server.chat") as mock_chat, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_chat.return_value = {
                 "role": "assistant",
                 "content": "Test answer",
@@ -288,7 +288,7 @@ class TestChatEndpoint:
     def test_chat_returns_422_with_empty_messages(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -301,7 +301,7 @@ class TestChatEndpoint:
     def test_chat_returns_422_with_missing_messages(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -312,7 +312,7 @@ class TestChatEndpoint:
     def test_chat_returns_422_with_invalid_model_provider(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -326,7 +326,7 @@ class TestChatEndpoint:
     def test_chat_returns_422_with_invalid_role(self):
         with patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             from rag.server import app
             from fastapi.testclient import TestClient
 
@@ -340,7 +340,7 @@ class TestChatEndpoint:
         with patch("rag.server.chat") as mock_chat, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_chat.return_value = {
                 "role": "assistant",
                 "content": "Zoning was discussed.",
@@ -379,7 +379,7 @@ class TestChatEndpoint:
         with patch("rag.server.chat") as mock_chat, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_chat.return_value = {
                 "role": "assistant",
                 "content": "Answer",
@@ -410,7 +410,7 @@ class TestChatEndpoint:
         with patch("rag.server.chat") as mock_chat, \
              patch("rag.server.get_chroma_collection"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
-             patch("rag.server.OpenAI"):
+             patch("rag.server.get_openai"):
             mock_chat.return_value = {
                 "role": "assistant",
                 "content": "Direct route answer",

@@ -737,3 +737,87 @@ class TestChat:
         embed_call = mock_openai_client.embeddings.create.call_args
         embed_input = embed_call.kwargs.get("input") or embed_call[1].get("input")
         assert embed_input == ["What about the zoning vote?"]
+
+
+# ============================================================
+# Query rewrite tests — exercise the actual rewrite_query path
+# ============================================================
+
+class TestRewriteQuery:
+    """Tests for rewrite_query() — the LLM-based query expansion that the
+    pre-existing chat tests bypass via the JSON-decode fallback."""
+
+    def _client_returning(self, content: str):
+        """Build a mock OpenAI client whose chat.completions.create returns
+        ``content`` as the message body."""
+        client = MagicMock()
+        choice = MagicMock()
+        choice.message.content = content
+        response = MagicMock()
+        response.choices = [choice]
+        client.chat.completions.create.return_value = response
+        return client
+
+    def test_returns_parsed_list_for_valid_json(self):
+        from rag.query import rewrite_query
+
+        client = self._client_returning('["zoning vote", "rezoning ordinance", "council vote"]')
+        out = rewrite_query("Tell me about the zoning vote", client)
+        assert out == ["zoning vote", "rezoning ordinance", "council vote"]
+
+    def test_caps_at_max_rewritten_queries(self):
+        from rag.query import rewrite_query, MAX_REWRITTEN_QUERIES
+
+        # LLM returns 8 queries — should be truncated.
+        many = [f"q{i}" for i in range(8)]
+        client = self._client_returning(json.dumps(many))
+        out = rewrite_query("anything", client)
+        assert len(out) == MAX_REWRITTEN_QUERIES
+        assert out == many[:MAX_REWRITTEN_QUERIES]
+
+    def test_falls_back_to_original_on_json_decode_error(self):
+        from rag.query import rewrite_query
+
+        client = self._client_returning("not json at all { broken")
+        out = rewrite_query("original question", client)
+        assert out == ["original question"]
+
+    def test_falls_back_to_original_on_api_exception(self):
+        from rag.query import rewrite_query
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = RuntimeError("upstream timeout")
+        out = rewrite_query("original question", client)
+        assert out == ["original question"]
+
+    def test_falls_back_when_response_is_not_a_list(self):
+        from rag.query import rewrite_query
+
+        # Valid JSON but wrong shape — a dict, not a list of strings.
+        client = self._client_returning('{"queries": ["a", "b"]}')
+        out = rewrite_query("original", client)
+        assert out == ["original"]
+
+    def test_falls_back_when_list_contains_non_strings(self):
+        from rag.query import rewrite_query
+
+        client = self._client_returning('["good query", 42, null]')
+        out = rewrite_query("original", client)
+        assert out == ["original"]
+
+    def test_falls_back_on_empty_list(self):
+        from rag.query import rewrite_query
+
+        client = self._client_returning("[]")
+        out = rewrite_query("original", client)
+        assert out == ["original"]
+
+    def test_uses_gpt_4o_mini(self):
+        """The rewrite pass should use the cheap model — GPT-4o is reserved
+        for synthesis."""
+        from rag.query import rewrite_query
+
+        client = self._client_returning('["q"]')
+        rewrite_query("anything", client)
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "gpt-4o-mini"

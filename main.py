@@ -29,10 +29,9 @@ from bs4 import BeautifulSoup
 import re
 
 from dotenv import load_dotenv
-import pdfplumber
-import pytesseract
-from pdf2image import convert_from_path
 import httpx
+
+from documents import extract_html_text, extract_pdf_text
 
 # Load environment variables from .env file
 load_dotenv()
@@ -723,67 +722,20 @@ class LFUCGPipeline:
             result["pdf_file"] = pdf_filename
             self.progress(f"Downloaded agenda PDF ({len(response.content) / 1024:.1f} KB)")
 
-            # Extract text with pdfplumber first
-            try:
-                text_parts = []
-                with pdfplumber.open(pdf_path) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text_parts.append(page_text)
-
-                if text_parts:
-                    agenda_text = "\n\n".join(text_parts)
-                    with open(txt_path, 'w', encoding='utf-8') as f:
-                        f.write(agenda_text)
-                    result["txt_file"] = txt_filename
-                    result["text"] = agenda_text
-                    self.progress(f"Extracted {len(agenda_text)} chars from agenda PDF")
-                else:
-                    # PDF has no extractable text - try OCR
-                    self.progress("PDF appears to be scanned, attempting OCR...")
-                    agenda_text = self.ocr_pdf(pdf_path)
-                    if agenda_text:
-                        with open(txt_path, 'w', encoding='utf-8') as f:
-                            f.write(agenda_text)
-                        result["txt_file"] = txt_filename
-                        result["text"] = agenda_text
-                        self.progress(f"OCR extracted {len(agenda_text)} chars from agenda PDF")
-                    else:
-                        self.progress("OCR could not extract text from agenda PDF")
-
-            except Exception as e:
-                self.log(f"PDF text extraction error: {e}", "WARNING")
+            agenda_text = extract_pdf_text(pdf_path, log_fn=self.log, progress_fn=self.progress)
+            if agenda_text:
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write(agenda_text)
+                result["txt_file"] = txt_filename
+                result["text"] = agenda_text
+                self.progress(f"Extracted {len(agenda_text)} chars from agenda PDF")
+            else:
+                self.progress("Could not extract text from agenda PDF")
 
         except Exception as e:
             self.log(f"Agenda download error: {e}", "WARNING")
 
         return result
-
-    def ocr_pdf(self, pdf_path: Path, max_pages: int = 5) -> Optional[str]:
-        """Extract text from scanned PDF using OCR. Only processes first max_pages to save time."""
-        try:
-            # Convert PDF pages to images
-            images = convert_from_path(pdf_path, first_page=1, last_page=max_pages)
-
-            if not images:
-                return None
-
-            text_parts = []
-            for i, image in enumerate(images):
-                self.progress(f"OCR processing page {i + 1}/{len(images)}...")
-                # Run OCR on the image
-                page_text = pytesseract.image_to_string(image)
-                if page_text and page_text.strip():
-                    text_parts.append(page_text.strip())
-
-            if text_parts:
-                return "\n\n".join(text_parts)
-            return None
-
-        except Exception as e:
-            self.log(f"OCR error: {e}", "WARNING")
-            return None
 
     def download_minutes(self, clip_id: int, clip_dir: Path, title: Optional[str] = None, date: Optional[str] = None) -> Dict[str, Any]:
         """Download meeting minutes and extract text. Returns dict with file info and text content."""
@@ -847,35 +799,13 @@ class LFUCGPipeline:
                 result["pdf_file"] = pdf_filename
                 self.progress(f"Downloaded minutes PDF ({len(response.content) / 1024:.1f} KB)")
 
-                # Extract text from PDF
-                try:
-                    text_parts = []
-                    with pdfplumber.open(pdf_path) as pdf:
-                        for page in pdf.pages:
-                            page_text = page.extract_text()
-                            if page_text:
-                                text_parts.append(page_text)
-
-                    if text_parts:
-                        minutes_text = "\n\n".join(text_parts)
-                        with open(txt_path, 'w', encoding='utf-8') as f:
-                            f.write(minutes_text)
-                        result["txt_file"] = txt_filename
-                        result["text"] = minutes_text
-                        self.progress(f"Extracted {len(minutes_text)} chars from minutes PDF")
-                    else:
-                        # Try OCR for scanned PDFs
-                        self.progress("Minutes PDF appears scanned, attempting OCR...")
-                        minutes_text = self.ocr_pdf(pdf_path)
-                        if minutes_text:
-                            with open(txt_path, 'w', encoding='utf-8') as f:
-                                f.write(minutes_text)
-                            result["txt_file"] = txt_filename
-                            result["text"] = minutes_text
-                            self.progress(f"OCR extracted {len(minutes_text)} chars from minutes PDF")
-
-                except Exception as e:
-                    self.log(f"Minutes PDF text extraction error: {e}", "WARNING")
+                minutes_text = extract_pdf_text(pdf_path, log_fn=self.log, progress_fn=self.progress)
+                if minutes_text:
+                    with open(txt_path, 'w', encoding='utf-8') as f:
+                        f.write(minutes_text)
+                    result["txt_file"] = txt_filename
+                    result["text"] = minutes_text
+                    self.progress(f"Extracted {len(minutes_text)} chars from minutes PDF")
 
             # Handle HTML minutes
             elif 'html' in content_type:
@@ -893,24 +823,14 @@ class LFUCGPipeline:
                     f.write(html_content)
                 result["html_file"] = html_filename
 
-                # Extract text from HTML
                 try:
-                    soup = BeautifulSoup(html_content, 'lxml')
-
-                    # Remove script and style elements
-                    for element in soup(['script', 'style', 'nav', 'header', 'footer']):
-                        element.decompose()
-
-                    # Get text content
-                    minutes_text = soup.get_text(separator='\n', strip=True)
-
-                    if minutes_text and len(minutes_text) > 100:
+                    minutes_text = extract_html_text(html_content)
+                    if minutes_text:
                         with open(txt_path, 'w', encoding='utf-8') as f:
                             f.write(minutes_text)
                         result["txt_file"] = txt_filename
                         result["text"] = minutes_text
                         self.progress(f"Extracted {len(minutes_text)} chars from minutes HTML")
-
                 except Exception as e:
                     self.log(f"Minutes HTML text extraction error: {e}", "WARNING")
 
@@ -1629,10 +1549,9 @@ Guidelines:
             if getattr(self, 'rag_enabled', False):
                 try:
                     from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection
-                    from openai import OpenAI
+                    from clients import get_openai
                     collection = get_chroma_collection(str(self.output_dir))
-                    openai_client = OpenAI()
-                    rag_ingest_clip(clip_id, self.output_dir, collection, openai_client, verbose=self.verbose)
+                    rag_ingest_clip(clip_id, self.output_dir, collection, get_openai(), verbose=self.verbose)
                     self.log(f"RAG: Ingested clip {clip_id}")
                 except ImportError:
                     self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
@@ -2084,9 +2003,9 @@ Examples:
     if args.rebuild_rag:
         try:
             from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, save_rag_state
-            from openai import OpenAI
+            from clients import get_openai
 
-            openai_client = OpenAI()
+            openai_client = get_openai()
             collection = get_chroma_collection(str(pipeline.output_dir))
 
             # Clear existing state
@@ -2122,17 +2041,16 @@ Examples:
     if args.test_summary:
         try:
             from summary_v2 import generate_summary_v2
-            import anthropic
+            from clients import get_anthropic, MissingAPIKey
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
             sys.exit(1)
 
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        if not anthropic_key:
-            print("Error: ANTHROPIC_API_KEY environment variable required for --test-summary")
+        try:
+            anthropic_client = get_anthropic()
+        except MissingAPIKey as e:
+            print(f"Error (--test-summary): {e}")
             sys.exit(1)
-
-        anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
         test_dir = Path(args.test_summary_dir)
         test_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2312,17 +2230,16 @@ Examples:
     if args.upgrade_summaries:
         try:
             from summary_v2 import generate_summary_v2
-            import anthropic
+            from clients import get_anthropic, MissingAPIKey
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
             sys.exit(1)
 
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        if not anthropic_key:
-            print("Error: ANTHROPIC_API_KEY environment variable required for --upgrade-summaries")
+        try:
+            anthropic_client = get_anthropic()
+        except MissingAPIKey as e:
+            print(f"Error (--upgrade-summaries): {e}")
             sys.exit(1)
-
-        anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
 
         # Find all clips with metadata, sorted by ID ascending
         clips_dir = pipeline.output_dir / "clips"
