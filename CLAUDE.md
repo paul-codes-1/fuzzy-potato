@@ -24,7 +24,8 @@ uv run python main.py --auto                  # Auto-process from FIRST_CLIP_ID 
 uv run python main.py --auto --max 5          # Auto-process with limit
 uv run python main.py --scrape                # Scrape and process all new clips
 uv run python main.py --scrape --max 100      # Scrape with limit
-uv run python main.py --generate-index        # Generate search index from all clips
+uv run python main.py --generate-index        # Generate index.json + search.db from all clips
+uv run python main.py --build-search-db       # Rebuild only the SQLite FTS5 search.db (~30s)
 uv run python main.py 6669 --force            # Reprocess even if files exist
 uv run python main.py 6669 --no-audio         # Don't keep audio files
 
@@ -199,12 +200,30 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
 - Supports metadata filters: meeting_body, date_after, date_before
 - Incremental ingestion tracked via `lfucg_output/rag_state.json`
 
+### Server-Side Search (`rag/search.py`, `scripts/build_search_db.py`)
+
+Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed on every browser cold-mount). The full-text index now lives server-side in a SQLite FTS5 database (`lfucg_output/search.db`, ~300 MB) and is queried via the App Runner RAG container:
+
+- **`scripts/build_search_db.py`** — destructive rebuilder. One row per clip with title/transcript/agenda/minutes/facts as searchable columns; speakers/body/date as UNINDEXED filter columns. ~30s on the full archive. Auto-rebuilt by `pipeline.generate_search_index()` and at the end of every `--auto`/`--scrape` batch (per-clip skips the FTS rebuild via `build_search_db=False` to avoid 30s × N).
+- **`rag/search.py`** — BM25-ranked search + filters + snippets. Title weighted 10×, facts 5×, speakers 3×, agenda 2×, minutes 1.5×, transcript 1×. Snippets HTML-escaped server-side; sentinel marks (`\x01M\x01`) are reinserted as `<mark>` so the frontend can render via `dangerouslySetInnerHTML` without XSS risk.
+- **`rag/related.py`** — "more like this" using the centroid of the source clip's existing summary embeddings. Reuses ChromaDB; no extra OpenAI calls.
+- **Endpoints (rag/server.py)**:
+  - `POST /api/search` — `{q, meeting_body?, speaker?, date_after?, date_before?, limit?}` → ranked clips + pre-marked snippets
+  - `GET  /api/suggest?q=...` — autocomplete over titles/bodies/topics/speakers
+  - `GET  /api/facets` — populates filter dropdowns (bodies, top-30 speakers by count, date_min/max)
+  - `GET  /api/related/{clip_id}` — top-5 similar clips with similarity scores
+
+The `search.db` file is baked into the App Runner Docker image (Dockerfile + `.dockerignore` whitelist). `tests/test_search.py` and `tests/test_server_search.py` cover the builder + endpoint surfaces.
+
 ### Frontend (`frontend/`)
 
 React 18 SPA with:
 - Vite build system
 - React Router for navigation
-- FlexSearch for client-side full-text search (lazy-loaded, chunked index)
+- Server-backed full-text search via `useServerSearch` (POST /api/search, debounced 250ms, AbortController on cancel). No client-side index — the homepage loads instantly.
+- Autocomplete dropdown via `useSuggestions` (GET /api/suggest, 100ms debounce, ↑/↓/Enter/Esc keyboard navigation)
+- Speaker filter dropdown sourced from `useFacets` (GET /api/facets, cached at module level — single fetch on mount)
+- "Related meetings" section on the detail page via `useRelatedClips` (GET /api/related/{id})
 - Component-based architecture (MeetingList, MeetingDetail, SearchBar, TopicFilter, AskQuestion)
 - **MeetingDetail** has tabbed view: Overview (extracted facts), Transcript (timestamped), Agenda, Official Minutes
 - **Overview tab** renders structured `extracted_facts.json` directly — votes with pass/fail badges, financial items, agenda items, public comments, appointments, contested items. Timestamps are clickable (jump to video).
@@ -232,7 +251,8 @@ Lambda handler for scheduled meeting sync:
 ```
 lfucg_output/
   state.json                              # Pipeline state
-  index.json                              # Search index for frontend
+  index.json                              # Metadata index (browse list, filters, sort) — 3.8 MB
+  search.db                               # SQLite FTS5 full-text index (powers /api/search) — ~300 MB
   available_clips.json                    # Probed clip IDs (from probe_clips.py)
   rag_state.json                          # RAG ingestion state (which clips are embedded)
   chroma_db/                              # ChromaDB vector store
@@ -258,19 +278,24 @@ rag/
   __init__.py
   ingest.py                               # Chunking + embedding + ChromaDB storage
   query.py                                # Retrieval + LLM synthesis logic
-  server.py                               # FastAPI endpoints
+  server.py                               # FastAPI endpoints (/ask, /chat, /search, /suggest, /facets, /related)
+  search.py                               # SQLite FTS5 BM25 search + suggest + facets
+  related.py                              # ChromaDB-backed "more like this" lookup
   prompts.py                              # System prompts for synthesis
 
 tests/
   conftest.py                             # Shared fixtures: sample data, mocks, temp dirs
   test_ingest.py                          # Tests for chunking, embedding, ChromaDB storage
   test_query.py                           # Tests for retrieval, filtering, synthesis
-  test_server.py                          # Tests for FastAPI endpoints (TestClient)
+  test_server.py                          # Tests for /api/ask, /api/chat (TestClient)
+  test_server_search.py                   # Tests for /api/search, /api/suggest, /api/facets, /api/related
+  test_search.py                          # Tests for SQLite FTS5 builder + ranking + filters + snippets
   test_integration.py                     # Tests for main.py pipeline hooks
   test_summary_v2.py                      # Tests for two-pass summary extraction + narration
   test_captions.py                        # Tests for VTT parsing, speaker alignment, garbage-filter
 
 scripts/
+  build_search_db.py                      # SQLite FTS5 index builder (rebuilds search.db from clips/)
   backfill_captions.py                    # One-shot VTT backfill: speaker enrichment + placeholder transcripts
   restamp-cache-headers.sh                # S3 cache-control header retrofit
 
@@ -287,10 +312,13 @@ frontend/
         AskQuestion.test.jsx              # Component tests (Vitest + React Testing Library)
     hooks/
       useMeetings.js                      # Data fetching (metadata, extracted facts, transcript, agenda, minutes)
-      useSearch.js                        # Search and filter logic
-      useFlexSearch.js                    # Full-text search engine (lazy-loaded)
-    contexts/
-      SearchContext.jsx                   # Global search state provider
+      useSearch.js                        # Search/filter/sort orchestration (URL-param state)
+      useServerSearch.js                  # POST /api/search with debounce + AbortController
+      useSuggestions.js                   # GET /api/suggest for autocomplete dropdown
+      useFacets.js                        # GET /api/facets — module-level cached
+      useRelatedClips.js                  # GET /api/related/{clip_id} — for the detail page
+      __tests__/
+        useServerSearch.test.js           # Hook test: debounce, filters, error handling
   package.json
   vite.config.js
 

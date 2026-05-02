@@ -17,23 +17,19 @@ function estimateDuration(wordCount) {
   return `~${hours}h ${remainingMins}m`
 }
 
-// Render snippet with highlighted match
-function HighlightedSnippet({ snippet }) {
-  if (!snippet) return null
-
-  const { text, matchStart, matchEnd, prefix, suffix } = snippet
-  const before = text.slice(0, matchStart)
-  const match = text.slice(matchStart, matchEnd)
-  const after = text.slice(matchEnd)
-
+// Render a server-supplied snippet. Server returns HTML-escaped text
+// with <mark> highlights already inserted (rag/search.py:_safe_snippet),
+// so dangerouslySetInnerHTML is safe.
+function HighlightedSnippet({ html }) {
+  if (!html) return null
   return (
     <div className="meeting-card-snippet">
       <span className="snippet-label">Match found:</span>
-      <span className="snippet-text">
-        {prefix}{before}
-        <mark className="snippet-highlight">{match}</mark>
-        {after}{suffix}
-      </span>
+      <span
+        className="snippet-text"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   )
 }
@@ -69,9 +65,7 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
       {(meeting.agenda_preview || meeting.transcript_preview) && !snippet && (
         <div className="meeting-card-preview">{meeting.agenda_preview || meeting.transcript_preview}</div>
       )}
-      {snippet && (
-        <HighlightedSnippet snippet={snippet} />
-      )}
+      {snippet && <HighlightedSnippet html={snippet} />}
     </a>
   )
 }
@@ -79,7 +73,6 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
 function Pagination({ currentPage, totalPages, onPageChange }) {
   if (totalPages <= 1) return null
 
-  // Build page numbers to show
   const pages = []
   const maxVisible = 7
 
@@ -146,14 +139,15 @@ function MeetingList() {
     setQuery,
     selectedBody,
     setSelectedBody,
+    selectedSpeaker,
+    setSelectedSpeaker,
     sortBy,
     setSortBy,
     meetingBodies,
     filteredMeetings,
     searchSnippets,
-    flexSearchLoading,
-    flexSearchLoaded,
-    flexSearchProgress
+    isSearching,
+    searchError,
   } = useSearch(meetings, searchParams, setSearchParams)
 
   const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
@@ -198,25 +192,31 @@ function MeetingList() {
           <SearchBar
             query={query}
             setQuery={setQuery}
-            flexSearchLoading={flexSearchLoading}
-            flexSearchLoaded={flexSearchLoaded}
-            flexSearchProgress={flexSearchProgress}
+            isSearching={isSearching}
           />
           <TopicFilter
             meetingBodies={meetingBodies}
             selectedBody={selectedBody}
             setSelectedBody={setSelectedBody}
+            selectedSpeaker={selectedSpeaker}
+            setSelectedSpeaker={setSelectedSpeaker}
             sortBy={sortBy}
             setSortBy={setSortBy}
           />
         </div>
       </div>
 
+      {searchError && (
+        <div className="container">
+          <div className="search-error">Search unavailable: {searchError}</div>
+        </div>
+      )}
+
       <div className="results-summary container">
         <p>
           {filteredMeetings.length} meeting{filteredMeetings.length !== 1 ? 's' : ''}
           {query && ` matching "${query}"`}
-          {totalPages > 1 && ` \u2022 Page ${safePage} of ${totalPages}`}
+          {totalPages > 1 && ` • Page ${safePage} of ${totalPages}`}
         </p>
       </div>
 
@@ -239,7 +239,6 @@ function MeetingList() {
                     : `/meeting/${meeting.clip_id}`
                 }
                 onClick={(e) => {
-                  // Let browser handle middle-click, ctrl+click, cmd+click natively
                   if (e.button !== 0 || e.metaKey || e.ctrlKey) return
                   e.preventDefault()
                   if (query.trim()) {

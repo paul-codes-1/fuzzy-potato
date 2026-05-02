@@ -1094,8 +1094,14 @@ Guidelines:
             return None
 
 
-    def generate_search_index(self) -> Optional[Path]:
-        """Generate index.json with all processed clips for frontend search."""
+    def generate_search_index(self, build_search_db: bool = True) -> Optional[Path]:
+        """Generate index.json with all processed clips for frontend search.
+
+        ``build_search_db=True`` (the default) also rebuilds the FTS5
+        search.db that powers /api/search. Pass ``False`` from per-clip
+        loop callsites — the FTS rebuild is ~30s on the full archive
+        and only the final batch state needs to be searchable.
+        """
         self.log("Generating search index...")
 
         clips_dir = self.output_dir / "clips"
@@ -1190,6 +1196,22 @@ Guidelines:
             generate_seo_artifacts(index_entries, self.output_dir, log=self.log)
         except Exception as e:
             self.log(f"SEO artifact generation error: {e}", "WARNING")
+
+        # Rebuild the SQLite FTS5 search index alongside index.json so the
+        # frontend's server-backed search reflects the latest clips. The
+        # builder is destructive (drops + recreates the FTS table) and
+        # ~30s on the full archive — skipped on per-clip loop callsites
+        # so a 100-clip batch doesn't rebuild it 100 times.
+        if build_search_db:
+            try:
+                from scripts.build_search_db import build as build_search_db_fn
+                stats = build_search_db_fn(self.output_dir, self.output_dir / "search.db", verbose=False)
+                self.log(
+                    f"Built search.db: {stats['clips_indexed']} clips, "
+                    f"{stats['db_size_bytes'] / 1024 / 1024:.1f} MB"
+                )
+            except Exception as e:
+                self.log(f"search.db build error: {e}", "WARNING")
 
         return index_path
 
@@ -1707,8 +1729,11 @@ Guidelines:
                 except Exception as e:
                     self.log(f"RAG ingestion failed for clip {clip_id}: {e}", "WARNING")
 
-            # Regenerate search index after each successful clip
-            self.generate_search_index()
+            # Regenerate the metadata search index after each successful
+            # clip so the frontend list shows the new clip immediately.
+            # Skip the FTS5 rebuild here — it'd run for every clip in a
+            # batch (~30s × N). Batch-end callers do a final rebuild.
+            self.generate_search_index(build_search_db=False)
 
             return True
 
@@ -2078,6 +2103,12 @@ Examples:
         "--generate-index",
         action="store_true",
         help="Generate search index (index.json) from all processed clips"
+    )
+
+    parser.add_argument(
+        "--build-search-db",
+        action="store_true",
+        help="Build the SQLite FTS5 search.db (server-side full-text search)"
     )
 
     parser.add_argument(
@@ -2632,6 +2663,14 @@ Examples:
             sys.exit(1)
         sys.exit(0)
 
+    # Handle build-search-db mode (standalone, without regenerating
+    # index.json). Useful for one-off rebuilds when only the FTS schema
+    # changes and the metadata index is already up to date.
+    if args.build_search_db:
+        from scripts.build_search_db import build as build_search_db
+        build_search_db(pipeline.output_dir, pipeline.output_dir / "search.db")
+        sys.exit(0)
+
     # Handle update-transcripts mode
     if args.update_transcripts:
         results = pipeline.update_transcript_timestamps(max_clips=args.max)
@@ -2730,6 +2769,17 @@ Examples:
     else:
         parser.print_help()
         sys.exit(1)
+
+    # Final FTS5 rebuild after the batch is done. The per-clip
+    # callsite skips it (~30s × N would be wasteful), so we do one
+    # build here so /api/search reflects the new clips.
+    if results.get("processed"):
+        try:
+            from scripts.build_search_db import build as build_search_db_fn
+            build_search_db_fn(pipeline.output_dir, pipeline.output_dir / "search.db", verbose=False)
+            pipeline.log("Rebuilt search.db after batch")
+        except Exception as e:
+            pipeline.log(f"search.db rebuild error: {e}", "WARNING")
 
     # Print summary
     print(f"\n{'=' * 60}")

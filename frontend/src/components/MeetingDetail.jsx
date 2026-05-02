@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
+import { useRelatedClips } from '../hooks/useRelatedClips'
 import {
   cleanTitle,
   buildSeoTitle,
@@ -401,6 +402,11 @@ function MeetingDetail() {
     if (minutes || meeting.files?.minutes_txt) result.push({ id: 'minutes', label: 'Official Minutes' })
     return result
   }, [extractedFacts, transcript, agenda, minutes, meeting])
+
+  // Fetch related-meeting suggestions in parallel with the page;
+  // hook always runs (passing null on cold mounts) so hook order is
+  // stable across the loading/error early returns below.
+  const { clips: relatedClips } = useRelatedClips(meeting?.clip_id || null, { limit: 5 })
 
   if (loading) {
     return <div className="loading">Loading meeting details...</div>
@@ -890,6 +896,25 @@ function MeetingDetail() {
           />
         </div>
       </div>
+
+      {relatedClips.length > 0 && (
+        <section className="related-meetings">
+          <h2>Related meetings</h2>
+          <ul className="related-meetings-list">
+            {relatedClips.map(r => (
+              <li key={r.clip_id} className="related-meeting-card">
+                <Link to={`/meeting/${r.clip_id}`}>
+                  <div className="related-meeting-title">{cleanTitle(r.title)}</div>
+                  <div className="related-meeting-meta">
+                    {r.date && <span>{r.date}</span>}
+                    {r.meeting_body && <span> • {r.meeting_body}</span>}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }
