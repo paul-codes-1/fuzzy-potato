@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
 import { useRelatedClips } from '../hooks/useRelatedClips'
+import { useFeedsLink } from '../hooks/useFeedsLink'
 import {
   cleanTitle,
   buildSeoTitle,
@@ -195,6 +196,7 @@ function MeetingDetail() {
   const [searchParams] = useSearchParams()
   const highlightTerm = searchParams.get('highlight') || ''
   const { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
+  const feedsLink = useFeedsLink(clipId)
   const [activeTab, setActiveTab] = useState('overview')
   const [videoStartTime, setVideoStartTime] = useState(null)
   const [videoLoading, setVideoLoading] = useState(false)
@@ -442,6 +444,13 @@ function MeetingDetail() {
             <span>• {meeting.transcript_words.toLocaleString()} words</span>
           )}
         </div>
+        {feedsLink && (
+          <p className="feeds-link">
+            <a href={feedsLink.link} target="_blank" rel="noopener noreferrer">
+              Read the article on Lexington Times →
+            </a>
+          </p>
+        )}
       </div>
 
       <aside className="ai-disclosure" role="note" aria-label="AI transcription disclosure">
