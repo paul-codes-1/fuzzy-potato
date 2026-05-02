@@ -1,13 +1,25 @@
 import { useMemo, useCallback } from 'react'
-import { useSearchIndex } from '../contexts/SearchContext'
+import { useServerSearch } from './useServerSearch'
 
+/**
+ * Search + filter + sort state for the meeting list.
+ *
+ * Two modes:
+ * - **Browse mode** (no `q`): metadata-only filter/sort happens
+ *   client-side over the already-loaded index.json.
+ * - **Search mode** (`q` set): query goes to /api/search; the server
+ *   returns BM25-ranked clips with pre-marked HTML snippets.
+ *
+ * Filters (body, speaker, date range) apply in both modes — they're
+ * client-side filters on the metadata in browse mode, and passed to
+ * the server in search mode so BM25 ranking is filtered too.
+ */
 export function useSearch(meetings, searchParams, setSearchParams) {
-  // Read state from URL params (single source of truth)
   const query = searchParams.get('q') || ''
   const selectedBody = searchParams.get('body') || null
+  const selectedSpeaker = searchParams.get('speaker') || null
   const sortBy = searchParams.get('sort') || 'clip-desc'
 
-  // Setters that update URL params
   const updateParam = useCallback((key, value, defaultValue) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
@@ -16,7 +28,6 @@ export function useSearch(meetings, searchParams, setSearchParams) {
       } else {
         next.set(key, value)
       }
-      // Reset page when filters change
       if (key !== 'page') {
         next.delete('page')
       }
@@ -26,35 +37,31 @@ export function useSearch(meetings, searchParams, setSearchParams) {
 
   const setQuery = useCallback((v) => updateParam('q', v, ''), [updateParam])
   const setSelectedBody = useCallback((v) => updateParam('body', v, null), [updateParam])
+  const setSelectedSpeaker = useCallback((v) => updateParam('speaker', v, null), [updateParam])
   const setSortBy = useCallback((v) => updateParam('sort', v, 'clip-desc'), [updateParam])
 
-  // FlexSearch from context (already loading on app mount)
-  const {
-    search: flexSearch,
-    isLoading: flexSearchLoading,
-    isLoaded: flexSearchLoaded,
-    loadProgress: flexSearchProgress,
-    error: flexSearchError
-  } = useSearchIndex()
+  const { results: serverResults, isSearching, error: searchError } = useServerSearch(
+    query,
+    {
+      meeting_body: selectedBody,
+      speaker: selectedSpeaker,
+      limit: 200,
+    },
+  )
 
-  // Get unique meeting bodies
   const meetingBodies = useMemo(() => {
     const bodies = new Set()
-    meetings.forEach(m => {
-      if (m.meeting_body) bodies.add(m.meeting_body)
-    })
+    meetings.forEach(m => { if (m.meeting_body) bodies.add(m.meeting_body) })
     return Array.from(bodies).sort()
   }, [meetings])
 
-  // Create a lookup map for meetings by clip_id
   const meetingsById = useMemo(() => {
     const map = new Map()
     meetings.forEach(m => map.set(m.clip_id, m))
     return map
   }, [meetings])
 
-  // Sort function
-  const sortMeetings = (meetingList) => {
+  const sortMeetings = useCallback((meetingList) => {
     const sorted = [...meetingList]
     switch (sortBy) {
       case 'clip-desc':
@@ -68,57 +75,50 @@ export function useSearch(meetings, searchParams, setSearchParams) {
       default:
         return sorted
     }
-  }
+  }, [sortBy])
 
-  // Filter and search meetings
   const { filteredMeetings, searchSnippets } = useMemo(() => {
-    let results = meetings
-    let snippets = new Map()
+    const snippets = new Map()
 
     if (query.trim()) {
-      if (flexSearchLoaded) {
-        const flexResults = flexSearch(query)
-        results = flexResults
-          .map(r => {
-            const meeting = meetingsById.get(r.clip_id)
-            if (meeting && r.snippet) {
-              snippets.set(r.clip_id, r.snippet)
-            }
-            return meeting
-          })
-          .filter(Boolean)
-      } else {
-        // Index still loading — show all meetings while we wait
-        results = meetings
+      // Search mode — server already ranked + filtered. Map back to
+      // the local meeting objects (preserving snippet HTML).
+      const ranked = []
+      for (const r of serverResults) {
+        const meeting = meetingsById.get(r.clip_id)
+        if (meeting) {
+          ranked.push(meeting)
+          if (r.snippet) snippets.set(r.clip_id, r.snippet)
+        }
       }
+      return { filteredMeetings: ranked, searchSnippets: snippets }
     }
 
-    // Apply meeting body filter
+    // Browse mode — no query, just filter + sort client-side.
+    let results = meetings
     if (selectedBody) {
       results = results.filter(m => m.meeting_body === selectedBody)
     }
-
-    // Apply sorting (only if not searching - search results preserve relevance order)
-    if (!query.trim()) {
-      results = sortMeetings(results)
+    if (selectedSpeaker) {
+      results = results.filter(m => Array.isArray(m.speakers) && m.speakers.includes(selectedSpeaker))
     }
-
+    results = sortMeetings(results)
     return { filteredMeetings: results, searchSnippets: snippets }
-  }, [meetings, query, selectedBody, sortBy, flexSearchLoaded, flexSearch, meetingsById])
+  }, [meetings, query, serverResults, selectedBody, selectedSpeaker, sortMeetings, meetingsById])
 
   return {
     query,
     setQuery,
     selectedBody,
     setSelectedBody,
+    selectedSpeaker,
+    setSelectedSpeaker,
     sortBy,
     setSortBy,
     meetingBodies,
     filteredMeetings,
     searchSnippets,
-    flexSearchLoading,
-    flexSearchLoaded,
-    flexSearchProgress,
-    flexSearchError
+    isSearching,
+    searchError,
   }
 }

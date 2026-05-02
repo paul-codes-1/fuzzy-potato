@@ -12,12 +12,19 @@ COPY main.py .
 # kept here so the image faithfully mirrors the repo root.
 COPY clients.py documents.py seo.py summary_v2.py ./
 
+# Helper used by main.py + tests, also imported when /api/search runs
+# the standalone search-db builder. Lightweight (no heavy deps).
+COPY scripts/__init__.py scripts/build_search_db.py scripts/
+
 # Install project with rag dependencies
 RUN pip install --no-cache-dir ".[rag]"
 
-# Copy baked-in data (chroma_db + clip metadata)
+# Copy baked-in data (chroma_db + clip metadata + FTS5 search.db). The
+# search.db drives /api/search; it's rebuilt on every ingest_all by
+# pipeline.generate_search_index() so the in-image copy stays fresh.
 COPY lfucg_output/chroma_db/ lfucg_output/chroma_db/
 COPY lfucg_output/clips/ lfucg_output/clips/
+COPY lfucg_output/search.db lfucg_output/search.db
 
 # Copy entrypoint
 COPY entrypoint.sh .

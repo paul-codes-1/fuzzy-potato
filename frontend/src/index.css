@@ -123,6 +123,109 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+}
+
+.search-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  z-index: 50;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.search-suggestion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.95em;
+}
+
+.search-suggestion.active,
+.search-suggestion:hover {
+  background: var(--hover-bg, #f5f7fa);
+}
+
+.search-suggestion-term {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-suggestion-kind {
+  font-size: 0.75em;
+  color: var(--text-secondary, #777);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 12px;
+}
+
+.search-error {
+  padding: 8px 14px;
+  margin: 12px 0;
+  background: #fff4f4;
+  border: 1px solid #ffd1d1;
+  border-radius: 6px;
+  color: #b00020;
+  font-size: 0.9em;
+}
+
+.related-meetings {
+  margin: 32px auto;
+  padding: 0 16px;
+  max-width: 1100px;
+}
+
+.related-meetings h2 {
+  margin-bottom: 16px;
+  font-size: 1.25em;
+}
+
+.related-meetings-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.related-meeting-card a {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--card-bg, #fff);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.related-meeting-card a:hover {
+  border-color: var(--accent-color, #2c5282);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.related-meeting-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 0.95em;
+}
+
+.related-meeting-meta {
+  font-size: 0.8em;
+  color: var(--text-secondary, #777);
 }
 
 .search-input-wrapper {

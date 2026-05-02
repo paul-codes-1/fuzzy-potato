@@ -6,12 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "build-search-index": "node scripts/build-search-index.js",
     "test": "vitest run"
   },
   "dependencies": {
-    "flexsearch": "^0.7.43",
-    "fuse.js": "^7.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0"

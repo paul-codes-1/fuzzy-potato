@@ -13,6 +13,8 @@ from pydantic import BaseModel, field_validator
 from clients import get_anthropic, get_openai
 from rag.ingest import get_chroma_collection
 from rag.query import ask, chat, load_clip_metadata
+from rag.related import related as related_clips
+from rag.search import facets as search_facets, search as search_clips, suggest as search_suggest
 
 load_dotenv()
 
@@ -110,6 +112,38 @@ class ChatMessage(BaseModel):
             raise ValueError("message content must not be empty")
         if len(v) > MAX_CHAT_MESSAGE_CHARS:
             raise ValueError(f"message content must be under {MAX_CHAT_MESSAGE_CHARS} characters")
+        return v
+
+
+MAX_SEARCH_QUERY_CHARS = 200
+MAX_SEARCH_LIMIT = 100
+
+
+class SearchRequest(BaseModel):
+    q: str
+    meeting_body: Optional[str] = None
+    speaker: Optional[str] = None
+    date_after: Optional[str] = None
+    date_before: Optional[str] = None
+    limit: int = 50
+
+    @field_validator("q")
+    @classmethod
+    def q_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("q must not be empty")
+        if len(v) > MAX_SEARCH_QUERY_CHARS:
+            raise ValueError(f"q must be under {MAX_SEARCH_QUERY_CHARS} characters")
+        return v
+
+    @field_validator("limit")
+    @classmethod
+    def limit_in_range(cls, v: int) -> int:
+        if v < 1:
+            return 1
+        if v > MAX_SEARCH_LIMIT:
+            return MAX_SEARCH_LIMIT
         return v
 
 
@@ -213,6 +247,98 @@ def chat_endpoint(request: ChatRequest):
 @app.post("/chat")
 def chat_endpoint_direct(request: ChatRequest):
     return chat_endpoint(request)
+
+
+def _search_handler(request: SearchRequest):
+    try:
+        results = search_clips(
+            query=request.q,
+            output_dir=OUTPUT_DIR,
+            meeting_body=request.meeting_body,
+            speaker=request.speaker,
+            date_after=request.date_after,
+            date_before=request.date_before,
+            limit=request.limit,
+        )
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        logger.error("search failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred running search.")
+
+
+@app.post("/api/search")
+def search_endpoint(request: SearchRequest):
+    return _search_handler(request)
+
+
+@app.post("/search")  # Direct endpoint for App Runner (matches /ask, /chat)
+def search_endpoint_direct(request: SearchRequest):
+    return _search_handler(request)
+
+
+def _suggest_handler(q: str, limit: int):
+    q = (q or "").strip()
+    if not q:
+        return {"results": []}
+    if len(q) > MAX_SEARCH_QUERY_CHARS:
+        raise HTTPException(status_code=400, detail="q too long")
+    try:
+        limit = max(1, min(int(limit or 10), 25))
+        results = search_suggest(q, OUTPUT_DIR, limit=limit)
+        return {"results": results}
+    except Exception as e:
+        logger.error("suggest failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred running suggest.")
+
+
+@app.get("/api/suggest")
+def suggest_endpoint(q: str = "", limit: int = 10):
+    return _suggest_handler(q, limit)
+
+
+@app.get("/suggest")
+def suggest_endpoint_direct(q: str = "", limit: int = 10):
+    return _suggest_handler(q, limit)
+
+
+def _facets_handler():
+    try:
+        return search_facets(OUTPUT_DIR)
+    except Exception as e:
+        logger.error("facets failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred loading facets.")
+
+
+@app.get("/api/facets")
+def facets_endpoint():
+    return _facets_handler()
+
+
+@app.get("/facets")
+def facets_endpoint_direct():
+    return _facets_handler()
+
+
+def _related_handler(clip_id: int, limit: int):
+    try:
+        limit = max(1, min(int(limit or 5), 20))
+        collection = _get_collection()
+        clip_metadata = _get_clip_metadata()
+        results = related_clips(clip_id, collection, clip_metadata, limit=limit)
+        return {"results": results}
+    except Exception as e:
+        logger.error("related failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred loading related clips.")
+
+
+@app.get("/api/related/{clip_id}")
+def related_endpoint(clip_id: int, limit: int = 5):
+    return _related_handler(clip_id, limit)
+
+
+@app.get("/related/{clip_id}")
+def related_endpoint_direct(clip_id: int, limit: int = 5):
+    return _related_handler(clip_id, limit)
 
 
 @app.get("/health")

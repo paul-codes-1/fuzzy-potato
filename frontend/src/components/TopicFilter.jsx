@@ -1,13 +1,20 @@
+import { useFacets } from '../hooks/useFacets'
+
 function TopicFilter({
   meetingBodies,
   selectedBody,
   setSelectedBody,
+  selectedSpeaker,
+  setSelectedSpeaker,
   sortBy,
-  setSortBy
+  setSortBy,
 }) {
+  const { facets } = useFacets()
+  const speakerOptions = (facets?.speakers) || []
+  const hasFilters = !!(selectedBody || selectedSpeaker)
+
   return (
     <div className="filters-container">
-      {/* Sort controls */}
       <div className="sort-controls">
         <label htmlFor="sort-select">Sort by:</label>
         <select
@@ -21,10 +28,28 @@ function TopicFilter({
           <option value="date-asc">Oldest by date</option>
           <option value="title">Title A-Z</option>
         </select>
+
+        {speakerOptions.length > 0 && (
+          <>
+            <label htmlFor="speaker-select">Speaker:</label>
+            <select
+              id="speaker-select"
+              value={selectedSpeaker || ''}
+              onChange={(e) => setSelectedSpeaker(e.target.value || null)}
+              className="sort-select"
+            >
+              <option value="">All speakers</option>
+              {speakerOptions.map(s => (
+                <option key={s.name} value={s.name}>
+                  {s.name} ({s.count})
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       <div className="filters">
-        {/* Meeting body filters */}
         <button
           className={`filter-btn ${!selectedBody ? 'active' : ''}`}
           onClick={() => setSelectedBody(null)}
@@ -44,22 +69,34 @@ function TopicFilter({
         ))}
       </div>
 
-      {/* Active filter indicator */}
-      {selectedBody && (
+      {hasFilters && (
         <div className="active-filters">
           <span>Filtering by:</span>
-          <span className="active-filter-tag">
-            {selectedBody}
-            <button
-              onClick={() => setSelectedBody(null)}
-              aria-label={`Remove ${selectedBody} filter`}
-            >
-              ×
-            </button>
-          </span>
+          {selectedBody && (
+            <span className="active-filter-tag">
+              {selectedBody}
+              <button
+                onClick={() => setSelectedBody(null)}
+                aria-label={`Remove ${selectedBody} filter`}
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {selectedSpeaker && (
+            <span className="active-filter-tag">
+              Speaker: {selectedSpeaker}
+              <button
+                onClick={() => setSelectedSpeaker(null)}
+                aria-label={`Remove ${selectedSpeaker} speaker filter`}
+              >
+                ×
+              </button>
+            </span>
+          )}
           <button
             className="clear-filters"
-            onClick={() => setSelectedBody(null)}
+            onClick={() => { setSelectedBody(null); setSelectedSpeaker(null) }}
           >
             Clear all
           </button>
