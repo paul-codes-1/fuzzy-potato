@@ -669,6 +669,21 @@ a:hover {
   font-size: 0.875rem;
 }
 
+.feeds-link {
+  margin: 12px 0 0;
+  font-size: 0.95rem;
+}
+
+.feeds-link a {
+  color: var(--accent, #1e40af);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.feeds-link a:hover {
+  text-decoration: underline;
+}
+
 .ai-disclosure {
   background: #fffbeb;
   border-left: 4px solid #f59e0b;
