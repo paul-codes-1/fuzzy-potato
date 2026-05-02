@@ -18,7 +18,13 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   const query = searchParams.get('q') || ''
   const selectedBody = searchParams.get('body') || null
   const selectedSpeaker = searchParams.get('speaker') || null
-  const sortBy = searchParams.get('sort') || 'clip-desc'
+  const isSearchMode = !!query.trim()
+  // In search mode the implicit default is BM25 relevance; in browse
+  // mode it's clip-id desc. 'relevance' is meaningless without a query,
+  // so we coerce a stale ?sort=relevance back to the browse default.
+  const defaultSort = isSearchMode ? 'relevance' : 'clip-desc'
+  let sortBy = searchParams.get('sort') || defaultSort
+  if (!isSearchMode && sortBy === 'relevance') sortBy = 'clip-desc'
 
   const updateParam = useCallback((key, value, defaultValue) => {
     setSearchParams(prev => {
@@ -38,7 +44,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   const setQuery = useCallback((v) => updateParam('q', v, ''), [updateParam])
   const setSelectedBody = useCallback((v) => updateParam('body', v, null), [updateParam])
   const setSelectedSpeaker = useCallback((v) => updateParam('speaker', v, null), [updateParam])
-  const setSortBy = useCallback((v) => updateParam('sort', v, 'clip-desc'), [updateParam])
+  const setSortBy = useCallback((v) => updateParam('sort', v, defaultSort), [updateParam, defaultSort])
 
   const { results: serverResults, isSearching, error: searchError } = useServerSearch(
     query,
@@ -62,6 +68,10 @@ export function useSearch(meetings, searchParams, setSearchParams) {
   }, [meetings])
 
   const sortMeetings = useCallback((meetingList) => {
+    // 'relevance' preserves whatever order the caller passed in (BM25
+    // from the server in search mode); the no-op clone keeps the
+    // identity-different return contract used by the other branches.
+    if (sortBy === 'relevance') return [...meetingList]
     const sorted = [...meetingList]
     switch (sortBy) {
       case 'clip-desc':
@@ -82,7 +92,8 @@ export function useSearch(meetings, searchParams, setSearchParams) {
 
     if (query.trim()) {
       // Search mode — server already ranked + filtered. Map back to
-      // the local meeting objects (preserving snippet HTML).
+      // local meeting objects (preserving snippet HTML), then re-sort
+      // if the user picked something other than relevance.
       const ranked = []
       for (const r of serverResults) {
         const meeting = meetingsById.get(r.clip_id)
@@ -91,7 +102,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
           if (r.snippet) snippets.set(r.clip_id, r.snippet)
         }
       }
-      return { filteredMeetings: ranked, searchSnippets: snippets }
+      return { filteredMeetings: sortMeetings(ranked), searchSnippets: snippets }
     }
 
     // Browse mode — no query, just filter + sort client-side.
@@ -115,6 +126,7 @@ export function useSearch(meetings, searchParams, setSearchParams) {
     setSelectedSpeaker,
     sortBy,
     setSortBy,
+    isSearchMode,
     meetingBodies,
     filteredMeetings,
     searchSnippets,

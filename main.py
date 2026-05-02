@@ -1162,6 +1162,7 @@ Guidelines:
                     "agenda_preview": agenda_preview,
                     "summary_preview": summary_preview,
                     "processed_at": metadata.get("processed_at"),
+                    "speakers": metadata.get("speakers") or [],
                     "files": metadata.get("files", {})
                 }
 

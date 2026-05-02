@@ -8,6 +8,7 @@ function TopicFilter({
   setSelectedSpeaker,
   sortBy,
   setSortBy,
+  isSearchMode = false,
 }) {
   const { facets } = useFacets()
   const speakerOptions = (facets?.speakers) || []
@@ -23,6 +24,7 @@ function TopicFilter({
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
+          {isSearchMode && <option value="relevance">Most relevant</option>}
           <option value="clip-desc">Latest clips first</option>
           <option value="date-desc">Newest by date</option>
           <option value="date-asc">Oldest by date</option>
