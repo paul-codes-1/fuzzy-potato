@@ -368,9 +368,22 @@ def generate_seo_artifacts(
     ]
     (public_dir / "sitemap_index.xml").write_text("\n".join(index_lines) + "\n", encoding="utf-8")
 
-    # ---- news-sitemap.xml — last 48h of meetings, in Google News sitemap format.
+    # ---- news-sitemap.xml — last 48h of newly-PUBLISHED meeting articles,
+    # in Google News sitemap format. Cutoff and publication_date both
+    # track processed_at (when our summary went live), not the meeting
+    # date — Google News expects publication_date to mark when the
+    # article was published, and clips processed late (meeting date 3-7
+    # days old) were getting silently excluded by downstream aggregators
+    # enforcing the 2-day Google News freshness rule.
     cutoff = (datetime.now() - timedelta(hours=48)).strftime("%Y-%m-%d")
-    news_clips = [e for e in valid_clips if (e.get("date") or "0000-00-00") >= cutoff]
+
+    def _pub_date(entry: dict) -> str:
+        # processed_at is ISO datetime; slice to date. Fall back to the
+        # meeting date if processed_at is missing (older clips).
+        proc = (entry.get("processed_at") or "")[:10]
+        return proc or entry.get("date") or today
+
+    news_clips = [e for e in valid_clips if _pub_date(e) >= cutoff]
     news_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"',
@@ -378,7 +391,7 @@ def generate_seo_artifacts(
     ]
     for entry in news_clips:
         clip_id = entry["clip_id"]
-        date = entry.get("date") or today
+        pub_date = _pub_date(entry)
         seo_title = build_seo_title(entry.get("title"), entry.get("date"))
         news_lines += [
             "  <url>",
@@ -388,7 +401,7 @@ def generate_seo_artifacts(
             "        <news:name>LFUCG Meeting Archive</news:name>",
             "        <news:language>en</news:language>",
             "      </news:publication>",
-            f"      <news:publication_date>{escape(str(date))}</news:publication_date>",
+            f"      <news:publication_date>{escape(str(pub_date))}</news:publication_date>",
             f"      <news:title>{escape(seo_title)}</news:title>",
             "    </news:news>",
             "  </url>",
