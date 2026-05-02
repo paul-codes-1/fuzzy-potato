@@ -143,6 +143,7 @@ function MeetingList() {
     setSelectedSpeaker,
     sortBy,
     setSortBy,
+    isSearchMode,
     meetingBodies,
     filteredMeetings,
     searchSnippets,
@@ -202,6 +203,7 @@ function MeetingList() {
             setSelectedSpeaker={setSelectedSpeaker}
             sortBy={sortBy}
             setSortBy={setSortBy}
+            isSearchMode={isSearchMode}
           />
         </div>
       </div>
