@@ -163,7 +163,8 @@ export function About() {
       <p className="static-page-footer-links">
         <Link to="/about/methodology">Methodology</Link> ·{' '}
         <Link to="/corrections">Corrections</Link> ·{' '}
-        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a>
+        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a> ·{' '}
+        <a href={`${SITE_URL}/skill.md`}>skill.md</a>
       </p>
     </article>
   )
@@ -336,7 +337,8 @@ export function Methodology() {
 
       <p className="static-page-footer-links">
         <Link to="/about">About</Link> · <Link to="/corrections">Corrections</Link> ·{' '}
-        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a>
+        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a> ·{' '}
+        <a href={`${SITE_URL}/skill.md`}>skill.md</a>
       </p>
     </article>
   )
@@ -435,7 +437,8 @@ export function Corrections() {
       <p className="static-page-footer-links">
         <Link to="/about">About</Link> ·{' '}
         <Link to="/about/methodology">Methodology</Link> ·{' '}
-        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a>
+        <a href={`${SITE_URL}/llms.txt`}>llms.txt</a> ·{' '}
+        <a href={`${SITE_URL}/skill.md`}>skill.md</a>
       </p>
     </article>
   )
