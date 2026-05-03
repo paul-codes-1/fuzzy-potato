@@ -425,6 +425,9 @@ def generate_seo_artifacts(
         f"- Corrections workflow: [{site_url}/corrections]({site_url}/corrections)",
         f"- Search index (JSON): [{site_url}/data/index.json]({site_url}/data/index.json)",
         f"- RAG Q&A (HTML): [{site_url}/ask]({site_url}/ask) — natural-language Q&A over the archive",
+        f"- **Public API for agents** (CORS-open, no auth): see the *API for agents* section below — "
+        f"`POST {site_url}/api/search` for full-text search, `POST {site_url}/api/ask` for RAG Q&A, "
+        f"plus `/api/suggest`, `/api/facets`, `/api/related/{{clip_id}}`, `/api/chat`.",
         f"- Sitemap: [{site_url}/sitemap_index.xml]({site_url}/sitemap_index.xml)",
         f"- Full meeting dump: [{site_url}/llms-full.txt]({site_url}/llms-full.txt)",
         "",
@@ -434,6 +437,79 @@ def generate_seo_artifacts(
         "served with `Content-Type: text/markdown` and open CORS. Combines the SEO-formatted "
         "title, source-video link, AI-generation disclosure, narrative summary, decisions list, "
         "and full transcript in one fetch. Preferable to scraping the HTML for agent ingestion.",
+        "",
+        "## API for agents",
+        "",
+        "All endpoints below are public, CORS-open (`Access-Control-Allow-Origin: *`), "
+        "and return JSON. Use them instead of scraping search-result pages — they're faster, "
+        "more accurate, and rate-limit-friendly. Recommended workflow: hit `/api/search` or "
+        "`/api/ask` to find clips, then fetch the per-clip Markdown alternate "
+        f"(`{site_url}/data/clips/<clip_id>/clip.md`) for the full content.",
+        "",
+        "### POST /api/search — full-text BM25 search",
+        "",
+        "Body (JSON):",
+        "",
+        "```json",
+        "{",
+        '  "q": "short-term rentals",',
+        '  "meeting_body": "Council",       // optional',
+        '  "speaker": "Mayor Gorton",        // optional, exact match',
+        '  "date_after": "2025-01-01",       // optional, inclusive YYYY-MM-DD',
+        '  "date_before": "2025-12-31",      // optional, inclusive YYYY-MM-DD',
+        '  "limit": 25                       // optional, 1-100, default 50',
+        "}",
+        "```",
+        "",
+        "Returns `{results: [{clip_id, date, meeting_body, title, speakers, "
+        "snippet (HTML, with <mark> on matches), score, ...}], count}`. Title matches outrank "
+        "facts > speakers > agenda > minutes > transcript. Use the `clip_id` to construct "
+        f"`{site_url}/meeting/<clip_id>` (HTML) or `{site_url}/data/clips/<clip_id>/clip.md` "
+        "(Markdown alternate).",
+        "",
+        f"Example: `curl -X POST {site_url}/api/search -H 'Content-Type: application/json' "
+        '-d \'{"q":"vacancy tax","meeting_body":"Council","limit":5}\'`',
+        "",
+        "### POST /api/ask — natural-language Q&A (RAG)",
+        "",
+        "Synthesizes an answer over the entire archive using vector retrieval + GPT-4o. "
+        "One-shot; for multi-turn use `/api/chat`.",
+        "",
+        "```json",
+        "{",
+        '  "question": "What has the city done about short-term rentals?",',
+        '  "meeting_body": "Council",       // optional filter',
+        '  "date_after": "2024-01-01",       // optional',
+        '  "date_before": "2026-12-31"       // optional',
+        "}",
+        "```",
+        "",
+        "Returns `{question, answer, citations: [{clip_id, title, date, meeting_body, "
+        "url, timestamp_seconds, snippet}], retrieved}`. Citations point at the exact "
+        "video timestamps the answer was synthesized from.",
+        "",
+        "### GET /api/suggest?q=&limit=10 — autocomplete",
+        "",
+        "Prefix match over titles, meeting bodies, topics, speaker names. Returns "
+        "`{results: [{term, kind, weight}]}` where `kind` is one of `title|body|topic|speaker`.",
+        "",
+        "### GET /api/facets — filter values",
+        "",
+        "Returns `{bodies: [...], speakers: [{name, count}], date_min, date_max}`. Use "
+        "the `bodies` and `speakers` lists to drive the optional filters on `/api/search` "
+        "and `/api/ask` — passing values not in this set will silently match nothing.",
+        "",
+        "### GET /api/related/{clip_id}?limit=5 — similar clips",
+        "",
+        "Returns `{results: [{clip_id, title, date, meeting_body, similarity}]}` ranked by "
+        "embedding-centroid cosine similarity to the source clip's summary. Useful for "
+        "expanding a single hit into a thread.",
+        "",
+        "### POST /api/chat — multi-turn RAG",
+        "",
+        "Same retrieval + synthesis as `/api/ask`, but takes a conversation history "
+        "(`messages: [{role: 'user'|'assistant', content}, ...]`). The last message must "
+        "be from the user. Optional `model_provider: 'openai' | 'anthropic'`.",
         "",
         "## Operator",
         "",
