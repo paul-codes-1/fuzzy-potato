@@ -12,6 +12,7 @@ from pydantic import BaseModel, field_validator
 
 from clients import get_anthropic, get_openai
 from rag.ingest import get_chroma_collection
+from rag.mcp_server import mcp_server
 from rag.query import ask, chat, load_clip_metadata
 from rag.related import related as related_clips
 from rag.search import facets as search_facets, search as search_clips, suggest as search_suggest
@@ -57,12 +58,32 @@ def _get_anthropic_client():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup — ChromaDB loads lazily on first request."""
+    """Startup — ChromaDB loads lazily on first request.
+
+    Also runs the MCP server's session manager for the lifetime of the
+    process. The streamable-HTTP transport mounted at /mcp depends on it.
+    """
     logger.info("RAG API starting (ChromaDB will load on first request)")
-    yield
+    async with mcp_server.session_manager.run():
+        logger.info("MCP server mounted at /mcp")
+        yield
 
 
 app = FastAPI(title="LFUCG Meeting RAG API", lifespan=lifespan)
+
+# MCP endpoint — public, stateless, CORS-open. Lets Claude Desktop, Cursor,
+# NotebookLM, and other MCP-aware clients query the meeting archive via the
+# standard MCP protocol instead of HTTP/JSON. See rag/mcp_server.py for the
+# tools exposed.
+#
+# Mounted at BOTH /api/mcp (for CloudFront — only `/api/*` paths are routed
+# from CloudFront → App Runner) AND /mcp (for direct App Runner URL access,
+# matching the existing `/ask` vs `/api/ask` dual-mount pattern). Both
+# routes wrap the same FastMCP instance, so the lifespan-managed session
+# manager singleton serves both.
+_mcp_http_app = mcp_server.streamable_http_app()
+app.mount("/api/mcp", _mcp_http_app)
+app.mount("/mcp", _mcp_http_app)
 
 app.add_middleware(
     CORSMiddleware,

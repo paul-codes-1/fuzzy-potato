@@ -307,6 +307,14 @@ efficiently. All endpoints are CORS-open, no auth, JSON in/out.
 | Similar meetings to one you already have | `GET /api/related/<clip_id>` |
 | What filter values are valid (bodies / speakers) | `GET /api/facets` |
 
+If your client speaks the **Model Context Protocol** (Claude Desktop,
+Cursor, NotebookLM, custom agents using the MCP SDK), there's a native
+MCP server at `{site_url}/api/mcp` exposing the same archive as five tools:
+`ask_meetings`, `search_meetings`, `find_related_clips`, `get_meeting_clip`,
+`list_recent_meetings`. Use it instead of the HTTP API when available —
+the protocol is purpose-built for tool use and your client will get
+typed schemas and proper citations automatically.
+
 ## Two main research patterns
 
 ### 1. Targeted question — use /api/ask
@@ -587,6 +595,12 @@ def generate_seo_artifacts(
         f"- Corrections workflow: [{site_url}/corrections]({site_url}/corrections)",
         f"- Search index (JSON): [{site_url}/data/index.json]({site_url}/data/index.json)",
         f"- RAG Q&A (HTML): [{site_url}/ask]({site_url}/ask) — natural-language Q&A over the archive",
+        f"- **Model Context Protocol (MCP) endpoint**: `{site_url}/api/mcp` — "
+        f"native MCP server exposing the archive as five tools (`ask_meetings`, "
+        f"`search_meetings`, `find_related_clips`, `get_meeting_clip`, "
+        f"`list_recent_meetings`). For Claude Desktop, Cursor, NotebookLM, "
+        f"or any MCP-aware client. Stateless POST-only HTTP transport, CORS-open, "
+        f"no auth. See the *MCP server* section below.",
         f"- **Public API for agents** (CORS-open, no auth): see the *API for agents* section below — "
         f"`POST {site_url}/api/search` for full-text search, `POST {site_url}/api/ask` for RAG Q&A, "
         f"plus `/api/suggest`, `/api/facets`, `/api/related/{{clip_id}}`, `/api/chat`.",
@@ -603,13 +617,33 @@ def generate_seo_artifacts(
         "title, source-video link, AI-generation disclosure, narrative summary, decisions list, "
         "and full transcript in one fetch. Preferable to scraping the HTML for agent ingestion.",
         "",
+        "## MCP server",
+        "",
+        f"A native [Model Context Protocol](https://modelcontextprotocol.io) server is "
+        f"mounted at `{site_url}/api/mcp` (stateless streamable-HTTP transport, CORS-open, "
+        f"no auth). MCP-aware clients — Claude Desktop, Cursor, NotebookLM, or anything "
+        f"built on an MCP SDK — can connect directly and the archive shows up as five "
+        f"tools with typed schemas:",
+        "",
+        "- `ask_meetings(question, meeting_body?, date_after?, date_before?)` — synthesized RAG answer + cited Granicus video timestamps",
+        "- `search_meetings(q, meeting_body?, speaker?, date_after?, date_before?, limit?)` — BM25 keyword search",
+        "- `find_related_clips(clip_id, limit?)` — embedding-similarity neighbors for one clip",
+        "- `get_meeting_clip(clip_id)` — full metadata + summary + Granicus URL for one meeting",
+        "- `list_recent_meetings(limit?, meeting_body?)` — browse the newest meetings",
+        "",
+        "If you're integrating an AI agent and your client supports MCP, prefer this over the "
+        "HTTP API below — the protocol is purpose-built for tool use and gives you typed "
+        "schemas, proper citations, and standard error handling for free.",
+        "",
         "## API for agents",
         "",
-        "All endpoints below are public, CORS-open (`Access-Control-Allow-Origin: *`), "
-        "and return JSON. Use them instead of scraping search-result pages — they're faster, "
-        "more accurate, and rate-limit-friendly. Recommended workflow: hit `/api/search` or "
-        "`/api/ask` to find clips, then fetch the per-clip Markdown alternate "
-        f"(`{site_url}/data/clips/<clip_id>/clip.md`) for the full content.",
+        "Direct HTTP/JSON endpoints for clients that don't speak MCP, or for shell-script "
+        "integration. All endpoints are public, CORS-open "
+        "(`Access-Control-Allow-Origin: *`), and return JSON. Use them instead of scraping "
+        "search-result pages — they're faster, more accurate, and rate-limit-friendly. "
+        "Recommended workflow: hit `/api/search` or `/api/ask` to find clips, then fetch "
+        f"the per-clip Markdown alternate (`{site_url}/data/clips/<clip_id>/clip.md`) for "
+        f"the full content.",
         "",
         "### POST /api/search — full-text BM25 search",
         "",
