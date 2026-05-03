@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **System context:** This repo is one of four under `~/lt/` that together form The Lexington Times. See `~/lt/CLAUDE.md` for the cross-repo guide and `~/lt/.codebase-info/fuzzy-potato/overview.md` for the comprehensive technical overview of the LFUCG meeting pipeline + RAG.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -91,8 +93,15 @@ uv run python -m rag.query "What has the city done about short-term rentals?"
 uv run python -m rag.query "budget for parks" --body Council --after 2023-01-01
 uv run python -m rag.query "zoning changes" --model gpt-4o-mini
 
-# RAG API server
+# RAG API server (also serves the MCP endpoint at /api/mcp and /mcp)
 uv run uvicorn rag.server:app --reload --port 8000
+
+# Smoke-test the MCP endpoint locally (initialize handshake)
+curl -X POST http://localhost:8000/api/mcp/ \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}'
 
 # Frontend development
 cd frontend && npm install && npm run dev
@@ -112,10 +121,11 @@ Set in `.env` file:
 - `ANTHROPIC_API_KEY` - Anthropic API key for Claude Sonnet (v2 summary narration)
 - `FIRST_CLIP_ID` - Starting clip ID for auto-processing (default: 6669)
 - `LFUCG_OUTPUT_DIR` - Output directory for RAG server (default: ./lfucg_output)
+- `LFUCG_SITE_URL` - Public site URL used in seo.py and the MCP server's URL decoration (default: `https://meetings.lexingtonky.news`)
 
 ## System Requirements
 
-- Python 3.9+
+- Python 3.10+ (the `mcp` SDK requires 3.10+; production Dockerfile pins 3.11)
 - ffmpeg (system installation required)
 - yt-dlp (installed via uv)
 - tesseract-ocr (for OCR of scanned agenda PDFs)
@@ -193,7 +203,7 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
   - **agenda** — agenda text split by section boundaries with ~100-word overlap
   - **transcript** — topic-aware chunks (~500 words) with silence gap and procedural phrase boundary detection, ~100-word overlap. When per-segment speakers exist, speaker changes are prefixed (`Mayor Gorton: ...`) into the embedded text, and `transcript_source` + comma-joined `speakers` are written to ChromaDB metadata.
 - **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 4 chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations
-- **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling.
+- **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling. Also mounts the MCP server (see below) at `/api/mcp` and `/mcp`, threading the FastMCP session manager into the app's lifespan.
 - **`rag/prompts.py`** - System prompts for LLM synthesis. Instructs `[Clip ID, MM:SS]` citation format, prefers facts and minutes for precise data.
 - Vector store: ChromaDB (local, persisted to `lfucg_output/chroma_db/`)
 - Embedding model: `text-embedding-3-small` (1536 dims)
@@ -214,6 +224,23 @@ Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed
   - `GET  /api/related/{clip_id}` — top-5 similar clips with similarity scores
 
 The `search.db` file is baked into the App Runner Docker image (Dockerfile + `.dockerignore` whitelist). `tests/test_search.py` and `tests/test_server_search.py` cover the builder + endpoint surfaces.
+
+### MCP Server (`rag/mcp_server.py`)
+
+Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing the meeting archive as five tools so any MCP-aware client (Claude Desktop, Cursor, NotebookLM, custom agents using the MCP SDK) can query it via the standard protocol instead of HTTP/JSON. Stateless streamable-HTTP transport, CORS-open, no auth — same posture as the `/api/*` HTTP surface.
+
+- **Tools** (each wraps an existing `rag.*` helper — no duplicate retrieval/synthesis logic):
+  - `ask_meetings(question, meeting_body?, date_after?, date_before?)` → wraps `rag.query.ask`
+  - `search_meetings(q, meeting_body?, speaker?, date_after?, date_before?, limit?)` → wraps `rag.search.search`
+  - `find_related_clips(clip_id, limit?)` → wraps `rag.related.related`
+  - `get_meeting_clip(clip_id)` → reads `clip_metadata` + `summary.txt` from disk + `granicus_clip_url`
+  - `list_recent_meetings(limit?, meeting_body?)` → reads `clip_metadata`, sorted by date desc
+- **Mount paths**: `/api/mcp` (CloudFront-routable; only `/api/*` is sent to App Runner) AND `/mcp` (direct App Runner URL). Mirrors the existing `/ask` ↔ `/api/ask` dual-mount pattern. Both routes wrap the same FastMCP instance, so the lifespan-managed session manager singleton serves both.
+- **Tool implementations are module-level functions** (`*_impl`) registered into FastMCP via `add_tool` inside `build_mcp_server()`. Lets tests call tools directly via `mcp_module.search_meetings_impl(...)` without driving the HTTP transport.
+- **DNS-rebinding protection disabled** (`TransportSecuritySettings(enable_dns_rebinding_protection=False)`). The endpoint is intentionally public; CORS + Cloudflare WAF handle abuse, and the SDK's default Host-header allow-list would otherwise reject CloudFront's forwarded host.
+- **Streamable-HTTP inner path** is set to `/` so the FastAPI mount at `/api/mcp` produces clean URLs (default `/mcp` would mount as `/api/mcp/mcp`).
+- **Discovery**: advertised at the top of `llms.txt` (dedicated `## MCP server` section + a top-level link line) and `skill.md` (right above the TL;DR table) so MCP-capable agents discover the protocol path before falling back to the HTTP API.
+- **Tests**: `tests/test_mcp_server.py` (33 unit tests on the tool impls — validation, filters, error handling, URL decoration, ordering) and `tests/test_server_mcp_mount.py` (1 integration test on the FastAPI mount + JSON-RPC initialize handshake). Single-mount-test limit is intentional: FastMCP's `StreamableHTTPSessionManager.run()` can only be called once per instance and the server is a module-level singleton.
 
 ### Frontend (`frontend/`)
 
@@ -278,9 +305,10 @@ rag/
   __init__.py
   ingest.py                               # Chunking + embedding + ChromaDB storage
   query.py                                # Retrieval + LLM synthesis logic
-  server.py                               # FastAPI endpoints (/ask, /chat, /search, /suggest, /facets, /related)
+  server.py                               # FastAPI endpoints (/ask, /chat, /search, /suggest, /facets, /related) + MCP mount
   search.py                               # SQLite FTS5 BM25 search + suggest + facets
   related.py                              # ChromaDB-backed "more like this" lookup
+  mcp_server.py                           # FastMCP server: ask_meetings, search_meetings, find_related_clips, get_meeting_clip, list_recent_meetings
   prompts.py                              # System prompts for synthesis
 
 tests/
@@ -290,6 +318,8 @@ tests/
   test_server.py                          # Tests for /api/ask, /api/chat (TestClient)
   test_server_search.py                   # Tests for /api/search, /api/suggest, /api/facets, /api/related
   test_search.py                          # Tests for SQLite FTS5 builder + ranking + filters + snippets
+  test_mcp_server.py                      # Tests for the 5 MCP tool implementations (mocked rag.* helpers)
+  test_server_mcp_mount.py                # Integration test for the FastAPI mount + JSON-RPC initialize handshake
   test_integration.py                     # Tests for main.py pipeline hooks
   test_summary_v2.py                      # Tests for two-pass summary extraction + narration
   test_captions.py                        # Tests for VTT parsing, speaker alignment, garbage-filter
