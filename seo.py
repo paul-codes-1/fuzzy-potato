@@ -354,6 +354,36 @@ fetch, served as `Content-Type: text/markdown` with open CORS.
 > facts (votes/$/IDs) > speakers > agenda > minutes > transcript. Snippets
 come back with `<mark>` tags around matched terms.
 
+#### Quoted-phrase vs. bag-of-words queries
+
+The `q` parameter has two modes, picked automatically:
+
+- **Bag-of-words AND** (default). `"q": "short term rentals"` matches
+  every clip containing all three tokens, in any order, anywhere in
+  the indexed columns. Stemming is enabled (Porter), so `rental` and
+  `rentals` both hit. Hyphens and other FTS operator characters are
+  stripped from the input — `short-term` is treated as `short term`.
+- **Exact phrase**. Wrap the *entire* `q` value in double quotes:
+  `"q": "\\"short-term rental\\""`. Now only clips containing the exact
+  contiguous phrase match. Use this when bag-of-words is matching too
+  loosely — common case: ordinance / measure names, official program
+  titles, distinctive multi-word terms-of-art (`"comprehensive plan"`,
+  `"infill and redevelopment"`, `"first amendment audit"`).
+
+Pick phrase mode whenever exact wording matters more than recall.
+
+```bash
+# Bag-of-words — finds clips mentioning all three tokens
+curl -X POST {site_url}/api/search \\
+  -H 'Content-Type: application/json' \\
+  -d '{{"q":"short term rentals","limit":10}}'
+
+# Exact phrase — only clips with that contiguous string
+curl -X POST {site_url}/api/search \\
+  -H 'Content-Type: application/json' \\
+  -d '{{"q":"\\"short-term rental\\"","limit":10}}'
+```
+
 ## Common patterns
 
 - **Time-bounded research.** Pass `date_after` and/or `date_before`
@@ -601,6 +631,12 @@ def generate_seo_artifacts(
         "facts > speakers > agenda > minutes > transcript. Use the `clip_id` to construct "
         f"`{site_url}/meeting/<clip_id>` (HTML) or `{site_url}/data/clips/<clip_id>/clip.md` "
         "(Markdown alternate).",
+        "",
+        "**Quoted-phrase mode.** Wrap the entire `q` value in double quotes "
+        '(e.g. `{"q": "\\"comprehensive plan\\""}`) to require a contiguous '
+        "phrase match instead of the default bag-of-words AND. Use this for "
+        "ordinance names, official program titles, and other multi-word "
+        "terms-of-art where exact wording matters more than recall.",
         "",
         f"Example: `curl -X POST {site_url}/api/search -H 'Content-Type: application/json' "
         '-d \'{"q":"vacancy tax","meeting_body":"Council","limit":5}\'`',
