@@ -41,6 +41,7 @@ function App() {
             <Link to="/about/methodology">Methodology</Link>
             <Link to="/corrections">Corrections</Link>
             <a href="/llms.txt">llms.txt</a>
+            <a href="/skill.md">skill.md</a>
             <a href="/sitemap_index.xml">Sitemap</a>
           </nav>
           <p className="site-footer-disclosure">

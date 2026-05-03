@@ -25,6 +25,17 @@ aws s3 sync frontend/dist/ "$S3_BUCKET" \
   --exclude "data/*" --exclude "assets/*" --delete \
   --cache-control "no-cache"
 
+# Re-stamp the top-level Markdown surface (skill.md) so it's served as
+# text/markdown rather than the S3 default of application/octet-stream.
+# The sync above uploads it with the wrong content-type because it has no
+# extension special-case; we just re-cp with REPLACE to fix the header.
+echo "==> Re-stamping top-level skill.md content-type..."
+aws s3 cp "$S3_BUCKET/skill.md" "$S3_BUCKET/skill.md" \
+  --metadata-directive REPLACE \
+  --cache-control "no-cache" \
+  --content-type "text/markdown; charset=utf-8" \
+  > /dev/null
+
 # Cache strategy for /data/* — split into pools by mutability so CloudFront
 # can serve the per-clip tree from edge instead of revalidating against S3
 # on every request. Every deploy already runs an `--paths "/*"`
