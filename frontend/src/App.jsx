@@ -4,10 +4,12 @@ import MeetingDetail from './components/MeetingDetail'
 import AskQuestion from './components/AskQuestion'
 import ChatLFUCG from './components/ChatLFUCG'
 import { About, Methodology, Corrections } from './components/StaticPages'
+import RouteChangeTracker from './components/RouteChangeTracker'
 
 function App() {
   return (
     <div className="app">
+      <RouteChangeTracker />
       <header className="header">
         <div className="container">
           <div className="header-top">

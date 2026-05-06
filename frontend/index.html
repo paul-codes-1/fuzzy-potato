@@ -17,6 +17,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Analytics 4 (shared property with lexingtonky.news; subdomain
+         cookies stitch sessions automatically). Manual page_view firing
+         lives in src/components/RouteChangeTracker.jsx so SPA navigations
+         are tracked, hence send_page_view=false here. -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-B4QJFLZRYD"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      gtag('js', new Date());
+      gtag('config', 'G-B4QJFLZRYD', { send_page_view: false });
+    </script>
   </head>
   <body>
     <div id="root"></div>
