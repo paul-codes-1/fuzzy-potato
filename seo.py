@@ -157,10 +157,12 @@ def build_clip_markdown(
 
     if transcript_source == "granicus_vtt":
         disclosure = (
-            "> ⚠️ **Closed-caption placeholder.** This transcript was captured live "
-            "by a Granicus stenographer (typos and broken sentences common). A "
-            "higher-quality OpenAI Whisper-1 pass replaces it later, at which "
-            "point structured facts and a narrative summary are also generated. "
+            "> ⚠️ **Auto-generated content.** The transcript on this page is the "
+            "Granicus stenographer's live closed-captioning track, captured at the "
+            "time of broadcast (typos and broken sentences common). Speaker labels "
+            "come from the same track. Structured facts were extracted with GPT-4o; "
+            "the narrative summary was written by Anthropic Claude Sonnet. Verbatim "
+            "wording and speaker attribution may contain errors. "
             f"See [methodology]({site_url}/about/methodology) or "
             "[report a correction](mailto:editor@lexingtonky.news)."
         )

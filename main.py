@@ -1487,12 +1487,18 @@ Guidelines:
         clip_dir: Path,
         whisper_segments: Optional[List[dict]],
     ) -> Optional[Dict[str, Any]]:
-        """Try to enrich Whisper segments with VTT speaker labels, or
-        synthesize a transcript from VTT when Whisper isn't available.
+        """Resolve Granicus VTT into either a standalone transcript or
+        speaker-enrichment for an existing Whisper transcript.
 
-        Returns a dict with keys: vtt_filename, source, speakers,
-        segments, and (placeholder mode only) transcript_text. None when
-        no captions track is available.
+        Pass `whisper_segments=None` (the default for new clips in
+        `process_clip`) to get a Granicus-VTT-only transcript: the
+        returned dict includes `transcript_text` and `segments`, and
+        `source="granicus_vtt"`. Pass `whisper_segments=[...]` to align
+        speaker labels onto pre-existing Whisper segments — returned
+        dict has `segments` (with speakers attached) and
+        `source="whisper-1+vtt-speakers"`, no `transcript_text`.
+
+        Returns None when no captions track is available.
         """
         vtt_path = self.fetch_captions(clip_id, clip_dir)
         if not vtt_path:
@@ -1580,50 +1586,74 @@ Guidelines:
                 self.log(f"Meeting date: {meeting_date}")
                 self.progress(f"Extracted date: {meeting_date}")
 
-            # Step 3: Download audio with date prefix
-            audio_filename = self.download_audio(clip_id, clip_dir, title, date=meeting_date)
-            if not audio_filename:
-                self.state["failed_clips"].append({
-                    "clip_id": clip_id,
-                    "reason": "download_failed",
-                    "timestamp": datetime.now().isoformat()
-                })
-                self.state["last_processed_clip_id"] = clip_id
-                self.save_state()
-                return False
-            files["audio"] = audio_filename
-            audio_path = clip_dir / audio_filename
+            # Step 3-5: Get transcript. Prefer Granicus VTT (cheap, ~10s,
+            # already speaker-attributed) when available; fall back to
+            # audio + Whisper (~5min, ~$1.20/clip) only when there's no
+            # captions track. Either path produces the same transcript +
+            # timestamped segments shape so downstream steps (facts,
+            # summary, RAG ingest) don't branch.
+            caption_info = self.apply_captions(clip_id, clip_dir, whisper_segments=None)
 
-            # Step 4: Determine transcript filename
-            audio_stem = Path(audio_filename).stem
+            # Filename stem mirrors what download_audio would produce so
+            # the transcript filename is stable regardless of source.
+            sanitized_title = self.sanitize_filename(title) if title else f"clip_{clip_id}"
+            if meeting_date:
+                audio_stem = f"{meeting_date}_{sanitized_title}_audio"
+            else:
+                audio_stem = f"{sanitized_title}_audio"
             transcript_filename = f"transcript_{audio_stem}.txt"
             transcript_path = clip_dir / transcript_filename
+            segments_filename = f"transcript_{audio_stem}_segments.json"
 
-            # Step 5: Transcribe audio
-            transcript_result = self.transcribe_audio(audio_path, transcript_path)
-
-            # Handle both old (string) and new (dict) return formats
             transcript: Optional[str] = None
             transcript_segments: Optional[List[dict]] = None
-            if isinstance(transcript_result, dict):
-                transcript = transcript_result["text"]
-                transcript_segments = transcript_result.get("segments")
-            elif isinstance(transcript_result, str):
-                transcript = transcript_result
-
-            # Step 5b: Fetch Granicus VTT captions (speaker-attributed
-            # text). Used to enrich Whisper segments with speaker labels,
-            # OR — if Whisper failed — to fill in as a placeholder
-            # transcript so the clip is still searchable until a Whisper
-            # pass succeeds.
-            caption_info = self.apply_captions(clip_id, clip_dir, transcript_segments)
-
             transcript_source = "whisper-1"
             speakers: List[str] = []
+            audio_path: Optional[Path] = None
 
-            if not transcript:
-                # Whisper failed. Fall back to VTT-as-placeholder if available.
-                if not caption_info:
+            if caption_info and caption_info.get("transcript_text"):
+                # VTT path: Granicus stenographer captions are the
+                # canonical transcript. Audio download + Whisper are
+                # skipped entirely for this clip.
+                transcript = caption_info["transcript_text"]
+                transcript_segments = caption_info["segments"]
+                transcript_source = caption_info["source"]  # "granicus_vtt"
+                speakers = caption_info["speakers"]
+                files["captions_vtt"] = caption_info["vtt_filename"]
+                with open(transcript_path, "w", encoding="utf-8") as f:
+                    f.write(transcript)
+                with open(clip_dir / segments_filename, "w", encoding="utf-8") as f:
+                    json.dump(transcript_segments, f, indent=2)
+                files["transcript"] = transcript_filename
+                files["transcript_segments"] = segments_filename
+                self.log(
+                    f"Using Granicus VTT transcript ({len(speakers)} speakers, "
+                    f"{len(transcript_segments)} cues) — skipping Whisper"
+                )
+            else:
+                # Whisper path: no captions track available, so we have
+                # to transcribe the audio ourselves.
+                audio_filename = self.download_audio(clip_id, clip_dir, title, date=meeting_date)
+                if not audio_filename:
+                    self.state["failed_clips"].append({
+                        "clip_id": clip_id,
+                        "reason": "download_failed",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    self.state["last_processed_clip_id"] = clip_id
+                    self.save_state()
+                    return False
+                files["audio"] = audio_filename
+                audio_path = clip_dir / audio_filename
+
+                transcript_result = self.transcribe_audio(audio_path, transcript_path)
+                if isinstance(transcript_result, dict):
+                    transcript = transcript_result["text"]
+                    transcript_segments = transcript_result.get("segments")
+                elif isinstance(transcript_result, str):
+                    transcript = transcript_result
+
+                if not transcript:
                     self.state["failed_clips"].append({
                         "clip_id": clip_id,
                         "reason": "transcription_failed",
@@ -1632,39 +1662,12 @@ Guidelines:
                     self.state["last_processed_clip_id"] = clip_id
                     self.save_state()
                     return False
-                transcript = caption_info["transcript_text"]
-                transcript_segments = caption_info["segments"]
-                transcript_source = caption_info["source"]
-                speakers = caption_info["speakers"]
-                with open(transcript_path, "w", encoding="utf-8") as f:
-                    f.write(transcript)
-                segments_filename = f"transcript_{audio_stem}_segments.json"
-                with open(clip_dir / segments_filename, "w", encoding="utf-8") as f:
-                    json.dump(transcript_segments, f, indent=2)
-                files["transcript"] = transcript_filename
-                files["transcript_segments"] = segments_filename
-                files["captions_vtt"] = caption_info["vtt_filename"]
-                self.log(
-                    f"Using VTT placeholder transcript ({len(speakers)} speakers, "
-                    f"{len(transcript_segments)} cues)"
-                )
-            else:
+
+                # transcribe_audio writes both transcript_path and the
+                # adjacent _segments.json file itself.
                 files["transcript"] = transcript_filename
                 if transcript_segments:
-                    files["transcript_segments"] = f"transcript_{audio_stem}_segments.json"
-                if caption_info and transcript_segments:
-                    # Enrich Whisper segments with speaker labels and
-                    # rewrite the segments file in place.
-                    transcript_segments = caption_info["segments"]
-                    transcript_source = caption_info["source"]
-                    speakers = caption_info["speakers"]
-                    files["captions_vtt"] = caption_info["vtt_filename"]
-                    segments_path = clip_dir / files["transcript_segments"]
-                    with open(segments_path, "w", encoding="utf-8") as f:
-                        json.dump(transcript_segments, f, indent=2)
-                    self.progress(
-                        f"Enriched {len(transcript_segments)} segments with speakers ({len(speakers)} distinct)"
-                    )
+                    files["transcript_segments"] = segments_filename
 
             # Step 6: Download and extract agenda (optional - don't fail if unavailable)
             agenda_result = self.download_agenda(clip_id, clip_dir, title=title, date=meeting_date)
@@ -1687,10 +1690,11 @@ Guidelines:
                 # Re-extract metadata now that we have agenda text
                 clip_metadata = self.scrape_clip_metadata(clip_id, title, agenda_result.get("text"))
 
-            # Remove audio if not keeping
-            if not self.keep_audio and audio_path.exists():
+            # Remove audio if not keeping (only applies when we
+            # downloaded one — VTT path skips audio entirely).
+            if not self.keep_audio and audio_path is not None and audio_path.exists():
                 audio_path.unlink()
-                del files["audio"]
+                files.pop("audio", None)
                 self.progress("Removed audio file (keep_audio=False)")
 
             # Step 10: Save enhanced metadata

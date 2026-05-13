@@ -7,16 +7,18 @@ attributions, marked with `>> Speaker Name:` at each speaker change.
 
 Two use cases this module supports:
 
-1. **Speaker enrichment** — for clips that already have a Whisper
-   transcript, parse VTT into speaker turns and align them onto Whisper
-   segments by timestamp overlap. The Whisper text remains canonical;
-   we only fold in the speaker attribution.
+1. **VTT-as-transcript** (default for clips with a captions track) —
+   render the VTT directly as the canonical transcript. Skips audio
+   download + Whisper entirely. The page discloses that the transcript
+   is stenographer live-CC, typos and all. This is the default path for
+   new clips when a VTT track is available.
 
-2. **VTT-as-placeholder transcript** — for clips that haven't been run
-   through Whisper yet, render the VTT directly as a transcript so the
-   meeting page is searchable / RAG-ingestible immediately. The page
-   discloses that this is a placeholder; a Whisper pass replaces it
-   later.
+2. **Speaker enrichment** — historical path for clips that were run
+   through Whisper before this module existed. Parse VTT into speaker
+   turns and align them onto Whisper segments by timestamp overlap. The
+   Whisper text remains canonical; we only fold in speaker attribution.
+   Not used for new clips (`process_clip` short-circuits to the
+   VTT-only path when a track is available).
 
 VTT URL discovery uses yt-dlp (already a project dependency); calling it
 as a subprocess keeps the integration uniform with how main.py downloads
@@ -273,9 +275,9 @@ def align_speakers_to_segments(
 def vtt_to_transcript_segments(segments: List[CaptionSegment]) -> List[dict]:
     """Render parsed VTT cues into Whisper-compatible segment dicts.
 
-    Used as a placeholder for un-Whispered clips so the page is still
-    searchable. Schema mirrors what Whisper writes so downstream code
-    (RAG ingest, frontend transcript tab) doesn't need to branch.
+    Used as the canonical transcript for clips with a captions track —
+    the schema mirrors what Whisper writes so downstream code (RAG
+    ingest, frontend transcript tab, summary v2) doesn't need to branch.
     """
     out: List[dict] = []
     for i, seg in enumerate(segments):
