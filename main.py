@@ -899,6 +899,8 @@ class LFUCGPipeline:
         date_patterns = [
             # "January 8 2026" or "January 8, 2026"
             r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})',
+            # ISO "2026-05-12" — newer Granicus titles use this (e.g. "Committee on 2026-05-12 1:00 PM")
+            r'(\d{4})-(\d{1,2})-(\d{1,2})',
             # "1/8/2026" or "01/08/2026"
             r'(\d{1,2})/(\d{1,2})/(\d{4})',
         ]
@@ -922,8 +924,13 @@ class LFUCGPipeline:
                         month = month_map[groups[0]]
                         day = int(groups[1])
                         year = int(groups[2])
+                    elif len(groups[0]) == 4:
+                        # ISO year-first pattern (YYYY-MM-DD)
+                        year = int(groups[0])
+                        month = int(groups[1])
+                        day = int(groups[2])
                     else:
-                        # Numeric pattern
+                        # Numeric MM/DD/YYYY pattern
                         month = int(groups[0])
                         day = int(groups[1])
                         year = int(groups[2])
