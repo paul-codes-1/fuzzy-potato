@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -36,8 +37,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 from clients import get_openai
 from rag.ingest import get_chroma_collection
 from rag.query import ask, granicus_clip_url, load_clip_metadata
+from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import search as search_clips
+from rag.telemetry import log_query_event
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,30 @@ def _clip_md_url(clip_id: int) -> str:
     return f"{SITE_URL}/data/clips/{clip_id}/clip.md"
 
 
+def _rate_limited(tool: str, *, query: Optional[str] = None,
+                  filters: Optional[dict] = None, tier: str = "cheap") -> Optional[dict]:
+    """Apply tier-appropriate rate limit. Returns a structured error dict when
+    the limit is hit (and emits a rate_limited telemetry event), else None."""
+    decision = rate_check(tier)
+    if decision.allowed:
+        return None
+    log_query_event(
+        surface="mcp",
+        endpoint=tool,
+        query=query,
+        filters=filters,
+        status="rate_limited",
+        error_type=f"rate_limit_{decision.reason}",
+    )
+    return {
+        "error": (
+            f"Rate limit exceeded — try again in {decision.retry_after_seconds} seconds."
+        ),
+        "retry_after_seconds": decision.retry_after_seconds,
+        "reason": decision.reason,
+    }
+
+
 # ---------- tool implementations ----------
 
 
@@ -132,6 +159,11 @@ def ask_meetings_impl(
     if date_before:
         filters["date_before"] = date_before
 
+    rl = _rate_limited("ask_meetings", query=question, filters=filters or None, tier="expensive")
+    if rl is not None:
+        return rl
+
+    started = time.monotonic()
     try:
         result = ask(
             question=question,
@@ -141,13 +173,32 @@ def ask_meetings_impl(
             filters=filters or None,
         )
     except Exception as exc:
+        log_query_event(
+            surface="mcp",
+            endpoint="ask_meetings",
+            query=question,
+            filters=filters or None,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.exception("ask_meetings failed")
         return {"error": f"Could not synthesize an answer: {exc}"}
 
+    sources = result.get("sources", [])
+    log_query_event(
+        surface="mcp",
+        endpoint="ask_meetings",
+        query=question,
+        filters=filters or None,
+        result_count=len(sources) if isinstance(sources, list) else None,
+        latency_ms=(time.monotonic() - started) * 1000,
+        status="ok" if sources else "empty",
+    )
     return {
         "question": question,
         "answer": result.get("answer", ""),
-        "sources": result.get("sources", []),
+        "sources": sources,
         "filters_applied": result.get("filters_applied", {}),
         "chunks_retrieved": result.get("chunks_retrieved", 0),
     }
@@ -185,6 +236,23 @@ def search_meetings_impl(
         return {"error": "q must be under 200 characters"}
     limit = max(1, min(int(limit or 25), 100))
 
+    filters = {
+        k: v
+        for k, v in {
+            "meeting_body": meeting_body,
+            "speaker": speaker,
+            "date_after": date_after,
+            "date_before": date_before,
+            "limit": limit,
+        }.items()
+        if v
+    }
+
+    rl = _rate_limited("search_meetings", query=q, filters=filters or None, tier="cheap")
+    if rl is not None:
+        return rl
+
+    started = time.monotonic()
     try:
         results = search_clips(
             query=q,
@@ -196,6 +264,15 @@ def search_meetings_impl(
             limit=limit,
         )
     except Exception as exc:
+        log_query_event(
+            surface="mcp",
+            endpoint="search_meetings",
+            query=q,
+            filters=filters or None,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.exception("search_meetings failed")
         return {"error": f"Search failed: {exc}"}
 
@@ -207,6 +284,15 @@ def search_meetings_impl(
             r["url"] = _meeting_url(cid)
             r["markdown_url"] = _clip_md_url(cid)
 
+    log_query_event(
+        surface="mcp",
+        endpoint="search_meetings",
+        query=q,
+        filters=filters or None,
+        result_count=len(results),
+        latency_ms=(time.monotonic() - started) * 1000,
+        status="ok" if results else "empty",
+    )
     return {"q": q, "count": len(results), "results": results}
 
 
@@ -223,6 +309,13 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
         limit: Max results, 1-20, default 5.
     """
     limit = max(1, min(int(limit or 5), 20))
+    filters = {"clip_id": int(clip_id), "limit": limit}
+
+    rl = _rate_limited("find_related_clips", filters=filters, tier="cheap")
+    if rl is not None:
+        return rl
+
+    started = time.monotonic()
     try:
         results = related_clips(
             int(clip_id),
@@ -231,6 +324,14 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
             limit=limit,
         )
     except Exception as exc:
+        log_query_event(
+            surface="mcp",
+            endpoint="find_related_clips",
+            filters=filters,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.exception("find_related_clips failed")
         return {"error": f"Could not find related clips: {exc}"}
 
@@ -240,6 +341,14 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
             r["url"] = _meeting_url(cid)
             r["markdown_url"] = _clip_md_url(cid)
 
+    log_query_event(
+        surface="mcp",
+        endpoint="find_related_clips",
+        filters=filters,
+        result_count=len(results),
+        latency_ms=(time.monotonic() - started) * 1000,
+        status="ok" if results else "empty",
+    )
     return {"clip_id": int(clip_id), "count": len(results), "results": results}
 
 
@@ -256,10 +365,25 @@ def get_meeting_clip_impl(clip_id: int) -> dict:
         clip_id: The Granicus clip ID, e.g. returned from search_meetings.
     """
     cid = int(clip_id)
+    filters = {"clip_id": cid}
+
+    rl = _rate_limited("get_meeting_clip", filters=filters, tier="cheap")
+    if rl is not None:
+        return rl
+
+    started = time.monotonic()
     meta_dict = _get_clip_metadata()
     # load_clip_metadata returns dict keyed by str(clip_id).
     entry = meta_dict.get(str(cid)) or meta_dict.get(cid)
     if not entry:
+        log_query_event(
+            surface="mcp",
+            endpoint="get_meeting_clip",
+            filters=filters,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="empty",
+            error_type="not_found",
+        )
         return {"error": f"No clip found for id {cid}"}
 
     # Try to surface the narrative summary if it exists on disk. Best-effort
@@ -274,6 +398,14 @@ def get_meeting_clip_impl(clip_id: int) -> dict:
     except Exception:
         logger.warning("could not read summary for clip %s", cid, exc_info=True)
 
+    log_query_event(
+        surface="mcp",
+        endpoint="get_meeting_clip",
+        filters=filters,
+        result_count=1,
+        latency_ms=(time.monotonic() - started) * 1000,
+        status="ok",
+    )
     return {
         "clip_id": cid,
         "title": entry.get("title"),
@@ -303,6 +435,15 @@ def list_recent_meetings_impl(limit: int = 20, meeting_body: Optional[str] = Non
         meeting_body: Optional filter (exact match), e.g. "Council".
     """
     limit = max(1, min(int(limit or 20), 100))
+    filters = {"limit": limit}
+    if meeting_body:
+        filters["meeting_body"] = meeting_body
+
+    rl = _rate_limited("list_recent_meetings", filters=filters, tier="cheap")
+    if rl is not None:
+        return rl
+
+    started = time.monotonic()
     meta_dict = _get_clip_metadata()
     rows = []
     for raw_cid, entry in meta_dict.items():
@@ -326,6 +467,14 @@ def list_recent_meetings_impl(limit: int = 20, meeting_body: Optional[str] = Non
     # ISO YYYY-MM-DD sorts lexicographically; clip_id breaks date-ties stably.
     rows.sort(key=lambda r: (r["date"], r["clip_id"]), reverse=True)
     rows = rows[:limit]
+    log_query_event(
+        surface="mcp",
+        endpoint="list_recent_meetings",
+        filters=filters,
+        result_count=len(rows),
+        latency_ms=(time.monotonic() - started) * 1000,
+        status="ok" if rows else "empty",
+    )
     return {
         "count": len(rows),
         "meeting_body": meeting_body,

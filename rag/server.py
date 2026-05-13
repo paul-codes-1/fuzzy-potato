@@ -2,20 +2,24 @@
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 from clients import get_anthropic, get_openai
 from rag.ingest import get_chroma_collection
 from rag.mcp_server import mcp_server
 from rag.query import ask, chat, load_clip_metadata
+from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import facets as search_facets, search as search_clips, suggest as search_suggest
+from rag.telemetry import log_query_event, set_request_context
 
 load_dotenv()
 
@@ -70,6 +74,88 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LFUCG Meeting RAG API", lifespan=lifespan)
+
+
+class _MCPTrailingSlashMiddleware:
+    """Rewrite `/api/mcp` → `/api/mcp/` (and `/mcp` → `/mcp/`) before routing.
+
+    Without this, a request to `/api/mcp` (no trailing slash) reaches the
+    mounted FastMCP Starlette app with an empty residual path, doesn't match
+    its route at `/`, and triggers Starlette's `redirect_slashes` 307. The
+    redirect URL is built from the request scope, which behind CloudFront →
+    App Runner has scheme=http and host=<internal app-runner-host>. The
+    client gets `Location: http://...awsapprunner.com/api/mcp/` and can't
+    follow it. Rewriting the path here makes the Mount route the request
+    directly, no redirect needed. claude.ai's MCP connector and several
+    other clients POST without the trailing slash, so this is the only
+    spelling that actually reaches users.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path") in ("/api/mcp", "/mcp"):
+            scope = dict(scope)
+            scope["path"] = scope["path"] + "/"
+            raw_path = scope.get("raw_path")
+            if raw_path is not None:
+                scope["raw_path"] = raw_path + b"/"
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_MCPTrailingSlashMiddleware)
+
+
+def _client_ip_from_request(request: Request) -> Optional[str]:
+    """Prefer CF-Connecting-IP / X-Forwarded-For first hop, fall back to socket peer.
+
+    Behind CloudFront → App Runner, request.client.host is always the App
+    Runner ingress IP — useless for rate limiting. CloudFront forwards the
+    original client IP in `CF-Connecting-IP` (always when proxied by us)
+    and X-Forwarded-For (standard). Trust the leftmost hop because the
+    chain terminates at our edge.
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        # leftmost is the originating client
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+@app.middleware("http")
+async def _request_context_middleware(request: Request, call_next):
+    """Stash IP + UA + request-id in contextvars so handlers and telemetry can read them."""
+    set_request_context(
+        client_ip=_client_ip_from_request(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return await call_next(request)
+
+
+def _rate_limited_response(decision, *, endpoint: str, query: Optional[str] = None,
+                          filters: Optional[dict] = None) -> JSONResponse:
+    """Build a 429 response and emit a rate-limited telemetry event."""
+    log_query_event(
+        surface="http",
+        endpoint=endpoint,
+        query=query,
+        filters=filters,
+        status="rate_limited",
+        error_type=f"rate_limit_{decision.reason}",
+    )
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "reason": decision.reason,
+            "retry_after_seconds": decision.retry_after_seconds,
+        },
+        headers={"Retry-After": str(decision.retry_after_seconds)},
+    )
 
 # MCP endpoint — public, stateless, CORS-open. Lets Claude Desktop, Cursor,
 # NotebookLM, and other MCP-aware clients query the meeting archive via the
@@ -201,18 +287,25 @@ def ask_endpoint_direct(request: AskRequest):
 
 @app.post("/api/ask")
 def ask_endpoint(request: AskRequest):
+    filters = {}
+    if request.meeting_body:
+        filters["meeting_body"] = request.meeting_body
+    if request.date_after:
+        filters["date_after"] = request.date_after
+    if request.date_before:
+        filters["date_before"] = request.date_before
+
+    decision = rate_check("expensive")
+    if not decision.allowed:
+        return _rate_limited_response(
+            decision, endpoint="/api/ask", query=request.question, filters=filters or None
+        )
+
+    started = time.monotonic()
     try:
         collection = _get_collection()
         openai_client = _get_openai_client()
         clip_metadata = _get_clip_metadata()
-
-        filters = {}
-        if request.meeting_body:
-            filters["meeting_body"] = request.meeting_body
-        if request.date_after:
-            filters["date_after"] = request.date_after
-        if request.date_before:
-            filters["date_before"] = request.date_before
 
         result = ask(
             question=request.question,
@@ -222,26 +315,58 @@ def ask_endpoint(request: AskRequest):
             filters=filters if filters else None,
         )
 
+        latency_ms = (time.monotonic() - started) * 1000
+        sources = result.get("sources") if isinstance(result, dict) else None
+        log_query_event(
+            surface="http",
+            endpoint="/api/ask",
+            query=request.question,
+            filters=filters or None,
+            result_count=len(sources) if isinstance(sources, list) else None,
+            latency_ms=latency_ms,
+            status="ok" if sources else "empty",
+        )
         return result
     except Exception as e:
+        log_query_event(
+            surface="http",
+            endpoint="/api/ask",
+            query=request.question,
+            filters=filters or None,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.error("ask_endpoint failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred processing your question.")
 
 
 @app.post("/api/chat")
 def chat_endpoint(request: ChatRequest):
+    filters = {}
+    if request.meeting_body:
+        filters["meeting_body"] = request.meeting_body
+    if request.date_after:
+        filters["date_after"] = request.date_after
+    if request.date_before:
+        filters["date_before"] = request.date_before
+
+    # The last user message is the "query" for telemetry purposes.
+    last_user_msg = next(
+        (m.content for m in reversed(request.messages) if m.role == "user"), None
+    )
+
+    decision = rate_check("expensive")
+    if not decision.allowed:
+        return _rate_limited_response(
+            decision, endpoint="/api/chat", query=last_user_msg, filters=filters or None
+        )
+
+    started = time.monotonic()
     try:
         collection = _get_collection()
         openai_client = _get_openai_client()
         clip_metadata = _get_clip_metadata()
-
-        filters = {}
-        if request.meeting_body:
-            filters["meeting_body"] = request.meeting_body
-        if request.date_after:
-            filters["date_after"] = request.date_after
-        if request.date_before:
-            filters["date_before"] = request.date_before
 
         anthropic_client = None
         if request.model_provider == "anthropic":
@@ -259,8 +384,28 @@ def chat_endpoint(request: ChatRequest):
             model_provider=request.model_provider,
         )
 
+        sources = result.get("sources") if isinstance(result, dict) else None
+        log_query_event(
+            surface="http",
+            endpoint="/api/chat",
+            query=last_user_msg,
+            filters={**(filters or {}), "model_provider": request.model_provider,
+                    "message_count": len(request.messages)},
+            result_count=len(sources) if isinstance(sources, list) else None,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="ok" if sources else "empty",
+        )
         return result
     except Exception as e:
+        log_query_event(
+            surface="http",
+            endpoint="/api/chat",
+            query=last_user_msg,
+            filters={**(filters or {}), "model_provider": request.model_provider},
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.error("chat_endpoint failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred processing your chat.")
 
@@ -271,6 +416,24 @@ def chat_endpoint_direct(request: ChatRequest):
 
 
 def _search_handler(request: SearchRequest):
+    filters = {
+        k: v
+        for k, v in {
+            "meeting_body": request.meeting_body,
+            "speaker": request.speaker,
+            "date_after": request.date_after,
+            "date_before": request.date_before,
+        }.items()
+        if v
+    }
+
+    decision = rate_check("cheap")
+    if not decision.allowed:
+        return _rate_limited_response(
+            decision, endpoint="/api/search", query=request.q, filters=filters or None
+        )
+
+    started = time.monotonic()
     try:
         results = search_clips(
             query=request.q,
@@ -281,8 +444,26 @@ def _search_handler(request: SearchRequest):
             date_before=request.date_before,
             limit=request.limit,
         )
+        log_query_event(
+            surface="http",
+            endpoint="/api/search",
+            query=request.q,
+            filters=filters or None,
+            result_count=len(results),
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="ok" if results else "empty",
+        )
         return {"results": results, "count": len(results)}
     except Exception as e:
+        log_query_event(
+            surface="http",
+            endpoint="/api/search",
+            query=request.q,
+            filters=filters or None,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.error("search failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred running search.")
 
@@ -303,11 +484,33 @@ def _suggest_handler(q: str, limit: int):
         return {"results": []}
     if len(q) > MAX_SEARCH_QUERY_CHARS:
         raise HTTPException(status_code=400, detail="q too long")
+
+    decision = rate_check("cheap")
+    if not decision.allowed:
+        return _rate_limited_response(decision, endpoint="/api/suggest", query=q)
+
+    started = time.monotonic()
     try:
         limit = max(1, min(int(limit or 10), 25))
         results = search_suggest(q, OUTPUT_DIR, limit=limit)
+        log_query_event(
+            surface="http",
+            endpoint="/api/suggest",
+            query=q,
+            result_count=len(results),
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="ok" if results else "empty",
+        )
         return {"results": results}
     except Exception as e:
+        log_query_event(
+            surface="http",
+            endpoint="/api/suggest",
+            query=q,
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.error("suggest failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred running suggest.")
 
@@ -341,13 +544,36 @@ def facets_endpoint_direct():
 
 
 def _related_handler(clip_id: int, limit: int):
+    decision = rate_check("cheap")
+    if not decision.allowed:
+        return _rate_limited_response(
+            decision, endpoint="/api/related", filters={"clip_id": clip_id}
+        )
+
+    started = time.monotonic()
     try:
         limit = max(1, min(int(limit or 5), 20))
         collection = _get_collection()
         clip_metadata = _get_clip_metadata()
         results = related_clips(clip_id, collection, clip_metadata, limit=limit)
+        log_query_event(
+            surface="http",
+            endpoint="/api/related",
+            filters={"clip_id": clip_id},
+            result_count=len(results),
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="ok" if results else "empty",
+        )
         return {"results": results}
     except Exception as e:
+        log_query_event(
+            surface="http",
+            endpoint="/api/related",
+            filters={"clip_id": clip_id},
+            latency_ms=(time.monotonic() - started) * 1000,
+            status="error",
+            error_type="internal",
+        )
         logger.error("related failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred loading related clips.")
 
