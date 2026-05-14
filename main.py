@@ -852,31 +852,77 @@ class LFUCGPipeline:
 
         return result
 
+    # View IDs to scan when self.view_id (default 14, the Urban County
+    # Council archive) doesn't contain the clip. Non-council bodies
+    # (Mayor's Task Force, Planning Commission, BoZA, etc.) live on
+    # their own views. Order is "most-trafficked first" so the typical
+    # case still resolves on the first request.
+    LISTING_VIEW_FALLBACKS: tuple[int, ...] = (14, 9, 2, 4, 5, 6, 7, 8, 10, 13, 16, 17)
+
     def fetch_date_from_listing(self, clip_id: int) -> Optional[str]:
-        """Fetch the Granicus ViewPublisher listing and extract the authoritative meeting date for clip_id.
+        """Fetch Granicus ViewPublisher listings and extract the authoritative meeting date for clip_id.
 
-        Each row has a hidden <span> containing the unix timestamp in addition to the displayed MM/DD/YY date.
-        Falls back when the clip title/agenda don't include a parseable date (e.g. titles like "Rural Land Management Board (1)").
+        Tries `self.view_id` first, then LISTING_VIEW_FALLBACKS, since
+        non-council bodies live on their own views (e.g. clip 6770 —
+        Mayor's Task Force to End Homelessness — is on view_id=9, not 14).
+
+        Two date formats are recognized per row:
+        - Hidden `<span style="display:none">unix_timestamp</span>` (view 14 archive layout).
+        - Displayed text like "May&nbsp;13,&nbsp;2026" (view 9 / committee layouts).
         """
-        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={self.view_id}"
-        try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-        except Exception as e:
-            self.log(f"fetch_date_from_listing failed: {e}", "WARNING")
-            return None
+        from datetime import datetime, timezone, date as _date
 
-        for row in response.text.split("</tr>"):
-            if f"clip_id={clip_id}" not in row:
-                continue
-            m = re.search(r'<span\s+style="display:\s*none;\s*">\s*(\d{9,11})\s*</span>', row)
-            if not m:
-                return None
+        month_map = {
+            'january': 1, 'february': 2, 'march': 3, 'april': 4,
+            'may': 5, 'june': 6, 'july': 7, 'august': 8,
+            'september': 9, 'october': 10, 'november': 11, 'december': 12,
+        }
+
+        views_to_try: List[int] = [self.view_id]
+        for v in self.LISTING_VIEW_FALLBACKS:
+            if v not in views_to_try:
+                views_to_try.append(v)
+
+        for view_id in views_to_try:
+            url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={view_id}"
             try:
-                from datetime import datetime, timezone
-                ts = int(m.group(1))
-                return datetime.fromtimestamp(ts, timezone.utc).date().isoformat()
-            except Exception:
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+            except Exception as e:
+                self.log(f"fetch_date_from_listing view_id={view_id} failed: {e}", "WARNING")
+                continue
+
+            for row in response.text.split("</tr>"):
+                if f"clip_id={clip_id}" not in row:
+                    continue
+                # Preferred: hidden unix-timestamp span.
+                m = re.search(r'<span\s+style="display:\s*none;\s*">\s*(\d{9,11})\s*</span>', row)
+                if m:
+                    try:
+                        ts = int(m.group(1))
+                        return datetime.fromtimestamp(ts, timezone.utc).date().isoformat()
+                    except Exception:
+                        pass
+                # Fallback: displayed text. Granicus renders dates as
+                # "May&nbsp;13,&nbsp;2026" so collapse whitespace and
+                # &nbsp; before matching.
+                row_text = re.sub(r"&nbsp;|\s+", " ", row)
+                m = re.search(
+                    r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})\b',
+                    row_text,
+                    re.IGNORECASE,
+                )
+                if m:
+                    try:
+                        return _date(
+                            int(m.group(3)),
+                            month_map[m.group(1).lower()],
+                            int(m.group(2)),
+                        ).isoformat()
+                    except (ValueError, KeyError):
+                        pass
+                # Found the row but couldn't parse the date — no point
+                # checking other views for this clip.
                 return None
         return None
 
@@ -952,6 +998,7 @@ class LFUCGPipeline:
         # Extract meeting body - common abbreviations and names (search title first)
         body_patterns = [
             r'\b(WQFB|CAC|LFUCG|Council|Commission|Board|Committee)\b',
+            r'(Task Force)',
             r'(Work Session|Regular Session|Special Session|Budget Hearing)',
         ]
 
@@ -1713,7 +1760,14 @@ Guidelines:
                 "transcript_source": transcript_source,
                 "speakers": speakers,
                 "models": {
-                    "transcribe": self.transcribe_model,
+                    # Reflect what actually produced the transcript: VTT
+                    # path skips Whisper entirely, so claiming whisper-1
+                    # would be misleading downstream.
+                    "transcribe": (
+                        "granicus_vtt"
+                        if transcript_source == "granicus_vtt"
+                        else self.transcribe_model
+                    ),
                 }
             }
 
