@@ -136,13 +136,15 @@ export const WEBSITE_NODE = {
 
 // Build a coherent JSON-LD @graph for a meeting detail page. Article
 // carries the auto-transcription disclosure via creativeWorkStatus +
-// producer; Event names the underlying civic proceeding so Google
-// treats the page as both reporting and primary record.
+// producer. Earlier versions also emitted an Event node, but these
+// pages are archival recordings of past proceedings — Event is for
+// upcoming attendable things and was triggering Search Console
+// "missing required field" reports.
 export function buildMeetingGraph({
   clipId,
   title,
   date,
-  meetingBody,
+  meetingBody: _meetingBody,
   description,
   granicusUrl,
   summaryUpdatedAt,
@@ -153,11 +155,6 @@ export function buildMeetingGraph({
   const url = `${SITE_URL}/meeting/${clipId}`
   const seoTitle = buildSeoTitle(title, date)
   const dateModified = summaryUpdatedAt || processedAt || date
-  // 6 PM local Eastern is the standard council meeting time. Granicus
-  // titles don't carry a reliable start time and a missing startDate
-  // downgrades the Event signal — better to use the canonical default.
-  const startDate = date ? `${date}T18:00:00-04:00` : undefined
-  const cleaned = cleanTitle(title) || 'LFUCG Meeting'
 
   const article = {
     '@type': 'Article',
@@ -184,38 +181,9 @@ export function buildMeetingGraph({
     article.wordCount = transcriptWords
   }
 
-  const event = {
-    '@type': 'Event',
-    '@id': `${url}#event`,
-    name: cleaned,
-    startDate,
-    eventAttendanceMode: 'https://schema.org/MixedEventAttendanceMode',
-    eventStatus: 'https://schema.org/EventScheduled',
-    location: {
-      '@type': 'Place',
-      name: 'Government Center, Lexington, KY',
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: 'Lexington',
-        addressRegion: 'KY',
-        addressCountry: 'US',
-      },
-    },
-    organizer: {
-      '@type': 'GovernmentOrganization',
-      name: 'Lexington-Fayette Urban County Government',
-      url: 'https://www.lexingtonky.gov/',
-    },
-    about: meetingBody || undefined,
-    subjectOf: { '@id': `${url}#article` },
-  }
-  if (granicusUrl) {
-    event.recordedIn = { '@type': 'CreativeWork', url: granicusUrl }
-  }
-
   return {
     '@context': 'https://schema.org',
-    '@graph': [article, event, ORGANIZATION_NODE, WEBSITE_NODE],
+    '@graph': [article, ORGANIZATION_NODE, WEBSITE_NODE],
   }
 }
 

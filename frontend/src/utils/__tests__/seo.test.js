@@ -131,14 +131,19 @@ describe('buildMeetingGraph', () => {
     expect(buildMeetingGraph({ ...baseMeeting, clipId: null })).toBeNull()
   })
 
-  it('emits a coherent @graph with Article + Event + Organization + WebSite', () => {
+  it('emits a coherent @graph with Article + Organization + WebSite', () => {
     const graph = buildMeetingGraph(baseMeeting)
     expect(graph['@context']).toBe('https://schema.org')
     const types = graph['@graph'].map((n) => n['@type'])
     expect(types).toContain('Article')
-    expect(types).toContain('Event')
     expect(types).toContain('Organization')
     expect(types).toContain('WebSite')
+  })
+
+  it('does not emit an Event node (archive pages, not attendable events)', () => {
+    const graph = buildMeetingGraph(baseMeeting)
+    const types = graph['@graph'].map((n) => n['@type'])
+    expect(types).not.toContain('Event')
   })
 
   it('Article carries datePublished = meeting date and dateModified = revision', () => {
@@ -168,20 +173,6 @@ describe('buildMeetingGraph', () => {
     const article = graph['@graph'].find((n) => n['@type'] === 'Article')
     expect(article.headline).toBe('Urban County Council - April 30, 2026')
     expect(article.headline).not.toContain('(1)')
-  })
-
-  it('Event names the LFUCG and links Granicus video', () => {
-    const graph = buildMeetingGraph(baseMeeting)
-    const event = graph['@graph'].find((n) => n['@type'] === 'Event')
-    expect(event.organizer.name).toBe('Lexington-Fayette Urban County Government')
-    expect(event.recordedIn.url).toContain('granicus')
-    expect(event.startDate).toBe('2026-04-30T18:00:00-04:00')
-  })
-
-  it('Event omits recordedIn when no Granicus URL provided', () => {
-    const graph = buildMeetingGraph({ ...baseMeeting, granicusUrl: null })
-    const event = graph['@graph'].find((n) => n['@type'] === 'Event')
-    expect(event.recordedIn).toBeUndefined()
   })
 
   it('Article includes wordCount when transcriptWords provided', () => {
