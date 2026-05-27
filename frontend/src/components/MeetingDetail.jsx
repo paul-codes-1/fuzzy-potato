@@ -614,7 +614,30 @@ function MeetingDetail() {
                 {/* Votes & Decisions */}
                 {extractedFacts.motions_and_votes?.length > 0 && (
                   <section className="facts-section">
-                    <h3>Votes &amp; Decisions</h3>
+                    <h3>
+                      Votes &amp; Decisions
+                      {extractedFacts.motions_source === 'table_of_motions' && (
+                        <span className="official-badge" title="From the official LFUCG Table of Motions">
+                          Official record
+                        </span>
+                      )}
+                    </h3>
+                    {extractedFacts.motions_source === 'table_of_motions' && (
+                      <p className="official-note">
+                        Work sessions have no formal minutes. These motions are the
+                        authoritative record — movers, seconders, and outcomes — as
+                        published in the LFUCG <strong>Table of Motions</strong>
+                        {extractedFacts.table_of_motions_ref?.source_clip_id && (
+                          <>
+                            {' '}printed in the{' '}
+                            <Link to={`/meeting/${extractedFacts.table_of_motions_ref.source_clip_id}`}>
+                              following session&rsquo;s agenda packet
+                            </Link>
+                          </>
+                        )}
+                        .
+                      </p>
+                    )}
                     {extractedFacts.motions_and_votes.map((vote, i) => (
                       <div key={i} className="facts-card">
                         <div className="facts-card-header">
@@ -622,13 +645,21 @@ function MeetingDetail() {
                           <span className={`vote-badge vote-${vote.outcome}`}>{vote.outcome}</span>
                         </div>
                         <p>{vote.description}</p>
-                        {(vote.ayes != null || vote.nays != null) && (
-                          <div className="vote-tally">
-                            {vote.ayes != null && <span className="vote-for">Ayes: {vote.ayes}</span>}
-                            {vote.nays != null && <span className="vote-against">Nays: {vote.nays}</span>}
-                            {vote.abstentions > 0 && <span>Abstentions: {vote.abstentions}</span>}
+                        {(vote.motion_by || vote.second_by) && (
+                          <div className="vote-movers">
+                            {vote.motion_by && <span><strong>Moved by</strong> {vote.motion_by}</span>}
+                            {vote.second_by && <span><strong>Seconded by</strong> {vote.second_by}</span>}
                           </div>
                         )}
+                        {vote.vote_type === 'unanimous' && (vote.outcome === 'passed' || vote.outcome === 'approved') ? (
+                          <div className="vote-tally"><span className="vote-for">Passed without dissent</span></div>
+                        ) : (vote.ayes > 0 || vote.nays > 0) ? (
+                          <div className="vote-tally">
+                            {vote.ayes > 0 && <span className="vote-for">Ayes: {vote.ayes}</span>}
+                            {vote.nays > 0 && <span className="vote-against">Nays: {vote.nays}</span>}
+                            {vote.abstentions > 0 && <span>Abstentions: {vote.abstentions}</span>}
+                          </div>
+                        ) : null}
                         {vote.votes_against?.length > 0 && (
                           <div><strong>Opposed:</strong> {vote.votes_against.join(', ')}</div>
                         )}

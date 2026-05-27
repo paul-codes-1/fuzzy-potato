@@ -1511,6 +1511,225 @@ Guidelines:
                  f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
         return results
 
+    def _apply_one_table(self, table, source_clip_id: int, clips: list,
+                         force: bool = False) -> dict:
+        """Resolve a single Table of Motions to its clip and merge it in.
+
+        Returns a status dict: ``{"status": ..., "target": clip_id|None,
+        ...}``. ``status`` is one of matched / no_date / no_match / ambiguous
+        / skipped. The official motions *replace* the target clip's
+        Whisper-derived ``motions_and_votes`` (video timestamps carried over
+        where descriptions align).
+        """
+        from table_of_motions import resolve_target_clip, merge_table_into_facts
+
+        res = resolve_target_clip(table, clips)
+        if res.status != "matched":
+            return {"status": res.status, "target": None,
+                    "candidates": res.candidates, "date": table.date}
+
+        target = res.clip_id
+        clip_dir = self.output_dir / "clips" / str(target)
+        facts_path = clip_dir / "extracted_facts.json"
+
+        existing = None
+        if facts_path.exists():
+            try:
+                with open(facts_path) as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                existing = None
+
+        # Idempotent: skip a clip already carrying an official table unless
+        # forced (e.g. after a parser fix).
+        if existing and existing.get("motions_source") == "table_of_motions" \
+                and not force:
+            return {"status": "skipped", "target": target, "date": table.date}
+
+        new_facts, stats = merge_table_into_facts(
+            existing, table, source_clip_id=source_clip_id)
+
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        with open(facts_path, "w") as f:
+            json.dump(new_facts, f, indent=2)
+
+        # Make sure the clip's metadata references the facts file so RAG
+        # ingest + the frontend pick it up (matters for clips that had no
+        # prior extraction).
+        meta_path = clip_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                files = meta.setdefault("files", {})
+                if files.get("extracted_facts") != "extracted_facts.json":
+                    files["extracted_facts"] = "extracted_facts.json"
+                    with open(meta_path, "w") as f:
+                        json.dump(meta, f, indent=2)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        return {"status": "matched", "target": target, "date": table.date,
+                **stats}
+
+    def apply_tables_from_agenda(self, agenda_text: str,
+                                 source_clip_id: int) -> list:
+        """Apply any Tables of Motions embedded in one agenda to prior clips.
+
+        Used by the per-clip pipeline hook. Returns the list of target clip
+        ids that were updated; re-ingests each into RAG when ingestion is
+        enabled for this run (the batch-end pass rebuilds search.db).
+        """
+        from table_of_motions import extract_tables
+
+        tables = [t for t in extract_tables(agenda_text) if t.motions]
+        if not tables:
+            return []
+        clips = self.load_index_clips()
+        if not clips:
+            return []
+
+        touched = []
+        for table in tables:
+            result = self._apply_one_table(table, source_clip_id, clips)
+            if result["status"] == "matched":
+                touched.append(result["target"])
+                self.log(
+                    f"Table of Motions: applied {result.get('official_motions', 0)} "
+                    f"official motions to clip {result['target']} "
+                    f"({table.raw_date})")
+            elif result["status"] == "ambiguous":
+                self.log(
+                    f"Table of Motions for {table.raw_date} ambiguous "
+                    f"(candidates {result['candidates']}) — skipped", "WARNING")
+
+        if touched and getattr(self, "rag_enabled", False):
+            self._reingest_clips(touched)
+        return touched
+
+    def backfill_tables_of_motions(self, max_clips: int = 0,
+                                   force: bool = False,
+                                   reingest: bool = True) -> dict:
+        """Scan agendas for embedded Tables of Motions and merge the official
+        motions onto the prior-meeting clips they record.
+
+        LFUCG work sessions have no official minutes — the Table of Motions
+        printed in the *next* session's agenda packet is the authoritative
+        record. This sweeps every agenda, extracts those tables, and replaces
+        the referenced clip's transcript-derived motions with the official
+        ones. Touched clips are re-ingested into RAG and the FTS5 search.db is
+        rebuilt once at the end (skip via ``reingest=False``).
+        """
+        from table_of_motions import extract_tables
+
+        clips = self.load_index_clips()
+        if not clips:
+            self.log("No index.json clips found — run --generate-index first",
+                     "WARNING")
+            return {}
+
+        clips_dir = self.output_dir / "clips"
+        # Newest agendas first (most useful for incremental runs).
+        names = sorted(
+            (n for n in os.listdir(clips_dir) if (clips_dir / n).is_dir()),
+            key=lambda n: int(n) if n.isdigit() else -1,
+            reverse=True,
+        )
+        if max_clips:
+            names = names[:max_clips]
+
+        from collections import Counter
+        stats = Counter()
+        touched: set[int] = set()
+        ambiguous: list = []
+
+        for name in names:
+            if not name.isdigit():
+                continue
+            source_clip_id = int(name)
+            agenda_files = list((clips_dir / name).glob("*agenda*.txt"))
+            if not agenda_files:
+                continue
+            try:
+                agenda_text = agenda_files[0].read_text(errors="replace")
+            except OSError:
+                continue
+            tables = extract_tables(agenda_text)
+            for table in tables:
+                if not table.motions:
+                    continue
+                stats["tables_seen"] += 1
+                result = self._apply_one_table(table, source_clip_id, clips,
+                                                force=force)
+                stats[result["status"]] += 1
+                if result["status"] == "matched":
+                    touched.add(result["target"])
+                    stats["motions_written"] += result.get("official_motions", 0)
+                    stats["timestamps_carried"] += result.get(
+                        "timestamps_carried", 0)
+                    self.log(
+                        f"Table of Motions: clip {source_clip_id} agenda -> "
+                        f"clip {result['target']} ({table.raw_date}), "
+                        f"{result.get('official_motions', 0)} motions")
+                elif result["status"] == "ambiguous":
+                    ambiguous.append((table.raw_date, result["candidates"]))
+
+        self.log(
+            f"\nTables of Motions: {stats['tables_seen']} seen, "
+            f"{stats['matched']} merged, {stats['skipped']} already done, "
+            f"{stats['no_match']} no-match, {stats['ambiguous']} ambiguous, "
+            f"{stats['no_date']} no-date")
+        if ambiguous:
+            self.log("Ambiguous (duplicate uploads, skipped) — resolve "
+                     "manually if needed:", "WARNING")
+            for raw_date, cands in ambiguous:
+                self.log(f"  {raw_date}: candidates {cands}", "WARNING")
+
+        if touched and reingest:
+            self._reingest_clips(sorted(touched))
+            self.generate_search_index()  # rebuilds search.db too
+
+        return {"stats": dict(stats), "touched": sorted(touched),
+                "ambiguous": ambiguous}
+
+    def _reingest_clips(self, clip_ids: list) -> None:
+        """Re-embed a set of clips into the RAG vector store (best-effort)."""
+        try:
+            from rag.ingest import (ingest_clip as rag_ingest_clip,
+                                    get_chroma_collection, load_rag_state,
+                                    save_rag_state)
+            from clients import get_openai
+        except ImportError:
+            self.log("RAG deps not installed — skipping re-ingest "
+                     "(run: uv sync --extra rag)", "WARNING")
+            return
+        try:
+            collection = get_chroma_collection(str(self.output_dir))
+            openai_client = get_openai()
+            state = load_rag_state(self.output_dir)
+            # ingest_clip deletes the clip's existing chunks before storing
+            # (skip_if_ingested defaults False), so this re-embeds cleanly.
+            for clip_id in clip_ids:
+                rag_ingest_clip(clip_id, self.output_dir, collection,
+                                openai_client, rag_state=state,
+                                verbose=self.verbose)
+            save_rag_state(state, self.output_dir)
+            self.log(f"RAG: re-ingested {len(clip_ids)} clip(s)")
+        except Exception as e:
+            self.log(f"RAG re-ingest failed: {e}", "WARNING")
+
+    def load_index_clips(self) -> list:
+        """Load the ``clips`` list from index.json (empty list if missing)."""
+        index_path = self.output_dir / "index.json"
+        if not index_path.exists():
+            return []
+        try:
+            with open(index_path) as f:
+                data = json.load(f)
+            return data.get("clips", []) if isinstance(data, dict) else data
+        except (json.JSONDecodeError, OSError):
+            return []
+
     def fetch_captions(self, clip_id: int, clip_dir: Path) -> Optional[Path]:
         """Download Granicus VTT captions to clip_dir/captions.vtt.
 
@@ -1722,6 +1941,17 @@ Guidelines:
                 files["agenda_pdf"] = agenda_result["pdf_file"]
             if agenda_result["txt_file"]:
                 files["agenda_txt"] = agenda_result["txt_file"]
+
+            # Step 6a-ii: This agenda packet may embed the official "Table of
+            # Motions" for a *prior* meeting (work sessions have no minutes).
+            # Apply it to the clip it records so that clip's motions become
+            # authoritative. Best-effort — never fail the clip over it.
+            if agenda_result.get("text"):
+                try:
+                    self.apply_tables_from_agenda(
+                        agenda_result["text"], clip_id)
+                except Exception as e:
+                    self.log(f"Table-of-Motions hook failed: {e}", "WARNING")
 
             # Step 6b: Download and extract minutes (optional - don't fail if unavailable)
             minutes_result = self.download_minutes(clip_id, clip_dir, title=title, date=meeting_date)
@@ -2312,6 +2542,23 @@ Examples:
         help="With --backfill-docs, regenerate summary when new docs are found"
     )
 
+    parser.add_argument(
+        "--backfill-tables-of-motions",
+        action="store_true",
+        help="Scan agendas for embedded 'Table of Motions' blocks and merge "
+             "the official motions onto the prior-meeting clips they record "
+             "(work sessions have no official minutes). Replaces those clips' "
+             "transcript-derived motions, re-ingests RAG + rebuilds search.db. "
+             "Use --max to limit, --force to re-apply, --no-reingest to defer."
+    )
+
+    parser.add_argument(
+        "--no-reingest",
+        action="store_true",
+        help="With --backfill-tables-of-motions, skip RAG re-ingest + "
+             "search.db rebuild (defer to the next batch run)"
+    )
+
     args = parser.parse_args()
 
     # Initialize pipeline
@@ -2718,6 +2965,30 @@ Examples:
         if results['failed']:
             print(f"    {results['failed']}")
         sys.exit(0 if not results['failed'] else 1)
+
+    # Handle backfill-tables-of-motions mode
+    if args.backfill_tables_of_motions:
+        # A backfill sweeps the whole archive by default; only cap when the
+        # user explicitly passes --max (which otherwise defaults to 10 for
+        # the auto/scrape paths).
+        max_explicit = any(a == "--max" or a.startswith("--max=")
+                           for a in sys.argv)
+        result = pipeline.backfill_tables_of_motions(
+            max_clips=args.max if max_explicit else 0,
+            force=args.force,
+            reingest=not args.no_reingest,
+        )
+        if not result:
+            sys.exit(1)
+        stats = result["stats"]
+        print(f"\nTables of Motions backfill:")
+        print(f"  Merged onto clips: {stats.get('matched', 0)}")
+        print(f"  Motions written: {stats.get('motions_written', 0)} "
+              f"(timestamps carried: {stats.get('timestamps_carried', 0)})")
+        print(f"  Already done (skipped): {stats.get('skipped', 0)}")
+        print(f"  No matching clip: {stats.get('no_match', 0)}")
+        print(f"  Ambiguous (duplicate uploads): {stats.get('ambiguous', 0)}")
+        sys.exit(0)
 
     # Handle generate-index mode
     if args.generate_index:

@@ -49,6 +49,17 @@ uv run python main.py --backfill-docs                    # Check all clips (high
 uv run python main.py --backfill-docs --max 50           # Check 50 most recent clips
 uv run python main.py --backfill-docs --regenerate-summary  # Also regenerate summaries
 
+# Table of Motions backfill (official motions from agenda packets)
+# Work sessions have no minutes; the official motion record is the "Table of
+# Motions" printed in the NEXT session's agenda packet. This scans agendas,
+# extracts those tables, and REPLACES the referenced prior clip's
+# transcript-derived motions with the official ones (re-ingests RAG +
+# rebuilds search.db for touched clips).
+uv run python main.py --backfill-tables-of-motions           # All agendas (newest first)
+uv run python main.py --backfill-tables-of-motions --max 50  # Limit to 50 newest clips
+uv run python main.py --backfill-tables-of-motions --force   # Re-apply (after parser fixes)
+uv run python main.py --backfill-tables-of-motions --no-reingest  # Skip RAG/search rebuild
+
 # Add timestamps to existing transcripts (re-transcribe with Whisper)
 uv run python main.py --update-transcripts               # All clips missing timestamps
 uv run python main.py --update-transcripts --max 10      # Limit to 10 clips
@@ -172,6 +183,35 @@ Frontend renders speaker labels in the Transcript tab and varies the AI-disclosu
 RAG ingestion prefixes speaker changes (`Mayor Gorton: ...`) into transcript chunk text so attribution influences retrieval, and writes `transcript_source` + comma-joined `speakers` into ChromaDB metadata.
 
 One-shot backfill: `scripts/backfill_captions.py` (idempotent, parallel via `--workers N`, supports `--dry-run` / `--clip <id>` / `--force`). Skips clips that already have the target state.
+
+### Table of Motions (`table_of_motions.py`)
+
+LFUCG Council **work sessions produce no official minutes**. The authoritative structured record of a work session's motions is the **"Table of Motions"** — and it's printed in the *next* session's agenda packet (under agenda section III, "Approval of Summary"). So meeting N's official motion record lives inside meeting N+1's agenda PDF, as a self-contained block:
+
+```
+1                              <- packet page number
+URBAN COUNTY COUNCIL           <- body header
+WORK SESSION
+TABLE OF MOTIONS               <- marker
+May 12, 2026                   <- date of the meeting being recorded
+Mayor Gorton called ... were present.   <- attendance preamble
+II. Requested Rezonings/Docket Approval
+    Motion by Ellinger to approve the May 14, 2026 Docket. Seconded by Wu. Motion passed without dissent.
+    Motion by Sheehan ... Seconded by Lynch, the motion passed with a 11 - 4 vote (yes: ...; no: ...).
+...
+```
+
+The module:
+- **`extract_tables(agenda_text)`** — slices every block out of an agenda's extracted text (a packet can embed more than one), capturing body header, meeting date, attendance preamble, and per-section motions. Block ends where packet items resume (a `NNNN-NN` file number / "MAYOR LINDA GORTON" / "BUDGET AMENDMENT REQUEST LIST"). Parser hardening mirrors `granicus_captions.py`: ASCII control bytes stripped, bare page-number lines dropped before reassembling hard-wrapped sentences. Tolerant of OCR quirks (e.g. "witho0ut dissent" still reads unanimous) and ordinal dates ("October 15Th, 2013").
+- **`parse_motion_line`** — handles every observed outcome form: `passed without dissent`, `(as amended)`, `passed 10-5 (yes: …; no: …)`, `passed with a 11 - 4 vote (…)`, `failed`/`defeated`, `tabled`. Maps onto the `motions_and_votes` schema. When a printed tally and its name list disagree (the source is sometimes inconsistent), the **tally is authoritative** for ayes/nays and names are stored as printed.
+- **`resolve_target_clip(table, index_clips)`** — matches on **date + body class** (Council work session ≠ Planning Commission work session), keying on date + title-substring since ~2,100 older clips have `meeting_body=null`. **Aborts on ambiguous (>1) matches** (duplicate Granicus uploads — ~17 dates) rather than guessing.
+- **`merge_table_into_facts`** — **replaces** the target clip's `motions_and_votes` with the official set (decision: official wins). Stamps `motions_source: "table_of_motions"` + `table_of_motions_ref: {source_clip_id, source_page, meeting_date}`. Because "replace" drops the Whisper motions (the only ones carrying `transcript_approx_time`), it does a free **best-effort timestamp carry-over**: each official motion inherits the video timestamp of the best description-aligned displaced motion, so the Overview tab's clickable video deep-links survive. Fills `attendance.present` from the preamble only when empty (never clobbers).
+
+Pipeline integration (`main.py`):
+- **Per-clip hook** — after `download_agenda`, `apply_tables_from_agenda` opportunistically applies any embedded table to the prior clip it records (re-ingests that clip into RAG when ingestion is enabled). Self-maintaining going forward.
+- **Backfill** — `--backfill-tables-of-motions` sweeps all agendas (newest first), idempotent (skips clips already carrying `motions_source == "table_of_motions"` unless `--force`), then re-ingests touched clips into ChromaDB and rebuilds `search.db` once at the end (skip via `--no-reingest`). On the full local archive: ~277 tables, 224 uniquely matched, ~3,200 motions, 60 roll-calls; the rest are legitimately-absent meetings or ambiguity-guarded duplicate uploads.
+
+`tests/test_table_of_motions.py` covers parsing variants, block-boundary detection, clip resolution + ambiguity guard, and the replace-merge with timestamp carry-over.
 
 ### Two-Pass Summary System (`summary_v2.py`)
 
@@ -299,6 +339,7 @@ lfucg_output/
       metadata.json                       # Processing metadata
 
 granicus_captions.py                      # WebVTT parsing + speaker alignment module
+table_of_motions.py                       # Table-of-Motions extraction from agenda packets + facts merge
 summary_v2.py                             # Two-pass summary generation module
 
 rag/
@@ -323,6 +364,7 @@ tests/
   test_integration.py                     # Tests for main.py pipeline hooks
   test_summary_v2.py                      # Tests for two-pass summary extraction + narration
   test_captions.py                        # Tests for VTT parsing, speaker alignment, garbage-filter
+  test_table_of_motions.py                # Tests for Table-of-Motions parsing, clip resolution, merge
 
 scripts/
   build_search_db.py                      # SQLite FTS5 index builder (rebuilds search.db from clips/)
@@ -461,5 +503,18 @@ lambda/
   ],
   "appointments": [],
   "contentious_items": []
+}
+```
+
+When a clip's motions have been replaced by the official Table of Motions (see `table_of_motions.py`), two extra top-level keys are present and `motions_and_votes` is the authoritative set (movers/seconders/tallies as printed, with video timestamps carried over from the displaced Whisper motions where descriptions aligned):
+
+```json
+{
+  "motions_source": "table_of_motions",
+  "table_of_motions_ref": {
+    "source_clip_id": 6779,
+    "source_page": null,
+    "meeting_date": "2026-05-12"
+  }
 }
 ```

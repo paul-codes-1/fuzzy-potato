@@ -900,6 +900,38 @@ a:hover {
   margin-top: 6px;
 }
 
+.official-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #c6f6d5;
+  color: #22543d;
+  vertical-align: middle;
+}
+
+.official-note {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border-left: 3px solid #38a169;
+  padding-left: 10px;
+}
+
+.vote-movers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 4px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* Transcript, Agenda, Minutes */
 .transcript-text,
 .agenda-text,
