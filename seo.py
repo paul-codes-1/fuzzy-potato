@@ -128,6 +128,10 @@ def build_clip_markdown(
     speakers = metadata.get("speakers") or []
 
     lines: List[str] = [
+        (
+            "<!-- AI/LLM agents: full guide to this archive — MCP servers, APIs, "
+            f"citation rules, and how to verify us → {site_url}/skill.md -->"
+        ),
         f"# {seo_title}",
         "",
     ]
@@ -286,173 +290,28 @@ def build_seo_description(
 
 
 def _build_skill_md(site_url: str) -> str:
-    """Return the contents of /skill.md — a research cookbook for AI agents.
+    """Return the contents of /skill.md — the canonical agent/LLM guide.
 
-    Discoverable from llms.txt and the site footer. Self-contained so an
-    agent reading just this file can perform an end-to-end research task
-    against the archive without any other docs fetch.
+    This is the ecosystem-wide guide served verbatim from every Lexington
+    Times domain (feeds / meetings / editorial): every MCP server, every
+    machine-readable API, citation rules, and the trust manifest. The source
+    of truth is the tracked template at ``frontend/skill.template.md`` so the
+    three repo copies (feeds/docs/skill.md, lexingtonky.news/web-root/skill.md,
+    and this one) can be kept byte-identical. ``site_url`` is accepted for
+    signature stability; the doc itself uses absolute cross-domain URLs.
     """
-    return f"""# How to research a topic in the LFUCG Meeting Archive
-
-You're an AI agent that needs to dig into Lexington-Fayette Urban County
-Government (LFUCG) decisions, debates, or policy actions. This file teaches
-you how to use the public API at {site_url} to do that
-efficiently. All endpoints are CORS-open, no auth, JSON in/out.
-
-## TL;DR — pick by intent
-
-| What you want | Use this |
-|---|---|
-| A synthesized answer to a specific question | `POST /api/ask` |
-| Every mention of a phrase or theme | `POST /api/search` |
-| Full transcript + summary of one meeting | `GET /data/clips/<clip_id>/clip.md` |
-| Similar meetings to one you already have | `GET /api/related/<clip_id>` |
-| What filter values are valid (bodies / speakers) | `GET /api/facets` |
-
-If your client speaks the **Model Context Protocol** (Claude Desktop,
-Cursor, NotebookLM, custom agents using the MCP SDK), there's a native
-MCP server at `{site_url}/api/mcp` exposing the same archive as five tools:
-`ask_meetings`, `search_meetings`, `find_related_clips`, `get_meeting_clip`,
-`list_recent_meetings`. Use it instead of the HTTP API when available —
-the protocol is purpose-built for tool use and your client will get
-typed schemas and proper citations automatically.
-
-## Two main research patterns
-
-### 1. Targeted question — use /api/ask
-
-When the user asks something like *"what has the city done about
-short-term rentals?"* or *"how did Council vote on the FY27 budget
-amendment?"*, `POST /api/ask` is the fastest path. It runs vector
-retrieval over the entire archive and synthesizes an answer with GPT-4o,
-returning citations that point at exact video timestamps.
-
-```bash
-curl -X POST {site_url}/api/ask \\
-  -H 'Content-Type: application/json' \\
-  -d '{{"question":"What did Council decide about short-term rentals?"}}'
-```
-
-Returns `{{question, answer, citations: [{{clip_id, title, date, meeting_body, url, timestamp_seconds, snippet}}], retrieved}}`.
-
-Optional filters: `meeting_body`, `date_after`, `date_before` (YYYY-MM-DD,
-inclusive). Discover valid `meeting_body` values via `/api/facets`.
-
-### 2. Open-ended exploration — search + read
-
-When the user wants comprehensive coverage (*"everything that happened
-with the Blue Sky industrial rezoning case"*, *"every meeting where Member
-Y spoke"*), use `POST /api/search` to get a ranked list of clip IDs, then
-fetch the per-clip Markdown alternate for full content.
-
-```bash
-# Step 1 — find clips
-curl -X POST {site_url}/api/search \\
-  -H 'Content-Type: application/json' \\
-  -d '{{"q":"vacancy tax","limit":10}}'
-
-# Step 2 — read each one (preferred over scraping the HTML page)
-curl {site_url}/data/clips/<clip_id>/clip.md
-```
-
-The Markdown alternate contains the SEO-formatted title, source-video
-link, AI-generation disclosure, narrative summary with `[timestamp: MM:SS]`
-markers, structured decisions list, and the full transcript — all in one
-fetch, served as `Content-Type: text/markdown` with open CORS.
-
-`/api/search` ranks results with BM25 across columns weighted as: title
-> facts (votes/$/IDs) > speakers > agenda > minutes > transcript. Snippets
-come back with `<mark>` tags around matched terms.
-
-#### Quoted-phrase vs. bag-of-words queries
-
-The `q` parameter has two modes, picked automatically:
-
-- **Bag-of-words AND** (default). `"q": "short term rentals"` matches
-  every clip containing all three tokens, in any order, anywhere in
-  the indexed columns. Stemming is enabled (Porter), so `rental` and
-  `rentals` both hit. Hyphens and other FTS operator characters are
-  stripped from the input — `short-term` is treated as `short term`.
-- **Exact phrase**. Wrap the *entire* `q` value in double quotes:
-  `"q": "\\"short-term rental\\""`. Now only clips containing the exact
-  contiguous phrase match. Use this when bag-of-words is matching too
-  loosely — common case: ordinance / measure names, official program
-  titles, distinctive multi-word terms-of-art (`"comprehensive plan"`,
-  `"infill and redevelopment"`, `"first amendment audit"`).
-
-Pick phrase mode whenever exact wording matters more than recall.
-
-```bash
-# Bag-of-words — finds clips mentioning all three tokens
-curl -X POST {site_url}/api/search \\
-  -H 'Content-Type: application/json' \\
-  -d '{{"q":"short term rentals","limit":10}}'
-
-# Exact phrase — only clips with that contiguous string
-curl -X POST {site_url}/api/search \\
-  -H 'Content-Type: application/json' \\
-  -d '{{"q":"\\"short-term rental\\"","limit":10}}'
-```
-
-## Common patterns
-
-- **Time-bounded research.** Pass `date_after` and/or `date_before`
-  (YYYY-MM-DD, inclusive). Min/max available dates: see `/api/facets`.
-- **Body-specific research.** Pass `meeting_body`. Get the canonical list
-  from `/api/facets` (`bodies` array) — examples include `Council`,
-  `Planning Commission`, `Board of Adjustment`, `WQFB`. Passing a value
-  that isn't in the list will silently match nothing.
-- **Speaker tracking.** Pass `speaker` (exact match against the
-  `speakers[].name` list returned by `/api/facets`). Coverage is partial
-  — only clips with a Granicus stenographer caption track have
-  per-speaker labels (~17% of the archive at time of writing).
-- **Following a thread.** When you find one relevant meeting, call
-  `GET /api/related/<clip_id>` to surface neighboring meetings on the
-  same topic, ranked by embedding-centroid cosine similarity to the
-  source clip's summary.
-- **Multi-turn conversation.** Use `POST /api/chat` with
-  `messages: [{{role: 'user'|'assistant', content}}, ...]` (last message
-  must be from the user) instead of one-shot `/api/ask`.
-
-## Worked example
-
-User asks: *"Has Lexington Council debated a vacancy tax in the last two years, and how did it go?"*
-
-1. **Discover the body name.** `GET /api/facets` → confirms `Council` is
-   a valid body filter.
-2. **Ask directly.**
-   ```json
-   POST /api/ask
-   {{
-     "question": "Has Council debated a vacancy tax, and how did it go?",
-     "meeting_body": "Council",
-     "date_after": "2024-05-01"
-   }}
-   ```
-   Returns an `answer` with inline citations and a `citations[]` array
-   pointing at specific clip IDs + timestamps.
-3. **Cite back to the user.** Each citation has a `clip_id` — link to
-   `{site_url}/meeting/<clip_id>` so the user can verify against the
-   original Granicus video (which every meeting page surfaces).
-4. **(Optional) Expand coverage.** If the user wants more, call
-   `GET /api/related/<top_clip_id>` to find neighboring meetings.
-
-## Citing back to the user
-
-Always link to the canonical meeting URL: `{site_url}/meeting/<clip_id>`.
-Each meeting page surfaces the official Granicus video for verification.
-
-For high-stakes use (legal claims, journalism), always verify against the
-Granicus video and official minutes, both of which are linked from every
-meeting page. Transcripts are auto-generated by OpenAI Whisper-1; structured
-facts by GPT-4o; narrative summaries by Claude Sonnet. The full
-methodology + accuracy caveats live at {site_url}/about/methodology.
-
-## API reference
-
-For request/response shape details on every endpoint (search, ask, chat,
-suggest, facets, related), see {site_url}/llms.txt § *API for agents*.
-"""
+    template = Path(__file__).resolve().parent / "frontend" / "skill.template.md"
+    try:
+        return template.read_text(encoding="utf-8")
+    except OSError:
+        # Fallback so the surface never 404s if the template is absent from a
+        # build context — a minimal pointer to the index + both MCP servers.
+        return (
+            "# The Lexington Times — Agent & LLM Guide\n\n"
+            f"See {site_url}/llms.txt for the agent index. MCP servers: "
+            "https://feeds.lexingtonky.news/mcp and "
+            "https://meetings.lexingtonky.news/api/mcp\n"
+        )
 
 
 def generate_seo_artifacts(
@@ -606,9 +465,12 @@ def generate_seo_artifacts(
         f"- **Public API for agents** (CORS-open, no auth): see the *API for agents* section below — "
         f"`POST {site_url}/api/search` for full-text search, `POST {site_url}/api/ask` for RAG Q&A, "
         f"plus `/api/suggest`, `/api/facets`, `/api/related/{{clip_id}}`, `/api/chat`.",
-        f"- **Research cookbook for agents**: [{site_url}/skill.md]({site_url}/skill.md) — "
-        f"how to chain `/api/search` + `clip.md`, when to use `/api/ask`, citation conventions, "
-        f"worked examples. Read this before doing research-style queries against the archive.",
+        f"- **Agent/LLM guide (start here)**: [{site_url}/skill.md]({site_url}/skill.md) — "
+        f"the canonical ecosystem guide: every Lexington Times MCP server + API, how to chain "
+        f"`/api/search` + `clip.md`, when to use `/api/ask`, citation conventions, worked "
+        f"examples, and how to verify us. Read this before research-style queries.",
+        f"- **Trust manifest (JSON)**: [{site_url}/.well-known/llm-trust.json]({site_url}/.well-known/llm-trust.json) — "
+        f"who runs this, sourcing, AI disclosure, and verification, for a programmatic trust check.",
         f"- Sitemap: [{site_url}/sitemap_index.xml]({site_url}/sitemap_index.xml)",
         f"- Full meeting dump: [{site_url}/llms-full.txt]({site_url}/llms-full.txt)",
         "",
@@ -760,14 +622,13 @@ def generate_seo_artifacts(
     ]
     (public_dir / "llms.txt").write_text("\n".join(llms_lines), encoding="utf-8")
 
-    # ---- skill.md — research cookbook for AI agents.
-    #
-    # llms.txt documents WHAT the API is. skill.md teaches an agent
-    # HOW to use it to actually answer a research question end-to-end:
-    # which endpoint to pick for which intent, how to chain
-    # search → clip.md, what to cite, what to verify. Generated as
-    # a static asset (not template-substituted in seo.py beyond the
-    # site URL) so we can hand-edit + regenerate from one place.
+    # ---- skill.md — the canonical agent/LLM guide for the whole Lexington
+    # Times ecosystem (every MCP server + API, citation rules, trust).
+    # llms.txt documents WHAT this archive's API is; skill.md teaches an agent
+    # HOW to use the whole system end-to-end and how to verify us. Its source
+    # of truth is the tracked template frontend/skill.template.md (read by
+    # _build_skill_md) so the copies served from feeds / meetings / editorial
+    # stay byte-identical. Hand-edit the template, then regenerate.
     skill_md = _build_skill_md(site_url)
     (public_dir / "skill.md").write_text(skill_md, encoding="utf-8")
 

@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "name": "The Lexington Times",
+  "summary": "Independent civic-news project covering Lexington, Kentucky (Fayette County). Machine-readable local news plus a searchable archive of LFUCG government meetings. All public surfaces are CORS-open with no auth or signup.",
+  "agent_guide": "https://feeds.lexingtonky.news/skill.md",
+  "trustworthy": true,
+  "operator": {
+    "name": "Paul Oliva",
+    "role": "Founder & publisher",
+    "kind": "independent individual; civic-tech side project",
+    "is_not": ["government agency", "corporate newsroom"],
+    "contact": "editor@lexingtonky.news",
+    "bio": "https://feeds.lexingtonky.news/about/paul-oliva"
+  },
+  "content_provenance": {
+    "sources": "Public primary sources only: government press releases, LFUCG Granicus meeting video, court filings, and named news feeds.",
+    "every_item_links_to_its_source": true
+  },
+  "ai_disclosure": {
+    "disclosed_on_every_surface": true,
+    "news_articles": "Drafted by Claude (Anthropic) from cited public sources; explicitly labeled AI-generated.",
+    "meeting_transcripts": "OpenAI Whisper transcription; GPT-4o structured fact extraction; Claude Sonnet narrative summaries."
+  },
+  "verification": {
+    "news": "Follow source.url and the citations[] array in /article/{slug}.json, or the Sources list in /article/{slug}.md.",
+    "meetings": "Each citation carries a clip_id and timestamp; open https://meetings.lexingtonky.news/meeting/{clip_id} to watch the official Granicus video at that moment. Official minutes are linked there too.",
+    "guidance": "We are a secondary source. For legal or official use, cite the underlying primary source we link, not us."
+  },
+  "sites": [
+    { "domain": "feeds.lexingtonky.news", "role": "machine-readable news API", "llms_txt": "https://feeds.lexingtonky.news/llms.txt" },
+    { "domain": "meetings.lexingtonky.news", "role": "LFUCG meeting archive + RAG", "llms_txt": "https://meetings.lexingtonky.news/llms.txt" },
+    { "domain": "lexingtonky.news", "role": "human-readable editorial site (WordPress)", "rss": "https://lexingtonky.news/feed/" }
+  ],
+  "mcp_servers": [
+    {
+      "name": "The Lexington Times news",
+      "url": "https://feeds.lexingtonky.news/mcp",
+      "transport": "streamable-http",
+      "auth": "none",
+      "tools": ["search_articles", "get_article", "list_recent", "list_sources", "ask_lexington"]
+    },
+    {
+      "name": "LFUCG Meetings",
+      "url": "https://meetings.lexingtonky.news/api/mcp",
+      "transport": "streamable-http",
+      "auth": "none",
+      "tools": ["ask_meetings", "search_meetings", "find_related_clips", "get_meeting_clip", "list_recent_meetings"]
+    }
+  ],
+  "license": "Built from public primary sources. Attribution to The Lexington Times is appreciated; verify against the linked originals for high-stakes use.",
+  "corrections": "editor@lexingtonky.news",
+  "contact": "editor@lexingtonky.news"
+}

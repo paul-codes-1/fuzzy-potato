@@ -53,6 +53,9 @@ Allow: /
 # Agent-friendly markdown index — see llmstxt.org
 LLM: https://meetings.lexingtonky.news/llms.txt
 LLM-Full: https://meetings.lexingtonky.news/llms-full.txt
+# Full agent/LLM guide (all MCP servers + APIs + how to verify us) and trust manifest
+LLM-Skill: https://meetings.lexingtonky.news/skill.md
+LLM-Trust: https://meetings.lexingtonky.news/.well-known/llm-trust.json
 
 Sitemap: https://meetings.lexingtonky.news/sitemap_index.xml
 Sitemap: https://meetings.lexingtonky.news/sitemap.xml

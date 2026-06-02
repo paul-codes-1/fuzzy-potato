@@ -134,7 +134,10 @@ class TestBuildClipMarkdown:
             "meeting_body": "Council",
         }
         md = build_clip_markdown(entry, tmp_path, "https://meetings.lexingtonky.news")
-        assert md.startswith("# Urban County Council - April 30, 2026\n")
+        # Top-of-file pointer for AI agents precedes the H1, then the SEO title.
+        assert md.startswith("<!-- AI/LLM agents:")
+        assert "/skill.md -->" in md.split("\n", 1)[0]
+        assert "# Urban County Council - April 30, 2026\n" in md
 
     def test_includes_disclosure_block(self, tmp_path):
         self._setup_clip(tmp_path)
