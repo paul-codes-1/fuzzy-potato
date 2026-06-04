@@ -56,6 +56,20 @@ _LFUCG_DEFAULTS: dict = {
     "source_youtube_channel_url": "",
     "source_youtube_title_date_pattern": "",
     "source_youtube_start_id": 1,
+    # Agenda-document source adapter (WS4). SEPARATE from the video source:
+    # YouTube counties have no in-band agendas, so a structured-agenda portal
+    # (CivicClerk / CivicPlus) supplies agenda/minutes keyed by meeting date.
+    # Read from the TOML's [agenda] section. Empty `agenda_type` means NO
+    # agenda source — LFUCG is in this bucket, so Granicus's own download_agenda
+    # is used exactly as today and behavior is byte-identical.
+    #   [agenda] type = "civicclerk" | "civicplus"
+    #   CivicClerk:  api_base = "https://<tenant>.api.civicclerk.com"
+    #                portal   = "https://<tenant>.portal.civicclerk.com" (optional)
+    #   CivicPlus:   base_url = "https://<host>"  (the /AgendaCenter path is appended)
+    "agenda_type": "",
+    "agenda_api_base": "",
+    "agenda_portal": "",
+    "agenda_base_url": "",
     # Public-facing identity (the prose/branding lifted out of seo.py,
     # rag/prompts.py, rag/mcp_server.py, rag/server.py). Defaults reproduce
     # the historical LFUCG literals so output stays byte-identical.
@@ -81,6 +95,10 @@ class Jurisdiction:
     source_youtube_channel_url: str
     source_youtube_title_date_pattern: str
     source_youtube_start_id: int
+    agenda_type: str
+    agenda_api_base: str
+    agenda_portal: str
+    agenda_base_url: str
     publication_name: str
     operator_name: str
     editor_email: str
@@ -111,6 +129,11 @@ def _load_toml(slug: str) -> dict:
         ("storage", ("chroma_collection",)),
         ("site", ("site_url",)),
         ("source", ("type",)),
+        # [agenda] (WS4): the structured-agenda portal. `type` -> agenda_type;
+        # `api_base`/`portal`/`base_url` -> agenda_api_base/agenda_portal/
+        # agenda_base_url. Absent for Granicus jurisdictions (LFUCG), so the
+        # defaults stay empty and no agenda source is built.
+        ("agenda", ("type", "api_base", "portal", "base_url")),
         ("publication", ("publication_name", "operator_name", "editor_email")),
     ):
         block = raw.get(sect, {})
@@ -118,11 +141,14 @@ def _load_toml(slug: str) -> dict:
             if key in block:
                 # A few keys are renamed on flatten so they don't collide:
                 # `granicus.host` -> `granicus_host`, `source.type` ->
-                # `source_type`. Everything else keeps its key name.
+                # `source_type`, and every `agenda.*` key gets an `agenda_`
+                # prefix. Everything else keeps its key name.
                 if (sect, key) == ("granicus", "host"):
                     flat_key = "granicus_host"
                 elif (sect, key) == ("source", "type"):
                     flat_key = "source_type"
+                elif sect == "agenda":
+                    flat_key = f"agenda_{key}"
                 else:
                     flat_key = key
                 flat[flat_key] = block[key]
@@ -178,6 +204,10 @@ def get_config() -> Jurisdiction:
         source_youtube_channel_url=base["source_youtube_channel_url"],
         source_youtube_title_date_pattern=base["source_youtube_title_date_pattern"],
         source_youtube_start_id=int(base["source_youtube_start_id"]),
+        agenda_type=base["agenda_type"],
+        agenda_api_base=base["agenda_api_base"],
+        agenda_portal=base["agenda_portal"],
+        agenda_base_url=base["agenda_base_url"],
         publication_name=base["publication_name"],
         operator_name=base["operator_name"],
         editor_email=base["editor_email"],
