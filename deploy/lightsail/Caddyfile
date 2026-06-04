@@ -20,5 +20,8 @@ meetings-origin.lexingtonky.news {
 	handle /admin/* {
 		respond 404
 	}
+	# Ops marker so we can tell which origin CloudFront is hitting
+	# (box vs the legacy App Runner during/after cutover).
+	header X-Served-By "lfucg-meetings"
 	reverse_proxy 127.0.0.1:8000
 }
