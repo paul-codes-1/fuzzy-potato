@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 import httpx
 
 from config import get_config
-from sources import MeetingRef, make_source
+from sources import MeetingRef, make_agenda_source, make_source
 from granicus_captions import (
     align_speakers_to_segments,
     parse_vtt,
@@ -121,6 +121,17 @@ class LFUCGPipeline:
         self.source.force_reprocess = self._force_reprocess
         self.source.progress = self.progress
 
+        # Optional, SEPARATE agenda-document portal (WS4). None for LFUCG (no
+        # [agenda] config → Granicus supplies agendas in-band, untouched).
+        # Only built for jurisdictions whose video source has no agendas
+        # (e.g. YouTube counties on CivicClerk/CivicPlus). When None, the
+        # agenda/minutes fallback in process_clip / backfill_docs NEVER runs,
+        # so the Granicus path is byte-identical.
+        self.agenda_source = make_agenda_source(self.cfg, self.log)
+        if self.agenda_source is not None:
+            self.agenda_source.force_reprocess = self._force_reprocess
+            self.agenda_source.progress = self.progress
+
     @property
     def force_reprocess(self) -> bool:
         return self._force_reprocess
@@ -133,6 +144,9 @@ class LFUCGPipeline:
         source = getattr(self, "source", None)
         if source is not None:
             source.force_reprocess = value
+        agenda_source = getattr(self, "agenda_source", None)
+        if agenda_source is not None:
+            agenda_source.force_reprocess = value
 
     def log(self, msg: str, level: str = "INFO"):
         """Log message with timestamp"""
@@ -895,8 +909,11 @@ Guidelines:
             title = metadata.get("title")
             meeting_date = metadata.get("date")
 
-            # Download minutes (force re-download to get latest)
-            minutes_result = self.source.download_minutes(clip_id, clip_dir, title=title, date=meeting_date)
+            # Download minutes (force re-download to get latest). AgendaSource
+            # fallback (WS4) only when empty AND configured — no-op for LFUCG.
+            minutes_result = self._minutes_with_fallback(
+                clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                body=metadata.get("meeting_body"))
             if minutes_result["pdf_file"]:
                 metadata["files"]["minutes_pdf"] = minutes_result["pdf_file"]
             if minutes_result["html_file"]:
@@ -1034,8 +1051,12 @@ Guidelines:
             has_agenda = files.get("agenda_txt") or files.get("agenda_pdf")
             if not has_agenda:
                 self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: checking for agenda...")
-                # Force download by ensuring no existing files match
-                agenda_result = self.source.download_agenda(clip_id, clip_dir, title=title, date=meeting_date)
+                # Force download by ensuring no existing files match. Falls
+                # back to the AgendaSource (WS4) only when empty AND configured
+                # — never for LFUCG/Granicus (agenda_source is None).
+                agenda_result = self._agenda_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=metadata.get("meeting_body"))
                 if agenda_result.get("pdf_file") or agenda_result.get("txt_file"):
                     if agenda_result["pdf_file"]:
                         metadata.setdefault("files", {})["agenda_pdf"] = agenda_result["pdf_file"]
@@ -1048,7 +1069,9 @@ Guidelines:
             has_minutes = files.get("minutes_txt") or files.get("minutes_pdf") or files.get("minutes_html")
             if not has_minutes:
                 self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: checking for minutes...")
-                minutes_result = self.source.download_minutes(clip_id, clip_dir, title=title, date=meeting_date)
+                minutes_result = self._minutes_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=metadata.get("meeting_body"))
                 if minutes_result.get("pdf_file") or minutes_result.get("html_file") or minutes_result.get("txt_file"):
                     if minutes_result["pdf_file"]:
                         metadata.setdefault("files", {})["minutes_pdf"] = minutes_result["pdf_file"]
@@ -1084,6 +1107,70 @@ Guidelines:
         self.log(f"\nBackfill complete: {len(results['updated'])} updated, "
                  f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
         return results
+
+    @staticmethod
+    def _doc_result_empty(result: dict) -> bool:
+        """True when an agenda/minutes download yielded nothing usable.
+
+        A result is "empty" when it has no PDF/HTML file AND no extracted text
+        — i.e. the GranicusSource/YouTubeSource miss-shape. Used to decide
+        whether the optional AgendaSource fallback should run.
+        """
+        if not result:
+            return True
+        return not (
+            result.get("pdf_file")
+            or result.get("html_file")
+            or result.get("txt_file")
+            or result.get("text")
+        )
+
+    def _agenda_with_fallback(self, clip_id: int, clip_dir: Path,
+                              title: Optional[str], meeting_date: Optional[str],
+                              body: Optional[str]) -> dict:
+        """Video-source agenda, falling back to the AgendaSource when empty.
+
+        The video source (Granicus/YouTube) is asked first — Granicus returns
+        a real agenda, YouTube returns the empty miss-shape. ONLY when that's
+        empty AND a separate ``agenda_source`` is configured do we fetch from
+        the structured-agenda portal keyed by meeting date (+ best-effort
+        body). For LFUCG ``self.agenda_source is None``, so the fallback NEVER
+        runs and the Granicus result passes through byte-identically.
+        """
+        result = self.source.download_agenda(
+            clip_id, clip_dir, title=title, date=meeting_date)
+        if (self.agenda_source is not None and meeting_date
+                and self._doc_result_empty(result)):
+            try:
+                fallback = self.agenda_source.fetch_for_date(
+                    meeting_date, body, clip_dir)
+                if not self._doc_result_empty(fallback):
+                    return fallback
+            except Exception as e:
+                self.log(f"Agenda-source fallback failed for clip {clip_id}: {e}", "WARNING")
+        return result
+
+    def _minutes_with_fallback(self, clip_id: int, clip_dir: Path,
+                               title: Optional[str], meeting_date: Optional[str],
+                               body: Optional[str]) -> dict:
+        """Video-source minutes, falling back to the AgendaSource when empty.
+
+        Same guard as ``_agenda_with_fallback``: the fallback runs only when
+        the video source returned nothing AND an ``agenda_source`` is
+        configured. None for LFUCG → Granicus minutes pass through unchanged.
+        """
+        result = self.source.download_minutes(
+            clip_id, clip_dir, title=title, date=meeting_date)
+        if (self.agenda_source is not None and meeting_date
+                and self._doc_result_empty(result)):
+            try:
+                fallback = self.agenda_source.fetch_minutes_for_date(
+                    meeting_date, body, clip_dir)
+                if not self._doc_result_empty(fallback):
+                    return fallback
+            except Exception as e:
+                self.log(f"Minutes-source fallback failed for clip {clip_id}: {e}", "WARNING")
+        return result
 
     def _apply_one_table(self, table, source_clip_id: int, clips: list,
                          force: bool = False) -> dict:
@@ -1492,8 +1579,13 @@ Guidelines:
                 if transcript_segments:
                     files["transcript_segments"] = segments_filename
 
-            # Step 6: Download and extract agenda (optional - don't fail if unavailable)
-            agenda_result = self.source.download_agenda(clip_id, clip_dir, title=title, date=meeting_date)
+            # Step 6: Download and extract agenda (optional - don't fail if
+            # unavailable). Falls back to the separate AgendaSource (WS4) only
+            # when the video source has no agenda AND one is configured — never
+            # for LFUCG/Granicus (agenda_source is None).
+            agenda_result = self._agenda_with_fallback(
+                clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                body=clip_metadata.get("meeting_body"))
             if agenda_result["pdf_file"]:
                 files["agenda_pdf"] = agenda_result["pdf_file"]
             if agenda_result["txt_file"]:
@@ -1510,8 +1602,12 @@ Guidelines:
                 except Exception as e:
                     self.log(f"Table-of-Motions hook failed: {e}", "WARNING")
 
-            # Step 6b: Download and extract minutes (optional - don't fail if unavailable)
-            minutes_result = self.source.download_minutes(clip_id, clip_dir, title=title, date=meeting_date)
+            # Step 6b: Download and extract minutes (optional - don't fail if
+            # unavailable). Same AgendaSource fallback as the agenda step;
+            # no-op for LFUCG (agenda_source is None).
+            minutes_result = self._minutes_with_fallback(
+                clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                body=clip_metadata.get("meeting_body"))
             if minutes_result["pdf_file"]:
                 files["minutes_pdf"] = minutes_result["pdf_file"]
             if minutes_result["html_file"]:
