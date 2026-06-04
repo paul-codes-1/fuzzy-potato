@@ -12,7 +12,7 @@ from config import get_config
 
 _NAME = get_config().name
 
-QUERY_REWRITE_PROMPT = f"""You are a search query optimizer for a {_NAME} (LFUCG) meeting archive.
+QUERY_REWRITE_PROMPT = f"""You are a search query optimizer for a {_NAME} meeting archive.
 
 The archive is stored in a vector database (ChromaDB) with semantic search over these 5 source types per meeting clip:
 1. **summary** — AI-generated narrative sections split by headers like "Public Comments & Citizen Input", "Votes & Decisions", "Financial Matters", "Key Agenda Items", etc. Contains speaker names, vote outcomes, and [timestamp: MM:SS] markers.

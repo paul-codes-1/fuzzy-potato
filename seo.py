@@ -63,7 +63,7 @@ def build_seo_title(title: Optional[str], iso_date: Optional[str]) -> str:
     formatted = format_long_date(iso_date)
     if cleaned and formatted:
         return f"{cleaned} - {formatted}"
-    return cleaned or formatted or "LFUCG Meeting"
+    return cleaned or formatted or f"{get_config().slug.upper()} Meeting"
 
 
 def _format_revision_date(iso: Optional[str]) -> str:

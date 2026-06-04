@@ -256,7 +256,7 @@ class TestSyntheticJurisdictionIdentity:
             # excluded (catches any stray jurisdiction-prose reference).
             assert "Lexington" not in cleaned, f"'Lexington' leaked into {name}"
 
-    def test_mcp_instructions_carry_testville_identity(self, testcounty_config):
+    def test_mcp_instructions_carry_testville_identity(self, testcounty_config, monkeypatch):
         import rag.mcp_server as mcp_module
 
         # SERVER_INSTRUCTIONS + SITE_URL are computed at import time, so reload
@@ -269,18 +269,28 @@ class TestSyntheticJurisdictionIdentity:
             for bad in _FORBIDDEN:
                 assert bad not in instructions, f"{bad!r} leaked into MCP instructions"
         finally:
-            # Restore the module to the default-jurisdiction state for other tests.
+            # Restore the DEFAULT jurisdiction in the env BEFORE reloading, so the
+            # module doesn't carry testcounty SITE_URL/instructions into later tests.
+            monkeypatch.setenv("JURISDICTION", "lfucg")
             get_config.cache_clear()
             importlib.reload(mcp_module)
 
-    def test_fastapi_title_carries_testville_identity(self, testcounty_config):
-        # rag/server.py builds the FastAPI title from publication_name at import.
-        title = f"{get_config().publication_name} RAG API"
-        assert title == "Testville Meeting Archive RAG API"
-        for bad in _FORBIDDEN:
-            assert bad not in title
+    def test_fastapi_title_carries_testville_identity(self, testcounty_config, monkeypatch):
+        # rag/server.py builds the FastAPI title from publication_name at import,
+        # so reload it under the active jurisdiction and assert the real app.title.
+        import rag.server as server_module
 
-    def test_synthesis_prompt_carries_testville_identity(self, testcounty_config):
+        server_module = importlib.reload(server_module)
+        try:
+            assert server_module.app.title == "Testville Meeting Archive RAG API"
+            for bad in _FORBIDDEN:
+                assert bad not in server_module.app.title
+        finally:
+            monkeypatch.setenv("JURISDICTION", "lfucg")
+            get_config.cache_clear()
+            importlib.reload(server_module)
+
+    def test_synthesis_prompt_carries_testville_identity(self, testcounty_config, monkeypatch):
         import rag.prompts as prompts_module
 
         # _NAME (and the prompt strings) are computed at import time.
@@ -288,9 +298,17 @@ class TestSyntheticJurisdictionIdentity:
         try:
             assert "Testville City Council" in prompts_module.SYNTHESIS_SYSTEM_PROMPT
             assert "Testville City Council" in prompts_module.CHAT_SYSTEM_PROMPT
-            for bad in ("Lexington", "lexingtonky"):
-                assert bad not in prompts_module.SYNTHESIS_SYSTEM_PROMPT
-                assert bad not in prompts_module.CHAT_SYSTEM_PROMPT
+            # The query-rewrite prompt previously hard-coded "(LFUCG)" after the
+            # name — guard it explicitly so that leak can't return.
+            assert "Testville City Council" in prompts_module.QUERY_REWRITE_PROMPT
+            for prompt in (
+                prompts_module.SYNTHESIS_SYSTEM_PROMPT,
+                prompts_module.CHAT_SYSTEM_PROMPT,
+                prompts_module.QUERY_REWRITE_PROMPT,
+            ):
+                for bad in ("LFUCG", "Lexington", "lexingtonky"):
+                    assert bad not in prompt
         finally:
+            monkeypatch.setenv("JURISDICTION", "lfucg")
             get_config.cache_clear()
             importlib.reload(prompts_module)

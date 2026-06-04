@@ -112,7 +112,7 @@ if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
   echo "==> Invalidation created. Usually completes in 1-2 minutes."
 else
   echo "==> Skipping CloudFront invalidation (CLOUDFRONT_DISTRIBUTION_ID not set)"
-  echo "   Set it with: export CLOUDFRONT_DISTRIBUTION_ID=E8OIXOXDRETLZ"
+  echo "   Set it with: export CLOUDFRONT_DISTRIBUTION_ID=YOUR_CF_DIST_ID"
 fi
 
 echo "==> Deploy complete!"
