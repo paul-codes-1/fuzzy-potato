@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from xml.sax.saxutils import escape
 
+from config import get_config
+
 # Granicus appends a part-number suffix like " (1)" to every clip title.
 # Strip it for SEO so titles read naturally on Google / social cards.
 _GRANICUS_SUFFIX_RE = re.compile(r"\s*\(\d+\)\s*$")
@@ -61,7 +63,7 @@ def build_seo_title(title: Optional[str], iso_date: Optional[str]) -> str:
     formatted = format_long_date(iso_date)
     if cleaned and formatted:
         return f"{cleaned} - {formatted}"
-    return cleaned or formatted or "LFUCG Meeting"
+    return cleaned or formatted or f"{get_config().slug.upper()} Meeting"
 
 
 def _format_revision_date(iso: Optional[str]) -> str:
@@ -97,6 +99,7 @@ def build_clip_markdown(
       6. Full transcript (from transcript.txt) — last so length-capped
          agents that read top-to-bottom still get the structured data.
     """
+    cfg = get_config()
     clip_id = entry.get("clip_id")
     if clip_id is None:
         return None
@@ -168,7 +171,7 @@ def build_clip_markdown(
             "the narrative summary was written by Anthropic Claude Sonnet. Verbatim "
             "wording and speaker attribution may contain errors. "
             f"See [methodology]({site_url}/about/methodology) or "
-            "[report a correction](mailto:editor@lexingtonky.news)."
+            f"[report a correction](mailto:{cfg.editor_email})."
         )
     elif transcript_source == "whisper-1+vtt-speakers":
         disclosure = (
@@ -178,7 +181,7 @@ def build_clip_markdown(
             "extracted with GPT-4o; the narrative summary was written by "
             "Anthropic Claude Sonnet. Speaker labels and verbatim wording may "
             f"contain errors. See [methodology]({site_url}/about/methodology) "
-            "or [report a correction](mailto:editor@lexingtonky.news)."
+            f"or [report a correction](mailto:{cfg.editor_email})."
         )
     else:
         disclosure = (
@@ -187,7 +190,7 @@ def build_clip_markdown(
             "were extracted with GPT-4o; the narrative summary was written by "
             "Anthropic Claude Sonnet. Speaker labels and verbatim wording may "
             f"contain errors. See [methodology]({site_url}/about/methodology) "
-            "or [report a correction](mailto:editor@lexingtonky.news)."
+            f"or [report a correction](mailto:{cfg.editor_email})."
         )
 
     lines += [disclosure, "", "---", ""]
@@ -335,7 +338,8 @@ def generate_seo_artifacts(
             every generated link.
         log: Logger callback `(message, level=...)` — defaults to stdout.
     """
-    site_url = (site_url or os.environ.get("LFUCG_SITE_URL", "https://meetings.lexingtonky.news")).rstrip("/")
+    cfg = get_config()
+    site_url = (site_url or os.environ.get("LFUCG_SITE_URL") or cfg.site_url).rstrip("/")
     if public_dir is None:
         public_dir = Path(__file__).parent / "frontend" / "public"
     if not public_dir.exists():
@@ -429,7 +433,7 @@ def generate_seo_artifacts(
             f"    <loc>{site_url}/meeting/{escape(str(clip_id))}</loc>",
             "    <news:news>",
             "      <news:publication>",
-            "        <news:name>LFUCG Meeting Archive</news:name>",
+            f"        <news:name>{escape(cfg.publication_name)}</news:name>",
             "        <news:language>en</news:language>",
             "      </news:publication>",
             f"      <news:publication_date>{escape(str(pub_date))}</news:publication_date>",
@@ -444,9 +448,9 @@ def generate_seo_artifacts(
     recent = valid_clips[:50]
     bodies = sorted({e.get("meeting_body") for e in valid_clips if e.get("meeting_body")})
     llms_lines = [
-        "# LFUCG Meeting Archive",
+        f"# {cfg.publication_name}",
         "",
-        f"> Searchable archive of Lexington-Fayette Urban County Government council and committee meetings — every clip downloaded, transcribed via Whisper, summarized via GPT-4o + Claude Sonnet, and indexed for semantic search. {len(valid_clips)} meetings hosted at {site_url}.",
+        f"> Searchable archive of {cfg.name} council and committee meetings — every clip downloaded, transcribed via Whisper, summarized via GPT-4o + Claude Sonnet, and indexed for semantic search. {len(valid_clips)} meetings hosted at {site_url}.",
         "",
         "## About",
         "",
@@ -582,12 +586,12 @@ def generate_seo_artifacts(
         "",
         "## Operator",
         "",
-        f"Operated by Paul Oliva as a civic-tech side project — see [{site_url}/about]({site_url}/about). "
-        f"Editorial contact: editor@lexingtonky.news.",
+        f"Operated by {cfg.operator_name} as a civic-tech side project — see [{site_url}/about]({site_url}/about). "
+        f"Editorial contact: {cfg.editor_email}.",
         "",
         "## How content is generated",
         "",
-        "Audio is pulled from the official LFUCG Granicus video stream and transcribed by "
+        f"Audio is pulled from the official {cfg.slug.upper()} Granicus video stream and transcribed by "
         "OpenAI Whisper-1. A two-pass summarization pipeline runs over each transcript: GPT-4o "
         "extracts structured facts (votes, motions, financial items, attendance, agenda items, "
         "public comments) into `extracted_facts.json`; Anthropic Claude Sonnet then writes a "
@@ -617,7 +621,7 @@ def generate_seo_artifacts(
         "",
         "## Attribution",
         "",
-        "Source video, agendas, and minutes are public records published by the Lexington-Fayette Urban County Government on Granicus. Transcripts and summaries on this site are AI-generated for accessibility — verify against the official video and minutes for high-stakes use. When citing, please link to the canonical meeting page (e.g. `" + site_url + "/meeting/{id}`).",
+        "Source video, agendas, and minutes are public records published by the " + cfg.name + " on Granicus. Transcripts and summaries on this site are AI-generated for accessibility — verify against the official video and minutes for high-stakes use. When citing, please link to the canonical meeting page (e.g. `" + site_url + "/meeting/{id}`).",
         "",
     ]
     (public_dir / "llms.txt").write_text("\n".join(llms_lines), encoding="utf-8")
@@ -634,9 +638,9 @@ def generate_seo_artifacts(
 
     # ---- llms-full.txt — recent meetings with summary previews for one-pull consumption.
     full_lines = [
-        "# LFUCG Meeting Archive",
+        f"# {cfg.publication_name}",
         "",
-        f"> {len(valid_clips)} Lexington-Fayette Urban County Government meetings, transcribed and summarized.",
+        f"> {len(valid_clips)} {cfg.name} meetings, transcribed and summarized.",
         "",
         f"This file lists the {min(len(valid_clips), 200)} most recent meetings with summary previews. For full transcripts + structured facts, visit each meeting URL or fetch the per-clip data via {site_url}/data/clips/<clip_id>/.",
         "",

@@ -35,6 +35,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from clients import get_openai
+from config import get_config
 from rag.ingest import get_chroma_collection
 from rag.query import ask, granicus_clip_url, load_clip_metadata
 from rag.rate_limit import check as rate_check
@@ -44,11 +45,15 @@ from rag.telemetry import log_query_event
 
 logger = logging.getLogger(__name__)
 
+_CFG = get_config()
+
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
-SITE_URL = os.environ.get("LFUCG_SITE_URL", "https://meetings.lexingtonky.news").rstrip("/")
+# Prefer the configured site_url; keep LFUCG_SITE_URL env as a back-compat
+# override (the historical knob).
+SITE_URL = (os.environ.get("LFUCG_SITE_URL") or _CFG.site_url).rstrip("/")
 
 SERVER_INSTRUCTIONS = (
-    "Searchable archive of Lexington-Fayette Urban County Government (LFUCG) "
+    f"Searchable archive of {_CFG.name} "
     "council and committee meetings. Every clip is downloaded from Granicus, "
     "transcribed via Whisper, summarized via GPT-4o + Claude Sonnet, and "
     "indexed for both keyword search (BM25) and semantic search (RAG).\n\n"

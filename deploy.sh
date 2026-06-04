@@ -4,7 +4,7 @@ set -e
 # Disable AWS CLI pager so commands don't block on `less` waiting for `q`.
 export AWS_PAGER=""
 
-S3_BUCKET="s3://public-meetings"
+S3_BUCKET="${S3_BUCKET:-s3://public-meetings}"
 # Set your CloudFront distribution ID here or as an env var
 CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
 
@@ -112,7 +112,7 @@ if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
   echo "==> Invalidation created. Usually completes in 1-2 minutes."
 else
   echo "==> Skipping CloudFront invalidation (CLOUDFRONT_DISTRIBUTION_ID not set)"
-  echo "   Set it with: export CLOUDFRONT_DISTRIBUTION_ID=E8OIXOXDRETLZ"
+  echo "   Set it with: export CLOUDFRONT_DISTRIBUTION_ID=YOUR_CF_DIST_ID"
 fi
 
 echo "==> Deploy complete!"
