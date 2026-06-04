@@ -179,6 +179,8 @@ class TestLfucgIdentityDefaults:
         assert lfucg_config.editor_email == "editor@lexingtonky.news"
         assert lfucg_config.name == "Lexington-Fayette Urban County Government"
         assert lfucg_config.site_url == "https://meetings.lexingtonky.news"
+        # WS2: video-source adapter selector — LFUCG is Granicus.
+        assert lfucg_config.source_type == "granicus"
 
     def test_config_defaults_with_no_jurisdiction_env(self, monkeypatch):
         # The built-in default (slug "lfucg") must carry the same identity even
@@ -226,6 +228,9 @@ class TestSyntheticJurisdictionIdentity:
         assert testcounty_config.editor_email == "ed@testville.example"
         assert testcounty_config.operator_name == "Test Operator"
         assert testcounty_config.site_url == "https://meetings.testville.example"
+        # The testcounty TOML has no [source] section, so source_type falls
+        # back to the built-in default ("granicus").
+        assert testcounty_config.source_type == "granicus"
 
     def test_seo_artifacts_carry_testville_identity_only(self, testcounty_config, tmp_path):
         output_dir, public_dir = _generate(tmp_path)
