@@ -37,9 +37,59 @@ Files in this directory:
 
 > **Note on jurisdiction-specific values.** Bucket `public-meetings`,
 > CloudFront `E8OIXOXDRETLZ`, domain `meetings.lexingtonky.news`, and
-> `FIRST_CLIP_ID` are all LFUCG-specific. A multi-jurisdiction refactor
-> (pending the architecture review) will lift these into a per-jurisdiction
-> config; for now they live in `.env` / script defaults.
+> `FIRST_CLIP_ID` are all LFUCG-specific. The multi-jurisdiction refactor
+> lifted these into `jurisdictions/<slug>.toml` (`[storage] s3_bucket` /
+> `cloudfront_dist_id`, `[site] site_url` / `origin_hostname`); for the live
+> LFUCG box they also still live in `.env` / script defaults.
+
+---
+
+## 0. Automated provisioning (jurisdictions 2..N)
+
+The manual steps in §1–§7 below are the **canonical runbook** — they document
+exactly what provisioned the live LFUCG box and remain the reference. For a
+**new** jurisdiction (county #2 onward) those steps are automated by:
+
+```bash
+deploy/lightsail/provision-jurisdiction.sh <slug> [--dry-run] [--secrets-file PATH]
+```
+
+It reads `jurisdictions/<slug>.toml` for every per-jurisdiction value, derives
+the resource names from the slug (instance `<slug>-meetings`, static IP
+`<slug>-meetings-ip`, IAM user `<slug>-box`, systemd unit `<slug>-rag`, S3
+bucket + CloudFront from `[storage]`, public domain from `[site].site_url`,
+origin host from `[site].origin_hostname`), and runs §1–§7 (cloud) + §2/§5
+(on-box) idempotently — every AWS resource is **describe-or-create guarded**,
+so a re-run repairs a half-finished box instead of duplicating. It then renders
+the per-slug `*-rag.service`, `Caddyfile`, sudoers line and crontab from the
+`*.template` files in this directory.
+
+What it does **not** do (deliberate):
+
+- **Run the cold-start / ingest pipeline.** A new county has no seed (unlike
+  LFUCG, which was seeded from ECR+S3 — §4). The script STOPS after the box is
+  serving and prints the exact §2.6 cold-start commands + §2.7 validation
+  checklist as next steps. It also **stages** the crontab on the box but does
+  **not** install it (the cron must stay off until cold-start finishes).
+- **Create the CloudFront distribution.** Creating it programmatically is
+  fragile (OAC, two behaviors, SPA error-response rewrite, ACM cert); the
+  script PRINTS the exact distribution settings as a manual step, captures the
+  resulting dist id (`--cloudfront-dist-id <id>` or an interactive prompt), and
+  writes it back into the TOML's `storage.cloudfront_dist_id`.
+- **One-time human integration** (spec §2.5): the Cloudflare WAF crawler
+  allow-list and the cross-repo wiring (paulBot `!ask`, feeds civic-memory
+  widget, master `~/lt/CLAUDE.md`).
+
+Secrets (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `FEEDS_API_TOKEN`) come from
+a `--secrets-file` (defaults to the local `./.env`); `RELOAD_TOKEN` is
+generated with `openssl rand -hex 32`. Nothing secret is echoed — values are
+piped to the box over SSH and the IAM access key is written straight to the
+box's `~/.aws/credentials`. Use `--dry-run` first to review every action
+without creating anything (it never calls AWS / Cloudflare / SSH).
+
+Onboarding flow: write `jurisdictions/<slug>.toml` (discovery sub-procedure in
+`MULTI_COUNTY_EXPANSION_SPEC.md` §2.3) → `provision-jurisdiction.sh <slug>` →
+cold-start (§2.6) → validate (§2.7) → flip public DNS → enable the cron.
 
 ---
 

@@ -1,0 +1,24 @@
+# Caddy reverse-proxy TEMPLATE for a per-jurisdiction RAG/MCP API box.
+#
+# Rendered by provision-jurisdiction.sh: __ORIGIN_HOST__ is substituted with
+# the jurisdiction's [site].origin_hostname and __SLUG__ with its slug,
+# yielding /etc/caddy/Caddyfile. The LFUCG reference box keeps its
+# hand-written deploy/lightsail/Caddyfile (do not regenerate that one).
+#
+# This hostname is the ORIGIN that CloudFront's /api/* behavior talks to
+# (over HTTPS). Caddy auto-provisions a Let's Encrypt cert for it and
+# reverse-proxies to the local uvicorn. Requires a DNS A record (DNS-only /
+# grey-cloud — Caddy must reach the box directly for the HTTP-01 challenge):
+#   __ORIGIN_HOST__  ->  <Lightsail static IP>
+
+__ORIGIN_HOST__ {
+	# /admin/* is for the local ingest cron only (it calls 127.0.0.1:8000
+	# directly). Never expose it through the public origin — token-guarded
+	# in the app, blocked here too (defense in depth).
+	handle /admin/* {
+		respond 404
+	}
+	# Ops marker so we can tell which origin CloudFront is hitting.
+	header X-Served-By "__SLUG__-meetings"
+	reverse_proxy 127.0.0.1:8000
+}
