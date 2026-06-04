@@ -1147,7 +1147,7 @@ Guidelines:
                 if not self._doc_result_empty(fallback):
                     return fallback
             except Exception as e:
-                self.log(f"Agenda-source fallback failed: {e}", "WARNING")
+                self.log(f"Agenda-source fallback failed for clip {clip_id}: {e}", "WARNING")
         return result
 
     def _minutes_with_fallback(self, clip_id: int, clip_dir: Path,
@@ -1169,7 +1169,7 @@ Guidelines:
                 if not self._doc_result_empty(fallback):
                     return fallback
             except Exception as e:
-                self.log(f"Minutes-source fallback failed: {e}", "WARNING")
+                self.log(f"Minutes-source fallback failed for clip {clip_id}: {e}", "WARNING")
         return result
 
     def _apply_one_table(self, table, source_clip_id: int, clips: list,

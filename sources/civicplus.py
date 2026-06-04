@@ -232,11 +232,16 @@ class CivicPlusAgendaSource:
         docs = [d for d in self.list_docs() if d.date == date and d.kind == kind]
         if not docs:
             return None
-        # Prefer a body-matching doc; fall back to the first same-day doc.
+        # Prefer a body-matching doc. When NOTHING body-matches, only return a
+        # doc if there's exactly ONE same-day option — otherwise return None
+        # rather than guessing, so a clip whose body matches NEITHER of two
+        # same-day meetings doesn't get the wrong meeting's agenda (and a
+        # wrong Table of Motions) attached. An empty/None clip body still
+        # matches a single doc via _body_matches's "empty matches anything".
         for d in docs:
             if _body_matches(body, d.body):
                 return d
-        return docs[0]
+        return docs[0] if len(docs) == 1 else None
 
     def _download_and_extract_pdf(
         self, doc: AgendaDoc, clip_dir: Path, *, prefix: str

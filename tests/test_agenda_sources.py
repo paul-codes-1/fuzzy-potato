@@ -93,6 +93,51 @@ CIVICCLERK_EVENTS_2026_05_12 = {
     ],
 }
 
+# TWO same-day events of DIFFERENT bodies, each carrying its OWN agenda packet.
+# Exercises the no-wrong-doc guard: a clip whose body matches NEITHER must get
+# no doc (rather than the first one's packet, which would feed a wrong Table of
+# Motions). A clip body matching one of them still resolves to that one.
+CIVICCLERK_TWO_BODY_EVENTS = [
+    {
+        "id": 400,
+        "eventName": "City Commission Meeting",
+        "startDateTime": "2026-06-09T09:00:00Z",
+        "eventCategoryName": "City Commission",
+        "categoryName": "City Commission",
+        "publishedFiles": [
+            {"fileId": 901, "type": "Agenda Packet", "fileType": 2,
+             "name": "Commission Packet", "url": "stream/PARISKY/a.pdf"},
+        ],
+    },
+    {
+        "id": 401,
+        "eventName": "Budget Workshop",
+        "startDateTime": "2026-06-09T13:00:00Z",
+        "eventCategoryName": "Budget Workshop",
+        "categoryName": "Budget Workshop",
+        "publishedFiles": [
+            {"fileId": 902, "type": "Agenda Packet", "fileType": 2,
+             "name": "Workshop Packet", "url": "stream/PARISKY/b.pdf"},
+        ],
+    },
+]
+
+# ONE same-day event whose body matches NEITHER a queried "Zoning Board" clip
+# — the single-option convenience path should still hand it back.
+CIVICCLERK_ONE_NONMATCHING_EVENT = [
+    {
+        "id": 410,
+        "eventName": "City Commission Meeting",
+        "startDateTime": "2026-06-10T09:00:00Z",
+        "eventCategoryName": "City Commission",
+        "categoryName": "City Commission",
+        "publishedFiles": [
+            {"fileId": 910, "type": "Agenda Packet", "fileType": 2,
+             "name": "Commission Packet", "url": "stream/PARISKY/c.pdf"},
+        ],
+    },
+]
+
 # Trimmed but structurally faithful CivicPlus Agenda Center HTML: two category
 # accordion sections (City Council / Finance Committee), each with one row, and
 # the same link rendered twice (visible + Download popout) as the real page
@@ -345,6 +390,49 @@ def test_civicclerk_empty_date_returns_empty(tmp_path):
     assert src.fetch_for_date("", "City Commission", tmp_path) == empty_agenda_result()
 
 
+def test_civicclerk_multi_body_day_no_match_returns_none():
+    """Two same-day events of different bodies + a clip body matching NEITHER
+    → return None (no doc) rather than guessing the wrong meeting's packet."""
+    src = _civicclerk_src()
+    with patch.object(src, "_events_for_date",
+                      return_value=CIVICCLERK_TWO_BODY_EVENTS):
+        doc = src._pick_doc("2026-06-09", "Planning Commission", "agenda")
+    assert doc is None
+
+
+def test_civicclerk_multi_body_day_matching_body_still_resolves():
+    """With two same-day events, a clip body matching ONE resolves to that
+    one's packet (not the other)."""
+    src = _civicclerk_src()
+    with patch.object(src, "_events_for_date",
+                      return_value=CIVICCLERK_TWO_BODY_EVENTS):
+        doc = src._pick_doc("2026-06-09", "Budget Workshop", "agenda")
+    assert doc is not None
+    assert doc.body == "Budget Workshop"
+    assert "GetMeetingFileStream(fileId=902" in doc.url
+
+
+def test_civicclerk_single_event_nonmatching_body_still_returns_it():
+    """Exactly one same-day event + a non-matching body → convenience path
+    still returns that one doc (single-meeting-per-day stays unaffected)."""
+    src = _civicclerk_src()
+    with patch.object(src, "_events_for_date",
+                      return_value=CIVICCLERK_ONE_NONMATCHING_EVENT):
+        doc = src._pick_doc("2026-06-10", "Zoning Board", "agenda")
+    assert doc is not None
+    assert "GetMeetingFileStream(fileId=910" in doc.url
+
+
+def test_civicclerk_single_event_empty_body_resolves():
+    """An empty/None clip body still matches the single same-day event."""
+    src = _civicclerk_src()
+    with patch.object(src, "_events_for_date",
+                      return_value=CIVICCLERK_ONE_NONMATCHING_EVENT):
+        doc = src._pick_doc("2026-06-10", None, "agenda")
+    assert doc is not None
+    assert "GetMeetingFileStream(fileId=910" in doc.url
+
+
 # ---------------------------------------------------------------------------
 # CivicPlus: listing + PDF-link parse + date matching + download
 # ---------------------------------------------------------------------------
@@ -398,6 +486,55 @@ def test_civicplus_no_match_for_other_date():
     with patch.object(src, "_fetch_listing_html", return_value=CIVICPLUS_HTML):
         doc = src._pick_doc("2026-06-01", "City Council", "agenda")
     assert doc is None
+
+
+def test_civicplus_multi_doc_day_no_match_returns_none():
+    """Two same-day agendas of different bodies (City Council, Finance
+    Committee) + a clip body matching NEITHER → None (no doc), not the first
+    one's PDF — avoids attaching the wrong meeting's Table of Motions."""
+    src = _civicplus_src()
+    with patch.object(src, "_fetch_listing_html", return_value=CIVICPLUS_HTML):
+        doc = src._pick_doc("2026-05-12", "Planning Commission", "agenda")
+    assert doc is None
+
+
+# A single-section page: one same-day agenda whose body is "City Council".
+CIVICPLUS_SINGLE_SECTION_HTML = """
+<div class="listing" id="cat1">
+  <h2 aria-controls="category-panel-1">City Council</h2>
+  <table id="category-panel-1">
+    <tbody>
+      <tr class="catAgendaRow">
+        <td>
+          <strong aria-label="Agenda for May 12, 2026">May 12, 2026</strong>
+          <a href="/AgendaCenter/ViewFile/Agenda/_05122026-356">Agenda (PDF)</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+"""
+
+
+def test_civicplus_single_doc_nonmatching_body_still_returns_it():
+    """Exactly one same-day agenda + a non-matching clip body → convenience
+    path still returns that one doc (single-meeting-per-day unaffected)."""
+    src = _civicplus_src()
+    with patch.object(src, "_fetch_listing_html",
+                      return_value=CIVICPLUS_SINGLE_SECTION_HTML):
+        doc = src._pick_doc("2026-05-12", "Zoning Board", "agenda")
+    assert doc is not None
+    assert "_05122026-356" in doc.url
+
+
+def test_civicplus_single_doc_empty_body_resolves():
+    """An empty/None clip body still matches the single same-day doc."""
+    src = _civicplus_src()
+    with patch.object(src, "_fetch_listing_html",
+                      return_value=CIVICPLUS_SINGLE_SECTION_HTML):
+        doc = src._pick_doc("2026-05-12", None, "agenda")
+    assert doc is not None
+    assert "_05122026-356" in doc.url
 
 
 def test_civicplus_fetch_for_date_downloads_and_extracts(tmp_path):
@@ -542,12 +679,20 @@ def test_minutes_fallback_runs_when_video_empty(tmp_path):
 
 
 def test_minutes_fallback_never_runs_for_lfucg(tmp_path):
-    real = {"pdf_file": None, "html_file": None, "txt_file": None, "text": None}
+    """LFUCG: agenda_source is None → a REAL non-empty Granicus minutes result
+    passes through unchanged and no fallback is attempted (byte-identity).
+
+    Uses a genuinely non-empty result so the test would FAIL if the
+    `agenda_source is None` guard were broken (a None agenda_source can't be
+    called) — mirrors the agenda guard test rather than passing vacuously."""
+    granicus_minutes = {"pdf_file": "m.pdf", "html_file": None,
+                        "txt_file": "m.txt", "text": "real granicus minutes"}
     source = MagicMock()
-    source.download_minutes.return_value = real
+    source.download_minutes.return_value = granicus_minutes
     pipe = _FakePipeline(source, agenda_source=None)
     result = pipe._minutes_with_fallback(1, tmp_path, title="T", meeting_date="2026-05-12", body="Council")
-    assert result is real
+    assert result is granicus_minutes
+    source.download_minutes.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -160,10 +160,20 @@ class CivicClerkAgendaSource:
         if not events:
             return None
 
-        # Prefer body-matching events but keep the rest as a fallback so a
-        # single same-day meeting still resolves when names diverge.
+        # Prefer body-matching events. When NOTHING body-matches, only fall
+        # back to the events list if there's exactly ONE same-day event —
+        # otherwise return no doc rather than guessing. On a multi-meeting day
+        # (e.g. a "Budget Workshop" + a "City Commission" meeting), attaching
+        # the wrong meeting's agenda would feed a wrong Table of Motions into
+        # the clip. An empty/None clip body still matches the single same-day
+        # event via _body_matches's "empty matches anything" rule.
         matching = [e for e in events if _body_matches(body, e.get("eventCategoryName") or e.get("categoryName"))]
-        candidates = matching or events
+        if matching:
+            candidates = matching
+        elif len(events) == 1:
+            candidates = events
+        else:
+            return None
 
         for event in candidates:
             files = event.get("publishedFiles") or []
