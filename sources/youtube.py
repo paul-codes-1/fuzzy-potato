@@ -14,8 +14,9 @@ The whole pipeline assumes a **monotonic integer ``clip_id``**
 string ``videoId``s enumerated from a channel — there is no integer range to
 probe. So ``YouTubeSource`` maintains a **persistent map** ``videoId → local
 int clip_id`` at ``<output_dir>/source_ids.json`` (alongside ``state.json``).
-New videos get the next sequential int (seeded at ``cfg.first_clip_id``,
-continuing from the current max). Every ``VideoSource`` method that takes an
+New videos get the next sequential int (seeded at ``start_id`` — default 1,
+configurable via ``[source.youtube] start_id`` — continuing from the current
+max). Every ``VideoSource`` method that takes an
 int ``clip_id`` reverse-maps int→videoId internally. This confines all
 YouTube-ness to the adapter + the map; the integer-id machinery everywhere
 else is unchanged.
@@ -81,9 +82,11 @@ class YouTubeSource:
         # carried so a county with messy titles can override later.
         self.title_date_pattern: str = getattr(cfg, "source_youtube_title_date_pattern", "") or ""
 
-        # Seed for the synthetic integer id space. Same field GranicusSource
-        # would not need; for YouTube it's the first id we hand out.
-        self.first_clip_id: int = int(getattr(cfg, "first_clip_id", 1))
+        # Seed for the synthetic integer id space — the first id we hand out
+        # when the map is empty. Defaults to 1 (NOT cfg.first_clip_id, which is
+        # Granicus's portal-specific 6669 and meaningless for YouTube).
+        # Configurable via [source.youtube] start_id.
+        self.start_id: int = int(getattr(cfg, "source_youtube_start_id", 1))
 
         # Mirror GranicusSource's settable attributes (the pipeline syncs
         # these on). view_id is inert for YouTube but must exist so
@@ -140,14 +143,14 @@ class YouTubeSource:
     def _next_clip_id(self) -> int:
         """The next sequential int id to hand out.
 
-        Seeded at ``cfg.first_clip_id``; thereafter ``max(existing) + 1`` so
-        ids are stable and monotonic across runs (never reused, never
+        Seeded at ``self.start_id`` (default 1); thereafter ``max(existing) +
+        1`` so ids are stable and monotonic across runs (never reused, never
         reassigned).
         """
         if not self._videos:
-            return self.first_clip_id
+            return self.start_id
         current_max = max(v["clip_id"] for v in self._videos.values())
-        return max(current_max + 1, self.first_clip_id)
+        return max(current_max + 1, self.start_id)
 
     def _video_id_for(self, clip_id: int) -> Optional[str]:
         """Reverse-map an int clip_id back to its YouTube videoId."""
@@ -363,6 +366,10 @@ class YouTubeSource:
                 self._watch_url(video_id),
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # A non-zero rc / blank stdout here is the deleted-/unavailable-
+            # /members-only-video case (yt-dlp prints "This video is not
+            # available"): we leave date/title as whatever the map already
+            # has (often None) and degrade gracefully rather than crash.
             if result.returncode == 0 and result.stdout.strip():
                 parts = result.stdout.strip().split("\t", 1)
                 fetched_date = self._iso_date_from_upload(parts[0]) if parts else None
@@ -547,9 +554,10 @@ class YouTubeSource:
         self.progress(f"Fetching auto-captions for clip {clip_id}")
         # NOTE: granicus_captions.download_vtt only pulls --write-subs (manual
         # captions). YouTube meetings almost always carry only AUTO captions,
-        # so we run our own yt-dlp here with --write-auto-subs AND --write-subs
-        # (manual wins when present, auto fills the gap) per scope §WS3. We do
-        # NOT modify granicus_captions.py.
+        # so we run our own yt-dlp here with both --write-auto-subs AND
+        # --write-subs so an English VTT is produced whether the channel
+        # uploaded manual captions or relies on auto-generated ones (per scope
+        # §WS3). We do NOT modify granicus_captions.py.
         result = self._download_vtt_with_auto(self._watch_url(video_id), vtt_path)
         if result:
             self.progress(f"Saved captions to {vtt_path.name}")
@@ -583,6 +591,9 @@ class YouTubeSource:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return None
         # yt-dlp may emit en.vtt / en-orig.vtt / en-US.vtt depending on track.
+        # We just take the first alphabetically — note this is NOT a
+        # manual-vs-auto preference (e.g. `en-orig` sorts before `en` in
+        # practice); any English VTT is acceptable for the downstream parser.
         candidates = sorted(out_path.parent.glob(f"{out_path.stem}.en*.vtt"))
         if not candidates:
             return None

@@ -1645,6 +1645,36 @@ Guidelines:
                 self.log(f"Error loading available_clips.json: {e}", "WARNING")
         return []
 
+    def _refresh_available_clips_from_source(self) -> None:
+        """Enumerate the active source and (re)write available_clips.json.
+
+        For non-Granicus sources (e.g. YouTube) there is no integer clip-id
+        range to probe with probe_clips.py, so the channel is enumerated by
+        the source adapter (synthetic-id map) and written into the SAME
+        available_clips.json format load_available_clips() reads:
+
+            {"clips": [{"clip_id": <int>, "title": <str|None>}, ...],
+             "total_found": N}
+
+        sorted by clip_id ascending. Best-effort: any failure logs a WARNING
+        and returns so a cron `--auto` run degrades gracefully instead of
+        crashing. The Granicus path never calls this (auto_process guards on
+        source_type), so probe_clips.py remains its sole producer.
+        """
+        try:
+            refs = self.source.list_meetings()
+            clips = sorted(
+                ({"clip_id": int(r.clip_id), "title": r.title} for r in refs),
+                key=lambda c: c["clip_id"],
+            )
+            data = {"clips": clips, "total_found": len(clips)}
+            available_path = self.output_dir / "available_clips.json"
+            available_path.write_text(json.dumps(data, indent=2))
+            self.log(f"Refreshed available_clips.json from source: {len(clips)} clips")
+        except Exception as e:
+            self.log(f"Could not refresh available clips from source: {e}", "WARNING")
+            return
+
     MAX_AUTO_RETRIES = 3
     RETRY_RECENCY_DAYS = 7
 
@@ -1704,6 +1734,13 @@ Guidelines:
                           retry clips in failed_clips (up to MAX_AUTO_RETRIES times)
                           before advancing past last_processed_clip_id.
         """
+        # Non-Granicus sources have no int clip-id range for probe_clips.py to
+        # walk, so self-enumerate the channel into available_clips.json before
+        # loading it. The Granicus path skips this entirely (probe_clips.py is
+        # its producer), keeping LFUCG/Granicus --auto byte-identical.
+        if getattr(self.cfg, "source_type", "granicus") != "granicus":
+            self._refresh_available_clips_from_source()
+
         available_clips = self.load_available_clips()
         processed_set = set(self.state.get("processed_clips", []))
         last_id = start - 1 if start else self.state["last_processed_clip_id"]
