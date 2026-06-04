@@ -39,9 +39,20 @@ body_acronyms = ["WQFB", "CAC", "LFUCG"]
 # share a ChromaDB path (they shouldn't under the one-box-per-jurisdiction
 # model — see deploy/lightsail/ARCHITECTURE_REVIEW.md).
 chroma_collection = "lfucg_meetings"
+# Infra targets read by deploy/lightsail/provision-jurisdiction.sh (the
+# provisioner parses this TOML directly via tomllib — config.py does not
+# consume these two keys today, so they're inert for the running app).
+# s3_bucket was historically hard-coded in deploy.sh; cloudfront_dist_id was
+# env-only / LFUCG-defaulted. The provisioner writes cloudfront_dist_id back
+# here when it creates a new distribution (self-documenting).
+s3_bucket = "s3://public-meetings"
+cloudfront_dist_id = "E8OIXOXDRETLZ"
 
 [site]
 site_url = "https://meetings.lexingtonky.news"
+# Caddy/Lightsail origin hostname (the host CloudFront's /api/* behavior
+# talks to). Read by the provisioner; not consumed by config.py today.
+origin_hostname = "meetings-origin.lexingtonky.news"
 
 [publication]
 # Public-facing identity used across the SEO artifacts (llms.txt, news
@@ -50,3 +61,9 @@ site_url = "https://meetings.lexingtonky.news"
 publication_name = "LFUCG Meeting Archive"
 operator_name = "Paul Oliva"
 editor_email = "editor@lexingtonky.news"
+
+[integrations]
+# Optional downstream wiring read by the provisioner (rendered into the box's
+# .env as FEEDS_WEBHOOK_URL). The matching secret (FEEDS_API_TOKEN) stays in
+# .env only — never in this committed TOML. Not consumed by config.py.
+feeds_webhook_url = "https://feeds.lexingtonky.news/api/ingest/lfucg-meeting-archive"

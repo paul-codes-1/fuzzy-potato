@@ -1,0 +1,39 @@
+# systemd unit TEMPLATE for the per-jurisdiction Meeting RAG API + MCP server.
+#
+# Rendered by provision-jurisdiction.sh: __SLUG__ is substituted with the
+# jurisdiction slug, yielding /etc/systemd/system/<slug>-rag.service. The
+# LFUCG reference box keeps its hand-written deploy/lightsail/lfucg-rag.service
+# (do not regenerate that one from this template — it documents the live unit).
+#
+# Binds to localhost only — Caddy terminates TLS on :443 and reverse-
+# proxies to 127.0.0.1:8000 (see Caddyfile). The ingest cron does
+# `sudo systemctl restart <slug>-rag` after new data lands (or the graceful
+# /admin/reload hook); the in-process ChromaDB collection + sqlite
+# connection + clip_metadata are rebuilt lazily on the next request, so a
+# restart is the cheap way to surface fresh data (no Docker/ECR/App Runner).
+[Unit]
+Description=__SLUG__ Meeting RAG API + MCP (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/fuzzy-potato
+EnvironmentFile=/opt/fuzzy-potato/.env
+Environment=LFUCG_OUTPUT_DIR=/opt/fuzzy-potato/lfucg_output
+ExecStart=/home/ubuntu/.local/bin/uv run uvicorn rag.server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+# Surface OOMs clearly on a 4GB box; let systemd restart on crash.
+OOMPolicy=kill
+# Memory guard rails (4GB box, ChromaDB ~5.1GB mmapped). MemoryHigh is a
+# SOFT throttle (reclaim pressure under load) — deliberately NOT a hard
+# MemoryMax, which could kill the API mid-/api/ask. Pair with 4GB swap
+# (see SETUP.md) so the pipeline's bursty allocations don't OOM the API.
+# Tune after observing real RSS under load.
+MemoryAccounting=yes
+MemoryHigh=3G
+
+[Install]
+WantedBy=multi-user.target

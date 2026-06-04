@@ -1,0 +1,25 @@
+# Meeting-pipeline crontab TEMPLATE for a per-jurisdiction Lightsail box.
+# Rendered by provision-jurisdiction.sh (__SLUG__ -> the jurisdiction slug)
+# and installed with `crontab <rendered file>` as the `ubuntu` user. The
+# LFUCG reference box keeps its hand-written deploy/lightsail/crontab.txt.
+#
+# Box TZ:   sudo timedatectl set-timezone America/New_York
+#           (cron honors the system TZ; ET keeps the schedule aligned to
+#            when the portal posts clips, and DST is handled automatically)
+#
+# Both jobs share one flock so a long catch-up run can never overlap the next
+# tick or the weekly backfill (-n = skip this firing if the lock is held).
+# The lock + log paths are per-slug so two boxes never collide if co-located.
+#
+# IMPORTANT (cold-start gate, spec §2.6): do NOT install this crontab until
+# the one-time cold-start backfill has finished. Lean + bulk runs fighting
+# over search.db / ChromaDB during the initial archive sweep is the failure
+# mode the flock can't prevent (different scripts, same data dir).
+#
+# Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
+# probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
+0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/__SLUG__-ingest.log 2>&1
+
+# Heavy archive-wide sweeps — weekly, Sunday 03:00 ET.
+# backfill-docs + upgrade-summaries + tables-of-motions, then reload + sync.
+0 3 * * 0            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/__SLUG__-backfill.log 2>&1
