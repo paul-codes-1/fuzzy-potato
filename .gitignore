@@ -16,4 +16,4 @@ frontend/public/llms-full.txt
 frontend/public/skill.md
 
 .env
-DEPLOY_RAG.md
+DEPLOY_RAG.md.claude/
