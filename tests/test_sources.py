@@ -113,11 +113,16 @@ class TestFetchDateFromListing:
 
     def test_parses_displayed_text_date(self):
         src = GranicusSource(_lfucg_cfg(), _noop_log)
-        # First view (14) returns no matching row; the fallback view returns
-        # the displayed-text row. Simulate by returning the text layout for
-        # every view query.
-        with patch("sources.granicus.requests.get", return_value=_resp(_LISTING_HTML_TEXT)):
+        # Clip 6770 lives on view 9, not the default view 14 — so this also
+        # exercises the LISTING_VIEW_FALLBACKS loop: the default view returns
+        # no matching row, and only the fallback view (9) carries the clip.
+        def _by_view(url, *args, **kwargs):
+            return _resp(_LISTING_HTML_TEXT) if "view_id=9" in url else _resp("<table></table>")
+
+        with patch("sources.granicus.requests.get", side_effect=_by_view) as mock_get:
             assert src.fetch_date_from_listing(6770) == "2026-05-13"
+            # Prove the fallback was actually walked (default view tried first).
+            assert mock_get.call_count >= 2
 
     def test_returns_none_when_clip_absent(self):
         src = GranicusSource(_lfucg_cfg(), _noop_log)
@@ -196,6 +201,12 @@ class FakeSource:
 
     def list_meetings(self) -> List[MeetingRef]:
         return [MeetingRef(clip_id="1", title="Fake Meeting", date="2026-01-01")]
+
+    def scrape_available_clips(self) -> List[int]:
+        return [1]
+
+    def get_clip_title(self, clip_id: int) -> Optional[str]:
+        return "Fake Meeting"
 
     def get_metadata(self, ref: MeetingRef) -> Dict[str, Any]:
         return {"date": "2026-01-01"}

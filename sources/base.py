@@ -58,6 +58,19 @@ class VideoSource(Protocol):
         """Enumerate available meetings (Granicus: scrape ViewPublisher)."""
         ...
 
+    def scrape_available_clips(self) -> List[int]:
+        """Return the raw list of available clip IDs (the ``--scrape`` path).
+
+        Distinct from ``list_meetings`` (which returns richer ``MeetingRef``s):
+        the pipeline's ``--scrape`` entrypoint consumes bare IDs. A non-Granicus
+        adapter may implement this in terms of ``list_meetings``.
+        """
+        ...
+
+    def get_clip_title(self, clip_id: int) -> Optional[str]:
+        """Fetch a single clip's title (Granicus: yt-dlp ``--print title``)."""
+        ...
+
     def get_metadata(self, ref: MeetingRef) -> Dict[str, Any]:
         """Per-clip portal metadata — at minimum the authoritative date.
 
