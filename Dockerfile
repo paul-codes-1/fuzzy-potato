@@ -10,7 +10,11 @@ COPY main.py .
 # `clients.py` is imported by rag/server.py + rag/query.py + rag/ingest.py
 # so it MUST be in the image; the others are main.py-only but small and
 # kept here so the image faithfully mirrors the repo root.
-COPY clients.py documents.py seo.py summary_v2.py config.py ./
+COPY clients.py documents.py seo.py summary_v2.py config.py granicus_captions.py ./
+# Video-source adapters (the portal seam — GranicusSource today). main.py
+# imports `sources.make_source` at module load, so this MUST be in the
+# image; granicus.py also imports documents + granicus_captions.
+COPY sources/ sources/
 # Per-jurisdiction config (config.py falls back to built-in LFUCG defaults
 # if absent, but ship it so onboarding another tenant is just a new TOML).
 COPY jurisdictions/ jurisdictions/

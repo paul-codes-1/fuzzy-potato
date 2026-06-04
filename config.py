@@ -41,6 +41,10 @@ _LFUCG_DEFAULTS: dict = {
     "body_acronyms": ["WQFB", "CAC", "LFUCG"],
     "chroma_collection": "lfucg_meetings",
     "site_url": "https://meetings.lexingtonky.news",
+    # Video-source adapter selector (WS2). "granicus" is the only
+    # implementation today; a later PR adds "youtube". Read from the
+    # TOML's [source] section, key `type`. LFUCG is Granicus.
+    "source_type": "granicus",
     # Public-facing identity (the prose/branding lifted out of seo.py,
     # rag/prompts.py, rag/mcp_server.py, rag/server.py). Defaults reproduce
     # the historical LFUCG literals so output stays byte-identical.
@@ -62,6 +66,7 @@ class Jurisdiction:
     body_acronyms: frozenset[str]
     chroma_collection: str
     site_url: str
+    source_type: str
     publication_name: str
     operator_name: str
     editor_email: str
@@ -91,14 +96,22 @@ def _load_toml(slug: str) -> dict:
         ("taxonomy", ("body_patterns", "body_acronyms")),
         ("storage", ("chroma_collection",)),
         ("site", ("site_url",)),
+        ("source", ("type",)),
         ("publication", ("publication_name", "operator_name", "editor_email")),
     ):
         block = raw.get(sect, {})
         for key in keys:
             if key in block:
-                # `granicus.host` flattens to `granicus_host`; everything
-                # else keeps its key name.
-                flat["granicus_host" if (sect, key) == ("granicus", "host") else key] = block[key]
+                # A few keys are renamed on flatten so they don't collide:
+                # `granicus.host` -> `granicus_host`, `source.type` ->
+                # `source_type`. Everything else keeps its key name.
+                if (sect, key) == ("granicus", "host"):
+                    flat_key = "granicus_host"
+                elif (sect, key) == ("source", "type"):
+                    flat_key = "source_type"
+                else:
+                    flat_key = key
+                flat[flat_key] = block[key]
     return flat
 
 
@@ -135,6 +148,7 @@ def get_config() -> Jurisdiction:
         body_acronyms=frozenset(base["body_acronyms"]),
         chroma_collection=base["chroma_collection"],
         site_url=base["site_url"],
+        source_type=base["source_type"],
         publication_name=base["publication_name"],
         operator_name=base["operator_name"],
         editor_email=base["editor_email"],
