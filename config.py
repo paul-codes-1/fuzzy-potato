@@ -41,10 +41,17 @@ _LFUCG_DEFAULTS: dict = {
     "body_acronyms": ["WQFB", "CAC", "LFUCG"],
     "chroma_collection": "lfucg_meetings",
     "site_url": "https://meetings.lexingtonky.news",
-    # Video-source adapter selector (WS2). "granicus" is the only
-    # implementation today; a later PR adds "youtube". Read from the
-    # TOML's [source] section, key `type`. LFUCG is Granicus.
+    # Video-source adapter selector (WS2). "granicus" is the default; WS3
+    # adds "youtube". Read from the TOML's [source] section, key `type`.
+    # LFUCG is Granicus.
     "source_type": "granicus",
+    # YouTube adapter opts (WS3). Empty for LFUCG/Granicus so behavior is
+    # untouched. Read from the TOML's [source.youtube] subtable:
+    # `channel_url` (the channel/playlist to enumerate) and optional
+    # `title_date_pattern` (a per-jurisdiction title→date regex escape hatch
+    # for counties whose video titles don't carry a clean upload_date).
+    "source_youtube_channel_url": "",
+    "source_youtube_title_date_pattern": "",
     # Public-facing identity (the prose/branding lifted out of seo.py,
     # rag/prompts.py, rag/mcp_server.py, rag/server.py). Defaults reproduce
     # the historical LFUCG literals so output stays byte-identical.
@@ -67,6 +74,8 @@ class Jurisdiction:
     chroma_collection: str
     site_url: str
     source_type: str
+    source_youtube_channel_url: str
+    source_youtube_title_date_pattern: str
     publication_name: str
     operator_name: str
     editor_email: str
@@ -112,6 +121,16 @@ def _load_toml(slug: str) -> dict:
                 else:
                     flat_key = key
                 flat[flat_key] = block[key]
+
+    # [source.youtube] is a nested subtable under [source]; flatten its keys
+    # into the source_youtube_* namespace. Absent for Granicus jurisdictions
+    # (e.g. LFUCG), so the defaults stay empty and Granicus is unaffected.
+    youtube_block = raw.get("source", {}).get("youtube", {})
+    if isinstance(youtube_block, dict):
+        if "channel_url" in youtube_block:
+            flat["source_youtube_channel_url"] = youtube_block["channel_url"]
+        if "title_date_pattern" in youtube_block:
+            flat["source_youtube_title_date_pattern"] = youtube_block["title_date_pattern"]
     return flat
 
 
@@ -149,6 +168,8 @@ def get_config() -> Jurisdiction:
         chroma_collection=base["chroma_collection"],
         site_url=base["site_url"],
         source_type=base["source_type"],
+        source_youtube_channel_url=base["source_youtube_channel_url"],
+        source_youtube_title_date_pattern=base["source_youtube_title_date_pattern"],
         publication_name=base["publication_name"],
         operator_name=base["operator_name"],
         editor_email=base["editor_email"],
