@@ -37,3 +37,11 @@ chroma_collection = "lfucg_meetings"
 
 [site]
 site_url = "https://meetings.lexingtonky.news"
+
+[publication]
+# Public-facing identity used across the SEO artifacts (llms.txt, news
+# sitemap, per-clip clip.md), the RAG/MCP server prose, and the FastAPI
+# title. These reproduce the historical hard-coded LFUCG literals.
+publication_name = "LFUCG Meeting Archive"
+operator_name = "Paul Oliva"
+editor_email = "editor@lexingtonky.news"

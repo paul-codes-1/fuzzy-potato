@@ -41,6 +41,12 @@ _LFUCG_DEFAULTS: dict = {
     "body_acronyms": ["WQFB", "CAC", "LFUCG"],
     "chroma_collection": "lfucg_meetings",
     "site_url": "https://meetings.lexingtonky.news",
+    # Public-facing identity (the prose/branding lifted out of seo.py,
+    # rag/prompts.py, rag/mcp_server.py, rag/server.py). Defaults reproduce
+    # the historical LFUCG literals so output stays byte-identical.
+    "publication_name": "LFUCG Meeting Archive",
+    "operator_name": "Paul Oliva",
+    "editor_email": "editor@lexingtonky.news",
 }
 
 
@@ -56,6 +62,9 @@ class Jurisdiction:
     body_acronyms: frozenset[str]
     chroma_collection: str
     site_url: str
+    publication_name: str
+    operator_name: str
+    editor_email: str
     output_dir: str
 
 
@@ -82,6 +91,7 @@ def _load_toml(slug: str) -> dict:
         ("taxonomy", ("body_patterns", "body_acronyms")),
         ("storage", ("chroma_collection",)),
         ("site", ("site_url",)),
+        ("publication", ("publication_name", "operator_name", "editor_email")),
     ):
         block = raw.get(sect, {})
         for key in keys:
@@ -125,5 +135,8 @@ def get_config() -> Jurisdiction:
         body_acronyms=frozenset(base["body_acronyms"]),
         chroma_collection=base["chroma_collection"],
         site_url=base["site_url"],
+        publication_name=base["publication_name"],
+        operator_name=base["operator_name"],
+        editor_email=base["editor_email"],
         output_dir=output_dir,
     )

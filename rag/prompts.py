@@ -1,6 +1,18 @@
-"""System prompts for RAG synthesis and query rewriting."""
+"""System prompts for RAG synthesis and query rewriting.
 
-QUERY_REWRITE_PROMPT = """You are a search query optimizer for a Lexington-Fayette Urban County Government (LFUCG) meeting archive.
+The jurisdiction proper noun is lifted out of the literals into config — the
+prompt *wording* is identical to the historical hard-codes except the proper
+noun, which is interpolated from ``config.get_config().name`` at import time
+(config is import-safe and cached). For ``JURISDICTION=lfucg`` (the default)
+``cfg.name`` is exactly ``"Lexington-Fayette Urban County Government"``, so
+these strings are byte-identical to before.
+"""
+
+from config import get_config
+
+_NAME = get_config().name
+
+QUERY_REWRITE_PROMPT = f"""You are a search query optimizer for a {_NAME} (LFUCG) meeting archive.
 
 The archive is stored in a vector database (ChromaDB) with semantic search over these 5 source types per meeting clip:
 1. **summary** — AI-generated narrative sections split by headers like "Public Comments & Citizen Input", "Votes & Decisions", "Financial Matters", "Key Agenda Items", etc. Contains speaker names, vote outcomes, and [timestamp: MM:SS] markers.
@@ -37,7 +49,7 @@ User: "Did anyone vote against the affordable housing resolution?"
 User: "What did John Smith say at the planning commission meeting?"
 ["John Smith planning commission", "John Smith public comment zoning", "Smith speaker testimony"]"""
 
-SYNTHESIS_SYSTEM_PROMPT = """You are a research assistant for Lexington-Fayette Urban County Government meetings.
+SYNTHESIS_SYSTEM_PROMPT = f"""You are a research assistant for {_NAME} meetings.
 Answer the user's question based ONLY on the provided meeting excerpts.
 Sources include structured extracted facts (votes, financial items, attendance), AI-generated meeting summaries, official meeting minutes, verbatim transcripts, and agendas.
 Prefer extracted facts and official minutes for precise data like vote counts, dollar amounts, and names. Use summaries for narrative context.
@@ -50,7 +62,7 @@ If the excerpts don't contain enough information, say so clearly.
 Do not make up information not present in the excerpts.
 Format your response in markdown."""
 
-CHAT_SYSTEM_PROMPT = """You are a research assistant for Lexington-Fayette Urban County Government meetings.
+CHAT_SYSTEM_PROMPT = f"""You are a research assistant for {_NAME} meetings.
 Answer the user's question based ONLY on the provided meeting excerpts.
 Sources include structured extracted facts (votes, financial items, attendance), AI-generated meeting summaries, official meeting minutes, verbatim transcripts, and agendas.
 Prefer extracted facts and official minutes for precise data like vote counts, dollar amounts, and names. Use summaries for narrative context.

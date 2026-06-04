@@ -27,7 +27,10 @@ set -a
 set +a
 
 S3_BUCKET="${S3_BUCKET:-s3://public-meetings}"
-CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E8OIXOXDRETLZ}"
+# No built-in default — a misconfigured box must NOT invalidate LFUCG's
+# distribution. The LFUCG box sets this in its .env; if empty, the
+# invalidation step below is skipped gracefully.
+CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
 RAG_SERVICE="${RAG_SERVICE:-lfucg-rag}"
 STATE="lfucg_output/state.json"
 
@@ -76,11 +79,15 @@ fi
 log "Syncing per-clip data + index to S3"
 bash deploy/lightsail/sync_data_s3.sh
 
-log "Invalidating CloudFront /data/*"
-aws cloudfront create-invalidation \
-  --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-  --paths '/data/*' \
-  --query 'Invalidation.Id' --output text
+if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+  log "Invalidating CloudFront /data/*"
+  aws cloudfront create-invalidation \
+    --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+    --paths '/data/*' \
+    --query 'Invalidation.Id' --output text
+else
+  log "CLOUDFRONT_DISTRIBUTION_ID unset — skipping CloudFront invalidation"
+fi
 
 if [ -n "${FEEDS_API_TOKEN:-}" ] && [ -n "${FEEDS_WEBHOOK_URL:-}" ]; then
   log "Pinging feeds to pull new archive items"

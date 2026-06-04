@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 from clients import get_anthropic, get_openai
+from config import get_config
 from rag.ingest import get_chroma_collection
 from rag.mcp_server import mcp_server
 from rag.query import ask, chat, load_clip_metadata
@@ -89,7 +90,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title="LFUCG Meeting RAG API", lifespan=lifespan)
+app = FastAPI(title=f"{get_config().publication_name} RAG API", lifespan=lifespan)
 
 
 class _MCPTrailingSlashMiddleware:

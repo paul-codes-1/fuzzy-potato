@@ -4,7 +4,7 @@ set -e
 # Disable AWS CLI pager so commands don't block on `less` waiting for `q`.
 export AWS_PAGER=""
 
-S3_BUCKET="s3://public-meetings"
+S3_BUCKET="${S3_BUCKET:-s3://public-meetings}"
 # Set your CloudFront distribution ID here or as an env var
 CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
 
