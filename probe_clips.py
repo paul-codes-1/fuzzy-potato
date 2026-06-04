@@ -47,6 +47,19 @@ def probe_clip(clip_id: int) -> dict | None:
 
 
 def main():
+    # probe_clips.py is Granicus-only: it walks a sequential integer clip-id
+    # range against the configured Granicus host. For non-Granicus sources
+    # (e.g. YouTube), there is no int range to probe — enumeration happens in
+    # the pipeline (auto_process -> source.list_meetings -> available_clips.json).
+    # Bail out rather than probing the DEFAULTED lfucg.granicus.com host and
+    # writing garbage over a YouTube county's available_clips.json.
+    if _CFG.source_type != "granicus":
+        print(
+            f"probe_clips: source_type={_CFG.source_type} not granicus — "
+            "enumeration happens in the pipeline (auto_process); skipping."
+        )
+        return
+
     output_file = Path(_CFG.output_dir) / "available_clips.json"
     output_file.parent.mkdir(parents=True, exist_ok=True)
 

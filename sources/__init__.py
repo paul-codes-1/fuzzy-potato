@@ -10,14 +10,22 @@ from typing import Callable
 
 from .base import MeetingRef, VideoSource
 from .granicus import GranicusSource
+from .youtube import YouTubeSource
 
-__all__ = ["MeetingRef", "VideoSource", "GranicusSource", "make_source"]
+__all__ = [
+    "MeetingRef",
+    "VideoSource",
+    "GranicusSource",
+    "YouTubeSource",
+    "make_source",
+]
 
 
 # Registry of known source types → constructor. Extend here when a new
-# portal adapter lands (e.g. "youtube": YouTubeSource).
+# portal adapter lands.
 _SOURCES: dict[str, type] = {
     "granicus": GranicusSource,
+    "youtube": YouTubeSource,
 }
 
 
