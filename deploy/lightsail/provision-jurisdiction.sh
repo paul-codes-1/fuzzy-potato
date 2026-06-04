@@ -84,7 +84,7 @@ ZONE=""
 CF_DIST_ID_ARG=""
 REPO_URL=""
 REGION="us-east-1"
-BUNDLE="medium_2_0"        # 4GB RAM / 2 vCPU / 80GB SSD (~$20/mo) — SETUP.md §1
+BUNDLE="medium_3_0"        # 4GB RAM / 2 vCPU / 80GB SSD (~$24/mo) — SETUP.md §1; matches the live LFUCG box
 BLUEPRINT="ubuntu_22_04"   # Ubuntu 22.04 LTS — SETUP.md §1
 BOX_USER="ubuntu"
 REMOTE_REPO_DIR="/opt/fuzzy-potato"
@@ -139,6 +139,17 @@ done
 # / DNS record names. Reject anything that would break those downstream.
 echo "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$' \
   || die "slug '$SLUG' is not DNS-safe (lowercase alnum + hyphen, 2-32 chars)"
+
+# HARD-GUARD: never provision the live LFUCG box. A real (non-dry-run) run for
+# slug=lfucg would clobber production — reset firewall ports on lfucg-meetings,
+# overwrite /opt/fuzzy-potato/.env with a fresh RELOAD_TOKEN (breaking the live
+# /admin/reload hook), and overwrite the systemd unit + Caddyfile. The live box
+# was provisioned MANUALLY (SETUP.md §1–§7); re-run individual SETUP.md steps to
+# repair it. --dry-run lfucg is permitted (it touches nothing — useful for
+# inspecting what the script would do).
+if [ "$SLUG" = "lfucg" ] && [ "$DRY_RUN" != "1" ]; then
+  die "Refusing to provision slug 'lfucg' — the live LFUCG box was provisioned manually (see SETUP.md §1–§7); re-run individual SETUP.md steps instead. (--dry-run lfucg is allowed for inspection.)"
+fi
 
 TOML="$REPO_ROOT/jurisdictions/$SLUG.toml"
 [ -f "$TOML" ] || die "config not found: $TOML  (copy jurisdictions/lfucg.toml and edit it)"
@@ -244,7 +255,10 @@ fi
 # ── Preflight: tooling + env the operator must have ──────────────────────────
 phase "preflight — required tooling + operator env"
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
-need aws; need python3; need openssl; need ssh; need scp; need curl
+# Note: scp is intentionally NOT required — every on-box transfer goes through
+# SSH stdin (`ssh ... cat > file`), and `need scp` would fail on hosts where scp
+# is only the sftp subsystem.
+need aws; need python3; need openssl; need ssh; need curl
 if [ "$DRY_RUN" != "1" ]; then
   [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "CLOUDFLARE_API_TOKEN not set (needed for DNS in phase 7)"
   aws sts get-caller-identity >/dev/null 2>&1 || die "AWS credentials not working (aws sts get-caller-identity failed)"
@@ -312,14 +326,19 @@ else
     --blueprint-id "$BLUEPRINT" \
     --bundle-id "$BUNDLE" \
     --region "$REGION"
-  log "waiting for instance to reach 'running' (poll get-instance-state)…"
-  if [ "$DRY_RUN" != "1" ]; then
-    for _ in $(seq 1 60); do
-      state="$(aws lightsail get-instance-state --instance-name "$INSTANCE_NAME" --region "$REGION" --query 'state.name' --output text 2>/dev/null || echo pending)"
-      [ "$state" = "running" ] && break
-      sleep 5
-    done
-  fi
+fi
+
+# Always wait for 'running' BEFORE Phase 2's attach-static-ip — not just in the
+# freshly-created branch. On a re-run the instance may already exist but be
+# stopped/pending (e.g. a half-finished prior run), in which case attach would
+# fail. (Skipped under --dry-run.)
+log "waiting for instance to reach 'running' (poll get-instance-state)…"
+if [ "$DRY_RUN" != "1" ]; then
+  for _ in $(seq 1 60); do
+    state="$(aws lightsail get-instance-state --instance-name "$INSTANCE_NAME" --region "$REGION" --query 'state.name' --output text 2>/dev/null || echo pending)"
+    [ "$state" = "running" ] && break
+    sleep 5
+  done
 fi
 
 # ── Phase 2: static IP + attach [once] ───────────────────────────────────────
@@ -460,7 +479,10 @@ text = open(path).read()
 if re.search(r'(?m)^\s*cloudfront_dist_id\s*=', text):
     text = re.sub(r'(?m)^(\s*cloudfront_dist_id\s*=).*$', rf'\1 "{new_id}"', text)
 elif re.search(r'(?m)^\[storage\]', text):
-    text = re.sub(r'(?m)^(\[storage\]\s*\n)', rf'\1cloudfront_dist_id = "{new_id}"\n', text, count=1)
+    # Match the WHOLE [storage] header line (including any inline comment, e.g.
+    # `[storage]  # infra`) so a commented header doesn't fall through and
+    # append a duplicate [storage] section.
+    text = re.sub(r'(?m)^(\[storage\][^\n]*\n)', rf'\1cloudfront_dist_id = "{new_id}"\n', text, count=1)
 else:
     text = text.rstrip("\n") + f'\n\n[storage]\ncloudfront_dist_id = "{new_id}"\n'
 open(path, "w").write(text)
