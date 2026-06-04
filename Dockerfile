@@ -10,7 +10,10 @@ COPY main.py .
 # `clients.py` is imported by rag/server.py + rag/query.py + rag/ingest.py
 # so it MUST be in the image; the others are main.py-only but small and
 # kept here so the image faithfully mirrors the repo root.
-COPY clients.py documents.py seo.py summary_v2.py ./
+COPY clients.py documents.py seo.py summary_v2.py config.py ./
+# Per-jurisdiction config (config.py falls back to built-in LFUCG defaults
+# if absent, but ship it so onboarding another tenant is just a new TOML).
+COPY jurisdictions/ jurisdictions/
 
 # Helper used by main.py + tests, also imported when /api/search runs
 # the standalone search-db builder. Lightweight (no heavy deps).

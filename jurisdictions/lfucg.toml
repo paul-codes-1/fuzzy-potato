@@ -1,0 +1,39 @@
+# Lexington-Fayette Urban County Government — the reference jurisdiction.
+#
+# These values reproduce the historical hard-coded defaults exactly; they
+# are also baked into config.py as the built-in fallback, so deleting this
+# file changes nothing for LFUCG. To onboard a new county, copy this file
+# to jurisdictions/<slug>.toml, edit the values, and run with
+# JURISDICTION=<slug>.
+#
+# Per-field override order: env var (GRANICUS_HOST / FIRST_CLIP_ID /
+# GRANICUS_VIEW_ID / LFUCG_OUTPUT_DIR) > this file > config.py default.
+
+[jurisdiction]
+slug = "lfucg"
+name = "Lexington-Fayette Urban County Government"
+
+[granicus]
+host = "lfucg.granicus.com"
+default_view_id = 14
+# Views scanned (in order) when the default view doesn't contain a clip —
+# non-council bodies (Task Force, Planning Commission, BoZA, …) live on
+# their own views. Most-trafficked first.
+listing_view_fallbacks = [14, 9, 2, 4, 5, 6, 7, 8, 10, 13, 16, 17]
+first_clip_id = 6669
+
+[taxonomy]
+# Meeting-body alternatives matched (word-boundary, case-insensitive) in
+# the clip title. body_acronyms stay uppercased; everything else is
+# title-cased.
+body_patterns = ["WQFB", "CAC", "LFUCG", "Council", "Commission", "Board", "Committee"]
+body_acronyms = ["WQFB", "CAC", "LFUCG"]
+
+[storage]
+# ChromaDB collection name. MUST be unique per jurisdiction if two ever
+# share a ChromaDB path (they shouldn't under the one-box-per-jurisdiction
+# model — see deploy/lightsail/ARCHITECTURE_REVIEW.md).
+chroma_collection = "lfucg_meetings"
+
+[site]
+site_url = "https://meetings.lexingtonky.news"

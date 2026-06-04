@@ -6,9 +6,11 @@ download and rebuild on every page load. The DB lives at
 ``lfucg_output/search.db`` and is queried server-side via
 ``rag/search.py`` (see :mod:`rag.search`).
 
-The builder is destructive: it drops and recreates the FTS5 virtual
-table on every run, so it's idempotent. Full archive (~4,700 clips)
-takes ~30s on a modern laptop.
+The builder is idempotent: it builds a fresh DB into ``search.db.tmp``
+and ``os.replace()``s it onto ``search.db`` atomically, so a co-located
+long-lived reader keeps serving the old index until it reopens (no
+torn-read / stale-fd window). Full archive (~4,700 clips) takes ~30s on
+a modern laptop.
 
 Schema (one row per clip):
     title           — searchable, weighted highest in BM25
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from collections import Counter
@@ -278,10 +281,19 @@ def build(output_dir: Path, db_path: Path, *, verbose: bool = True) -> dict:
         raise SystemExit(f"clips dir not found: {clips_dir}")
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    if db_path.exists():
-        db_path.unlink()
 
-    conn = sqlite3.connect(db_path)
+    # Build into a sibling temp file, then atomically os.replace() it onto
+    # db_path. A co-located long-lived reader (rag/search.py caches the
+    # sqlite connection for the process lifetime) keeps serving the OLD,
+    # complete DB off its open fd until it reopens — so it never sees a
+    # half-written or unlinked file. (Pre-co-location this used
+    # unlink()+recreate, which on one shared box would hand the reader a
+    # dangling fd → stale results or "database disk image is malformed".)
+    tmp_path = db_path.with_name(db_path.name + ".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+
+    conn = sqlite3.connect(tmp_path)
     try:
         _create_schema(conn)
 
@@ -309,6 +321,9 @@ def build(output_dir: Path, db_path: Path, *, verbose: bool = True) -> dict:
         conn.commit()
     finally:
         conn.close()
+
+    # Atomic swap — the moment the new index becomes visible at db_path.
+    os.replace(tmp_path, db_path)
 
     stats = {
         "clips_indexed": len(rows),

@@ -31,6 +31,7 @@ import re
 from dotenv import load_dotenv
 import httpx
 
+from config import get_config
 from documents import extract_html_text, extract_pdf_text
 from granicus_captions import (
     align_speakers_to_segments,
@@ -56,7 +57,7 @@ class LFUCGPipeline:
     def __init__(
             self,
             output_dir: str = "./lfucg_output",
-            view_id: str = "14",
+            view_id: Optional[str] = None,
             openai_api_key: Optional[str] = None,
             transcribe_model: str = "whisper-1",
             summary_model: str = "gpt-4o",
@@ -65,8 +66,12 @@ class LFUCGPipeline:
             force_reprocess: bool = False,
             transcribe_timeout: int = 600
     ):
+        # Active jurisdiction config (Granicus host/views, clip range,
+        # body taxonomy). Defaults to LFUCG; see config.py / jurisdictions/.
+        self.cfg = get_config()
+
         self.output_dir = Path(output_dir)
-        self.view_id = view_id
+        self.view_id = str(view_id) if view_id is not None else str(self.cfg.default_view_id)
         self.keep_audio = keep_audio
         self.verbose = verbose
         self.force_reprocess = force_reprocess
@@ -76,11 +81,15 @@ class LFUCGPipeline:
         self.transcribe_model = transcribe_model
         self.summary_model = summary_model
 
-        # First clip ID for auto-processing (from environment)
-        self.first_clip_id = int(os.getenv("FIRST_CLIP_ID", "6669"))
+        # First clip ID for auto-processing (per-jurisdiction; env
+        # FIRST_CLIP_ID still wins via config resolution)
+        self.first_clip_id = self.cfg.first_clip_id
 
-        # Granicus host (configurable via environment)
-        self.granicus_host = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+        # Granicus host (per-jurisdiction; env GRANICUS_HOST still wins)
+        self.granicus_host = self.cfg.granicus_host
+
+        # Listing views to scan for a clip's authoritative date (per-jurisdiction)
+        self.LISTING_VIEW_FALLBACKS = tuple(self.cfg.listing_view_fallbacks)
 
         # Set up OpenAI client with timeout for large file uploads
         api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -997,7 +1006,7 @@ class LFUCGPipeline:
 
         # Extract meeting body - common abbreviations and names (search title first)
         body_patterns = [
-            r'\b(WQFB|CAC|LFUCG|Council|Commission|Board|Committee)\b',
+            rf'\b({"|".join(self.cfg.body_patterns)})\b',
             r'(Task Force)',
             r'(Work Session|Regular Session|Special Session|Budget Hearing)',
         ]
@@ -1008,7 +1017,7 @@ class LFUCGPipeline:
             if match:
                 # Normalize casing: keep acronyms uppercase, title-case regular words
                 body = match.group(1)
-                acronyms = {"WQFB", "CAC", "LFUCG"}
+                acronyms = set(self.cfg.body_acronyms)
                 metadata["meeting_body"] = body.upper() if body.upper() in acronyms else body.title()
                 break
 
@@ -1203,7 +1212,7 @@ Guidelines:
                 # Normalize meeting body casing
                 body = metadata.get("meeting_body")
                 if body:
-                    acronyms = {"WQFB", "CAC", "LFUCG"}
+                    acronyms = set(self.cfg.body_acronyms)
                     body = body.upper() if body.upper() in acronyms else body.title()
 
                 entry = {
@@ -2440,8 +2449,8 @@ Examples:
 
     parser.add_argument(
         "--view-id",
-        default="14",
-        help="Granicus view ID (default: 14)"
+        default=None,
+        help="Granicus view ID (default: from jurisdiction config, 14 for LFUCG)"
     )
 
     parser.add_argument(

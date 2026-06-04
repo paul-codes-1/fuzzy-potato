@@ -1,6 +1,23 @@
 """FastAPI server for RAG Q&A."""
 
 import logging
+import sys
+
+# Claim the root logger BEFORE importing rag.mcp_server below. FastMCP's
+# `configure_logging` runs at import-time (build_mcp_server → FastMCP() →
+# configure_logging) and installs a RichHandler via logging.basicConfig.
+# basicConfig is a no-op once root has any handler, so claiming it here
+# pre-empts Rich and keeps full-width log lines in CloudWatch — Rich was
+# wrapping JSON telemetry + query rewrites at ~80 cols, making truncated
+# garbage of user-visible logs.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+if not _root.handlers:
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    _root.addHandler(_h)
+
+import hmac
 import os
 import time
 from contextlib import asynccontextmanager
@@ -23,7 +40,6 @@ from rag.telemetry import log_query_event, set_request_context
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 logging.getLogger("rag.query").setLevel(logging.INFO)
 
@@ -602,3 +618,36 @@ def health_endpoint():
 @app.get("/api/health")  # Keep for CloudFront routing
 def health_endpoint_api():
     return health_endpoint()
+
+
+@app.post("/admin/reload")
+def admin_reload(request: Request):
+    """Drop the in-process caches (Chroma collection, clip metadata, the
+    SQLite search connection) so freshly-ingested data is picked up WITHOUT
+    a full process restart — avoids dropping in-flight /api/ask calls on the
+    6-hourly ingest. The next request rebuilds each lazily.
+
+    Token-guarded: requires ``X-Reload-Token`` to match the ``RELOAD_TOKEN``
+    env var. If ``RELOAD_TOKEN`` is unset the endpoint is disabled (404).
+    The ingest cron calls this on 127.0.0.1 directly; Caddy is configured
+    NOT to proxy /admin from the public origin (defense in depth). There is
+    deliberately no /api/admin alias, so it's unreachable via CloudFront.
+    """
+    expected = os.environ.get("RELOAD_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not found")
+    provided = request.headers.get("x-reload-token", "")
+    if not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    global _collection, _clip_metadata
+    _collection = None
+    _clip_metadata = None
+    try:
+        from rag.search import close_connections
+
+        close_connections()
+    except Exception as e:  # pragma: no cover - best-effort
+        logger.warning("admin reload: failed to close search connections: %s", e)
+    logger.info("admin reload: dropped collection + metadata + search connection caches")
+    return {"reloaded": True}

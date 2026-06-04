@@ -87,6 +87,7 @@ aws s3 sync frontend/dist/data/ "$S3_BUCKET/data/" --size-only \
   --exclude "*.part" \
   --exclude "*.ytdl" \
   --exclude "chroma_db/*" \
+  --exclude "search.db" \
   --exclude "clips/*"
 
 # Re-stamp top-level JSON: --size-only skips unchanged files, which

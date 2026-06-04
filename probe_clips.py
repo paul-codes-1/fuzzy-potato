@@ -9,14 +9,21 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 
+from config import get_config
+
 load_dotenv()
 
-GRANICUS_HOST = os.getenv("GRANICUS_HOST", "lfucg.granicus.com")
+_CFG = get_config()
+GRANICUS_HOST = _CFG.granicus_host
+# Read the listing view from config instead of hard-coding 14 — main.py
+# already parameterized this, so a non-14 jurisdiction would otherwise be
+# silently mis-probed here.
+VIEW_ID = _CFG.default_view_id
 
 
 def probe_clip(clip_id: int) -> dict | None:
     """Check if a clip exists and get its title without downloading."""
-    url = f"https://{GRANICUS_HOST}/player/clip/{clip_id}?view_id=14&redirect=true"
+    url = f"https://{GRANICUS_HOST}/player/clip/{clip_id}?view_id={VIEW_ID}&redirect=true"
 
     try:
         result = subprocess.run(
@@ -40,7 +47,7 @@ def probe_clip(clip_id: int) -> dict | None:
 
 
 def main():
-    output_file = Path("lfucg_output/available_clips.json")
+    output_file = Path(_CFG.output_dir) / "available_clips.json"
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load existing progress if any

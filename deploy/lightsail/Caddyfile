@@ -1,0 +1,24 @@
+# Caddy reverse proxy for the co-located RAG/MCP API box.
+# Install: sudo cp deploy/lightsail/Caddyfile /etc/caddy/Caddyfile
+#          sudo systemctl reload caddy
+#
+# This hostname is the ORIGIN that CloudFront's /api/* behavior talks to
+# (over HTTPS). Caddy auto-provisions a Let's Encrypt cert for it and
+# reverse-proxies to the local uvicorn. Mirrors the maps-api box pattern
+# (mapsapi.lexingtonky.news). Requires a DNS A record:
+#   meetings-origin.lexingtonky.news  ->  <Lightsail static IP>
+#
+# After this is live, repoint the meetings.lexingtonky.news CloudFront
+# distribution's /api/* origin from the App Runner domain
+# (mphdvbnhwm.us-east-1.awsapprunner.com) to meetings-origin.lexingtonky.news.
+# The SPA uses relative /api, so no frontend change and no CORS change.
+
+meetings-origin.lexingtonky.news {
+	# /admin/* is for the local ingest cron only (it calls 127.0.0.1:8000
+	# directly). Never expose it through the public origin — token-guarded
+	# in the app, blocked here too (defense in depth).
+	handle /admin/* {
+		respond 404
+	}
+	reverse_proxy 127.0.0.1:8000
+}

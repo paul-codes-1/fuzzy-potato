@@ -5,12 +5,17 @@ import json
 import os
 import re
 import hashlib
+import sys
 from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import get_config
+
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMS = 1536
-COLLECTION_NAME = "lfucg_meetings"
+# Per-jurisdiction collection name (defaults to "lfucg_meetings").
+COLLECTION_NAME = get_config().chroma_collection
 RAG_STATE_FILE = "rag_state.json"
 CHROMA_DIR = "chroma_db"
 TARGET_WORDS = 500
