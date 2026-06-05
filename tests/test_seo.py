@@ -149,6 +149,38 @@ class TestBuildClipMarkdown:
         assert "Claude Sonnet" in md
         assert "editor@lexingtonky.news" in md
 
+    def test_document_driven_disclosure_for_civicclerk_minutes(self, tmp_path):
+        """PR-6: a clip whose transcript_source is civicclerk_minutes gets the
+        document-driven disclosure (no verbatim transcript)."""
+        clip_dir = self._setup_clip(tmp_path)
+        (clip_dir / "metadata.json").write_text(json.dumps({
+            "clip_id": 6757,
+            "url": "https://parisky.portal.civicclerk.com/event/322",
+            "transcript_source": "civicclerk_minutes",
+            "files": {},
+        }))
+        entry = {"clip_id": 6757, "date": "2026-05-12", "title": "City Commission Meeting"}
+        md = build_clip_markdown(entry, tmp_path, "https://paris.civicmemory.news")
+        assert "Auto-generated content" in md
+        # Fix 4: only the minutes became the record content — name just minutes.
+        assert "official CivicClerk minutes" in md
+        assert "agenda and minutes" not in md
+        assert "there is no verbatim transcript" in md
+        # Must NOT claim a Whisper transcript.
+        assert "Whisper-1" not in md
+
+    def test_document_driven_disclosure_for_civicclerk_agenda_fallback(self, tmp_path):
+        clip_dir = self._setup_clip(tmp_path)
+        (clip_dir / "metadata.json").write_text(json.dumps({
+            "clip_id": 6757,
+            "transcript_source": "civicclerk_agenda",
+            "files": {},
+        }))
+        entry = {"clip_id": 6757, "date": "2026-05-12", "title": "City Commission Meeting"}
+        md = build_clip_markdown(entry, tmp_path, "https://paris.civicmemory.news")
+        assert "minutes not yet published" in md
+        assert "Whisper-1" not in md
+
     def test_includes_metadata_fields(self, tmp_path):
         clip_dir = self._setup_clip(tmp_path)
         (clip_dir / "metadata.json").write_text(json.dumps({

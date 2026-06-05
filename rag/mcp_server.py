@@ -37,7 +37,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from clients import get_openai
 from config import get_config
 from rag.ingest import get_chroma_collection
-from rag.query import ask, granicus_clip_url, load_clip_metadata
+from rag.query import ask, clip_citation_url, load_clip_metadata
 from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import search as search_clips
@@ -421,7 +421,10 @@ def get_meeting_clip_impl(clip_id: int) -> dict:
         "transcript_words": entry.get("transcript_words"),
         "transcript_source": entry.get("transcript_source"),
         "summary": summary_text,
-        "granicus_url": granicus_clip_url(cid),
+        # Honor a non-Granicus canonical_url (Paris/CivicClerk) from the clip's
+        # metadata; Granicus + old LFUCG clips fall back to the Granicus
+        # deep-link (byte-identical).
+        "granicus_url": clip_citation_url(cid, entry.get("url", "")),
         "url": _meeting_url(cid),
         "markdown_url": _clip_md_url(cid),
     }
