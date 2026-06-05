@@ -428,3 +428,57 @@ class TestChatEndpoint:
                 "messages": [{"role": "user", "content": "test"}],
             })
             assert response.status_code == 200
+
+
+# ============================================================
+# N. POST /admin/reload tests
+# ============================================================
+
+class TestAdminReload:
+    """The token-guarded cache-drop hook the ingest crons call after a
+    re-ingest. Must clear ChromaDB's process-wide system cache, not just the
+    in-process collection reference, or freshly re-ingested chunks stay
+    invisible until a full restart (the Paris canonical_url regression)."""
+
+    def test_reload_disabled_without_token_env(self, monkeypatch):
+        monkeypatch.delenv("RELOAD_TOKEN", raising=False)
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        resp = client.post("/admin/reload")
+        assert resp.status_code == 404
+
+    def test_reload_rejects_bad_token(self, monkeypatch):
+        monkeypatch.setenv("RELOAD_TOKEN", "secret")
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        resp = client.post("/admin/reload", headers={"X-Reload-Token": "wrong"})
+        assert resp.status_code == 403
+
+    def test_reload_clears_chroma_system_cache_and_caches(self, monkeypatch):
+        monkeypatch.setenv("RELOAD_TOKEN", "secret")
+        import rag.server as srv
+
+        # Prime the in-process caches so we can prove they get dropped.
+        srv._collection = object()
+        srv._clip_metadata = {"x": 1}
+
+        with patch(
+            "chromadb.api.shared_system_client.SharedSystemClient.clear_system_cache"
+        ) as mock_clear, patch("rag.search.close_connections") as mock_close:
+            from fastapi.testclient import TestClient
+
+            client = TestClient(srv.app)
+            resp = client.post("/admin/reload", headers={"X-Reload-Token": "secret"})
+
+        assert resp.status_code == 200
+        assert resp.json() == {"reloaded": True}
+        # ChromaDB's shared in-memory segment cache must be cleared so the next
+        # PersistentClient re-reads re-ingested chunks from disk.
+        mock_clear.assert_called_once()
+        mock_close.assert_called_once()
+        assert srv._collection is None
+        assert srv._clip_metadata is None

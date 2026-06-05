@@ -644,11 +644,28 @@ def admin_reload(request: Request):
     global _collection, _clip_metadata
     _collection = None
     _clip_metadata = None
+    # Dropping the _collection reference is NOT enough: ChromaDB keeps a
+    # process-wide SharedSystemClient (keyed by path) whose in-memory segment
+    # cache holds the HNSW index loaded at first use. A clip re-ingested by a
+    # SEPARATE process (rag.ingest in the cron) writes to disk, but this
+    # server's cached system never re-reads it — so a fresh PersistentClient
+    # here would still serve the STALE in-memory index (observed: Paris
+    # citations fell back to the Granicus URL because the re-ingested
+    # canonical_url chunks weren't visible until a full restart). Clearing the
+    # system cache forces the next _get_collection() to rebuild from disk.
+    try:
+        from chromadb.api.shared_system_client import SharedSystemClient
+
+        SharedSystemClient.clear_system_cache()
+    except Exception as e:  # pragma: no cover - best-effort
+        logger.warning("admin reload: failed to clear Chroma system cache: %s", e)
     try:
         from rag.search import close_connections
 
         close_connections()
     except Exception as e:  # pragma: no cover - best-effort
         logger.warning("admin reload: failed to close search connections: %s", e)
-    logger.info("admin reload: dropped collection + metadata + search connection caches")
+    logger.info(
+        "admin reload: dropped collection + metadata + Chroma system cache + search connection caches"
+    )
     return {"reloaded": True}
