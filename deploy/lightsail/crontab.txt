@@ -4,13 +4,18 @@
 #           (cron honors the system TZ; ET keeps the schedule aligned to
 #            when LFUCG posts clips, and DST is handled automatically)
 #
-# Both jobs share one flock so a long catch-up run can never overlap the next
-# tick or the weekly backfill (-n = skip this firing if the lock is held).
+# All jobs share one flock so a long catch-up run can never overlap another
+# (-n = skip this firing if the lock is held).
 #
 # Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
 # probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
 0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/lfucg-ingest.log 2>&1
 
+# Daily v2-summary upgrade — every day at 00:00 ET. Generates the two-pass
+# summary + facts for clips the lean ingest left as VTT placeholders, re-ingests
+# them into RAG, rebuilds search.db, refreshes API + S3 + CDN. Cheap/idempotent.
+0 0 * * *            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/lfucg-summaries.log 2>&1
+
 # Heavy archive-wide sweeps — weekly, Sunday 03:00 ET.
-# backfill-docs + upgrade-summaries + tables-of-motions, then reload + sync.
+# backfill-docs + tables-of-motions, then reload + sync. (summary upgrades are daily now)
 0 3 * * 0            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/lfucg-backfill.log 2>&1

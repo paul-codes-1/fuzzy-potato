@@ -4,8 +4,9 @@
 # they don't redundantly re-scan all ~4,700 clips 4x/day. Run weekly
 # (see crontab.txt). All steps are idempotent / resumable:
 #   - backfill-docs: fetches missing minutes/agenda (+ regenerate summary)
-#   - upgrade-summaries: v2 two-pass summary for any clip still missing it
 #   - backfill-tables-of-motions: applies official motions from agenda packets
+# (v2 summary upgrades run DAILY now — see summaries_cron.sh — so they're
+#  no longer part of this weekly sweep.)
 #
 set -euo pipefail
 export AWS_PAGER=""
@@ -18,7 +19,7 @@ set -a
 [ -f .env ] && source .env
 set +a
 
-CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E8OIXOXDRETLZ}"
+CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
 RAG_SERVICE="${RAG_SERVICE:-lfucg-rag}"
 
 log() { echo "==> [$(date -Is)] $*"; }
@@ -36,9 +37,6 @@ if [ "${REGEN_SUMMARIES:-0}" = "1" ]; then
 fi
 uv run python main.py "${BACKFILL_ARGS[@]}"
 
-log "Upgrading any clips still missing v2 summaries"
-uv run python main.py --upgrade-summaries --max 9999
-
 log "Applying official Tables of Motions from agenda packets"
 uv run python main.py --backfill-tables-of-motions
 
@@ -50,9 +48,11 @@ else
   sudo systemctl restart "$RAG_SERVICE"
 fi
 bash deploy/lightsail/sync_data_s3.sh
-aws cloudfront create-invalidation \
-  --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-  --paths '/data/*' \
-  --query 'Invalidation.Id' --output text
+if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+  aws cloudfront create-invalidation \
+    --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+    --paths '/data/*' \
+    --query 'Invalidation.Id' --output text
+fi
 
 log "Weekly backfill done"
