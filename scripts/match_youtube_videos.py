@@ -25,12 +25,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 from typing import Optional
+
+# Allow running as a plain script (`python scripts/match_youtube_videos.py`),
+# not just `python -m scripts.match_youtube_videos` — put the repo root on the
+# path so `import config` resolves regardless of invocation.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _MONTHS = {
     m.lower(): i

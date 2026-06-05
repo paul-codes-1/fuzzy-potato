@@ -54,6 +54,14 @@ uv run python main.py --auto --rag --no-audio
 log "Backstop: ingest any new clips that slipped (idempotent)"
 uv run python -m rag.ingest --new
 
+# Stamp per-clip YouTube video_url for jurisdictions whose meetings live on a
+# YouTube channel (e.g. Paris/CivicClerk — the box can LIST the channel even
+# though it can't DOWNLOAD). No-op (sub-second) when no source.youtube
+# channel_url is configured, e.g. LFUCG/Granicus. Non-fatal: a yt-dlp hiccup
+# must not abort the ingest. video_url goes into metadata.json, synced below.
+log "Matching new clips to YouTube videos (no-op without a channel_url)"
+uv run python -m scripts.match_youtube_videos || log "video matcher failed (non-fatal)"
+
 after="$(read_last)"
 
 # Skip the downstream churn (restart / S3 / CloudFront / feeds) when nothing
