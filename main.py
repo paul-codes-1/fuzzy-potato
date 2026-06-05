@@ -127,7 +127,16 @@ class LFUCGPipeline:
         # (e.g. YouTube counties on CivicClerk/CivicPlus). When None, the
         # agenda/minutes fallback in process_clip / backfill_docs NEVER runs,
         # so the Granicus path is byte-identical.
-        self.agenda_source = make_agenda_source(self.cfg, self.log)
+        #
+        # PR-6: a document-driven primary source (CivicClerkSource) ALREADY
+        # owns agenda+minutes via download_agenda/download_minutes, so the
+        # parallel WS4 fallback would be redundant (and double-fetch). Skip it
+        # entirely for the document-driven path — the primary source is the
+        # single document fetcher.
+        if self._is_document_driven():
+            self.agenda_source = None
+        else:
+            self.agenda_source = make_agenda_source(self.cfg, self.log)
         if self.agenda_source is not None:
             self.agenda_source.force_reprocess = self._force_reprocess
             self.agenda_source.progress = self.progress
@@ -1108,6 +1117,18 @@ Guidelines:
                  f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
         return results
 
+    def _is_document_driven(self) -> bool:
+        """True when the active source is a DOCUMENT-DRIVEN source — i.e. it
+        has no audio / video / captions and the meeting's *content* is its
+        official agenda + minutes documents (PR-6: CivicClerk / Paris).
+
+        This is the single gate that turns on the minutes-as-content path in
+        ``process_clip``. It keys on ``cfg.source_type == "civicclerk"`` so
+        Granicus (LFUCG) and YouTube clips — which carry real transcripts —
+        are completely unaffected and stay byte-identical.
+        """
+        return getattr(self.cfg, "source_type", "granicus") == "civicclerk"
+
     @staticmethod
     def _doc_result_empty(result: dict) -> bool:
         """True when an agenda/minutes download yielded nothing usable.
@@ -1540,6 +1561,69 @@ Guidelines:
                     f"Using Granicus VTT transcript ({len(speakers)} speakers, "
                     f"{len(transcript_segments)} cues) — skipping Whisper"
                 )
+            elif self._is_document_driven():
+                # Document-driven path (PR-6: CivicClerk / Paris). There is NO
+                # audio and NO caption track (YouTube blocks both from the
+                # server), so the meeting's official MINUTES (votes, motions,
+                # appropriations — the authoritative record) ARE the content
+                # the facts/summary/RAG flow runs on. We fetch agenda+minutes
+                # here, then write the minutes text (falling back to agenda
+                # when minutes aren't published yet) as the clip's transcript
+                # artifact so the existing downstream flow runs UNCHANGED.
+                #
+                # These fetches are cached on disk; steps 6/6b below re-read
+                # the same files (idempotent) to populate files["agenda_*"]/
+                # files["minutes_*"] in metadata.
+                doc_body = clip_metadata.get("meeting_body")
+                minutes_doc = self._minutes_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=doc_body)
+                agenda_doc = self._agenda_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=doc_body)
+
+                # Prefer minutes (better-structured: explicit votes/motions);
+                # fall back to agenda text. Either becomes the transcript.
+                if minutes_doc.get("text"):
+                    transcript = minutes_doc["text"]
+                    transcript_source = "civicclerk_minutes"
+                    self.log(
+                        f"Document-driven: using official minutes as content "
+                        f"({len(transcript.split())} words)"
+                    )
+                elif agenda_doc.get("text"):
+                    transcript = agenda_doc["text"]
+                    transcript_source = "civicclerk_agenda"
+                    self.log(
+                        f"Document-driven: no minutes; using agenda as content "
+                        f"({len(transcript.split())} words)"
+                    )
+                else:
+                    # No documents available for this meeting → nothing to
+                    # build a record from. Record the miss and move on.
+                    self.state["failed_clips"].append({
+                        "clip_id": clip_id,
+                        "reason": "no_documents",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    self.state["last_processed_clip_id"] = clip_id
+                    self.save_state()
+                    self.log(
+                        f"Clip {clip_id}: no minutes or agenda from CivicClerk "
+                        f"— skipping", "WARNING")
+                    return False
+
+                # Single synthetic segment so the segments-based readers
+                # (RAG transcript chunker, --upgrade-summaries) see content.
+                # start/end are 0 — there are no video timestamps for a
+                # document-driven record (no clickable deep-links).
+                transcript_segments = [{"text": transcript, "start": 0.0, "end": 0.0}]
+                with open(transcript_path, "w", encoding="utf-8") as f:
+                    f.write(transcript)
+                with open(clip_dir / segments_filename, "w", encoding="utf-8") as f:
+                    json.dump(transcript_segments, f, indent=2)
+                files["transcript"] = transcript_filename
+                files["transcript_segments"] = segments_filename
             else:
                 # Whisper path: no captions track available, so we have
                 # to transcribe the audio ourselves.
@@ -1643,12 +1727,13 @@ Guidelines:
                 "transcript_source": transcript_source,
                 "speakers": speakers,
                 "models": {
-                    # Reflect what actually produced the transcript: VTT
-                    # path skips Whisper entirely, so claiming whisper-1
-                    # would be misleading downstream.
+                    # Reflect what actually produced the transcript: the VTT
+                    # and document-driven paths skip Whisper entirely, so
+                    # claiming whisper-1 would be misleading downstream.
                     "transcribe": (
-                        "granicus_vtt"
-                        if transcript_source == "granicus_vtt"
+                        transcript_source
+                        if transcript_source in (
+                            "granicus_vtt", "civicclerk_minutes", "civicclerk_agenda")
                         else self.transcribe_model
                     ),
                 }

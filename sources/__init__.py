@@ -11,6 +11,7 @@ from typing import Callable, Optional
 from .agenda_base import AgendaDoc, AgendaSource
 from .base import MeetingRef, VideoSource
 from .civicclerk import CivicClerkAgendaSource
+from .civicclerk_source import CivicClerkSource
 from .civicplus import CivicPlusAgendaSource
 from .granicus import GranicusSource
 from .youtube import YouTubeSource
@@ -20,6 +21,7 @@ __all__ = [
     "VideoSource",
     "GranicusSource",
     "YouTubeSource",
+    "CivicClerkSource",
     "make_source",
     "AgendaSource",
     "AgendaDoc",
@@ -34,6 +36,11 @@ __all__ = [
 _SOURCES: dict[str, type] = {
     "granicus": GranicusSource,
     "youtube": YouTubeSource,
+    # PR-6: a PRIMARY document-driven source (no video/audio/captions). The
+    # clip's content is its official CivicClerk minutes/agenda. Distinct from
+    # the WS4 CivicClerkAgendaSource, which is a SECONDARY agenda fallback
+    # behind a video source.
+    "civicclerk": CivicClerkSource,
 }
 
 # Registry of known agenda-portal types → constructor (WS4). Extend here when a

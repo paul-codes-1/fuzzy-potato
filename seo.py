@@ -183,6 +183,24 @@ def build_clip_markdown(
             f"contain errors. See [methodology]({site_url}/about/methodology) "
             f"or [report a correction](mailto:{cfg.editor_email})."
         )
+    elif transcript_source in ("civicclerk_minutes", "civicclerk_agenda"):
+        # Document-driven record (PR-6: CivicClerk / Paris). No verbatim
+        # transcript exists — the page is built from the official agenda +
+        # minutes documents, which are the authoritative record of what the
+        # meeting did (votes, motions, appropriations).
+        _doc_phrase = (
+            "official CivicClerk agenda and minutes"
+            if transcript_source == "civicclerk_minutes"
+            else "official CivicClerk agenda (minutes not yet published)"
+        )
+        disclosure = (
+            "> ⚠️ **Auto-generated content.** This record is built from the "
+            f"{_doc_phrase} — there is no verbatim transcript. Structured facts "
+            "were extracted with GPT-4o; the narrative summary was written by "
+            "Anthropic Claude Sonnet. "
+            f"See [methodology]({site_url}/about/methodology) "
+            f"or [report a correction](mailto:{cfg.editor_email})."
+        )
     else:
         disclosure = (
             "> ⚠️ **Auto-generated content.** Audio from the official Granicus "
