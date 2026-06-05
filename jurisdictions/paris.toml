@@ -60,7 +60,7 @@ portal = "https://parisky.portal.civicclerk.com"
 [storage]
 chroma_collection = "paris_meetings"
 s3_bucket = "s3://paris-civic-meetings"
-cloudfront_dist_id = ""                            # created at provision (written back by the script)
+cloudfront_dist_id = "E28B7ORY9035LU"                            # created at provision (written back by the script)
 
 [site]
 site_url = "https://paris.civicmemory.news"        # pending civicmemory.news registration
