@@ -462,6 +462,43 @@ def generate_seo_artifacts(
     news_lines.append("</urlset>")
     (public_dir / "news-sitemap.xml").write_text("\n".join(news_lines) + "\n", encoding="utf-8")
 
+    # ---- robots.txt — AI-crawler allow-list + agent-discovery pointers.
+    # The crawler allow-list is identical project-wide; only the host-bearing
+    # pointer/sitemap lines are templated off site_url so each jurisdiction's
+    # robots.txt points at ITS OWN sitemaps/llms/trust files (previously a
+    # static git-tracked file hardcoded to meetings.lexingtonky.news, which
+    # leaked the LFUCG host onto every other jurisdiction's domain).
+    ai_crawlers = [
+        "GPTBot", "ChatGPT-User", "OAI-SearchBot", "ClaudeBot", "Claude-Web",
+        "PerplexityBot", "Perplexity-User", "Google-Extended", "Applebot-Extended",
+        "CCBot", "anthropic-ai", "Bytespider", "Amazonbot", "cohere-ai",
+        "Meta-ExternalAgent",
+    ]
+    robots_lines = [
+        "User-agent: *",
+        "Allow: /",
+        "",
+        "# Explicit welcome for AI crawlers. We want these meetings surfaced in",
+        "# ChatGPT search, Claude web fetches, Perplexity answers, etc. Opting IN",
+        "# rather than relying on default silent-allow because several of these",
+        "# bots back off when the response is ambiguous.",
+    ]
+    for bot in ai_crawlers:
+        robots_lines += [f"User-agent: {bot}", "Allow: /", ""]
+    robots_lines += [
+        "# Agent-friendly markdown index — see llmstxt.org",
+        f"LLM: {site_url}/llms.txt",
+        f"LLM-Full: {site_url}/llms-full.txt",
+        "# Full agent/LLM guide (all MCP servers + APIs + how to verify us) and trust manifest",
+        f"LLM-Skill: {site_url}/skill.md",
+        f"LLM-Trust: {site_url}/.well-known/llm-trust.json",
+        "",
+        f"Sitemap: {site_url}/sitemap_index.xml",
+        f"Sitemap: {site_url}/sitemap.xml",
+        f"Sitemap: {site_url}/news-sitemap.xml",
+    ]
+    (public_dir / "robots.txt").write_text("\n".join(robots_lines) + "\n", encoding="utf-8")
+
     # ---- llms.txt — site-level index in markdown for AI agents (llmstxt.org).
     recent = valid_clips[:50]
     bodies = sorted({e.get("meeting_body") for e in valid_clips if e.get("meeting_body")})

@@ -199,6 +199,7 @@ class TestLfucgIdentityDefaults:
         llms = (public_dir / "llms.txt").read_text(encoding="utf-8")
         news = (public_dir / "news-sitemap.xml").read_text(encoding="utf-8")
         llms_full = (public_dir / "llms-full.txt").read_text(encoding="utf-8")
+        robots = (public_dir / "robots.txt").read_text(encoding="utf-8")
 
         # Publication name (byte-identity proxy for the historical literals).
         assert "# LFUCG Meeting Archive" in llms
@@ -209,6 +210,11 @@ class TestLfucgIdentityDefaults:
         assert "editor@lexingtonky.news" in llms
         # Full jurisdiction proper noun in the prose blurb + attribution.
         assert "Lexington-Fayette Urban County Government" in llms
+        # robots.txt pointer/sitemap lines carry the LFUCG host.
+        assert "Sitemap: https://meetings.lexingtonky.news/sitemap_index.xml" in robots
+        assert "LLM-Trust: https://meetings.lexingtonky.news/.well-known/llm-trust.json" in robots
+        # The static crawler allow-list survives generation.
+        assert "User-agent: GPTBot" in robots
 
     def test_clip_md_keeps_lfucg_editor_email(self, lfucg_config, tmp_path):
         output_dir, _ = _generate(tmp_path)
@@ -237,6 +243,7 @@ class TestSyntheticJurisdictionIdentity:
         llms = (public_dir / "llms.txt").read_text(encoding="utf-8")
         news = (public_dir / "news-sitemap.xml").read_text(encoding="utf-8")
         llms_full = (public_dir / "llms-full.txt").read_text(encoding="utf-8")
+        robots = (public_dir / "robots.txt").read_text(encoding="utf-8")
         clip_md = (output_dir / "clips" / "100" / "clip.md").read_text(encoding="utf-8")
 
         # Testville identity is present.
@@ -246,12 +253,16 @@ class TestSyntheticJurisdictionIdentity:
         assert "Operated by Test Operator" in llms
         assert "ed@testville.example" in llms
         assert "mailto:ed@testville.example" in clip_md
+        # robots.txt sitemap/pointer lines carry the Testville host, not LFUCG's.
+        assert "Sitemap: https://meetings.testville.example/sitemap_index.xml" in robots
+        assert "LLM: https://meetings.testville.example/llms.txt" in robots
 
         # Zero jurisdiction-identity leakage across every SEO surface.
         for name, text in (
             ("llms.txt", llms),
             ("news-sitemap.xml", news),
             ("llms-full.txt", llms_full),
+            ("robots.txt", robots),
             ("clip.md", clip_md),
         ):
             cleaned = _strip_ecosystem_brand(text)
