@@ -1,0 +1,52 @@
+# Paris, Kentucky (Bourbon County seat) — first non-Granicus onboarding candidate.
+#
+# Chosen as the proof-of-concept county: it's the cleanest fully-structured
+# stack in the Bluegrass survey — an official YouTube channel for video AND a
+# CivicClerk portal with a real JSON API for agendas/minutes (so both the
+# transcript pipeline and the Table-of-Motions feature have a true source).
+#
+# STATUS: validated, pending infra. The video + agenda sources below are REAL
+# and validated live (157 YouTube meetings enumerated; CivicClerk agenda packets
+# present). Branding decided: the civicmemory.news umbrella (per
+# MULTI_COUNTY_EXPANSION_SPEC.md §4). Remaining prerequisites before provision:
+#   1. Register civicmemory.news + add the zone to Cloudflare (+ a DNS:Edit token).
+#   2. Run deploy/lightsail/provision-jurisdiction.sh paris (creates box/S3/IAM/DNS).
+#   3. Create the CloudFront distribution (provisioner prints settings + records
+#      the dist id back into cloudfront_dist_id below).
+#   4. Cold-start the archive (~157 clips), validate, flip DNS.
+
+[jurisdiction]
+slug = "paris"
+name = "City of Paris, Kentucky"
+
+[source]
+type = "youtube"
+
+[source.youtube]
+channel_url = "https://www.youtube.com/@CityofParisKY/videos"
+start_id = 1
+
+[taxonomy]
+# Paris is governed by a City Commission; keep the generic body words so
+# committee/board meetings on the channel are classified too.
+body_patterns = ["Commission", "Council", "Committee", "Board"]
+body_acronyms = []
+
+[agenda]
+type = "civicclerk"
+api_base = "https://parisky.api.civicclerk.com"
+portal = "https://parisky.portal.civicclerk.com"
+
+[storage]
+chroma_collection = "paris_meetings"
+s3_bucket = "s3://paris-civic-meetings"
+cloudfront_dist_id = ""                            # created at provision (written back by the script)
+
+[site]
+site_url = "https://paris.civicmemory.news"        # pending civicmemory.news registration
+origin_hostname = "paris-origin.civicmemory.news"  # pending civicmemory.news registration
+
+[publication]
+publication_name = "Paris Meeting Archive"
+operator_name = "Paul Oliva"
+editor_email = "editor@civicmemory.news"           # pending civicmemory.news registration
