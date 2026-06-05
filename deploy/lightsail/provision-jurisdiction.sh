@@ -15,7 +15,7 @@
 #              See the CloudFront decision note below; the script PRINTS the
 #              exact settings and writes the dist id back to the TOML.
 #   6. [once] Scoped IAM user  <slug>-box  + bucket/dist/ecr policy; key -> .env
-#   7. [once] Cloudflare DNS: public (proxied -> CloudFront) + origin (grey -> IP)
+#   7. [once] Route 53 DNS: public (CNAME -> CloudFront) + origin (A -> static IP)
 #   8. [idem] On-box: apt deps, uv, AWS CLI, Caddy, 4GB swap, TZ, Python 3.11
 #   9. [once] Deploy key + git clone to /opt/fuzzy-potato; [idem] uv sync --extra rag
 #  10. [idem] Render + install .env  (JURISDICTION, secrets, S3/CF, RELOAD_TOKEN)
@@ -55,12 +55,12 @@
 #       [--repo-url URL] [--region REGION] [--bundle BUNDLE] [--blueprint BP]
 #
 #   --dry-run             Print every action without creating anything. Never
-#                         calls AWS / Cloudflare / SSH. Use this for review.
+#                         calls AWS / SSH. Use this for review.
 #   --secrets-file PATH   env-style file with OPENAI_API_KEY / ANTHROPIC_API_KEY
 #                         / FEEDS_API_TOKEN (default: ./.env if present).
 #   --ssh-key PATH        SSH private key for the box (default: the Lightsail
 #                         default key downloaded for the region).
-#   --zone DOMAIN         Cloudflare zone (default: derived from site_url's
+#   --zone DOMAIN         Route 53 hosted zone (default: derived from site_url's
 #                         registrable domain, e.g. lexingtonky.news).
 #   --cloudfront-dist-id  Pre-existing / just-created CloudFront dist id to use
 #                         (skips the manual prompt; written back to the TOML).
@@ -227,7 +227,7 @@ Resolved configuration for '$SLUG':
   name              : $NAME
   site_url (public) : $SITE_URL   (host: $PUBLIC_HOST)
   origin_hostname   : $ORIGIN_HOST
-  cloudflare zone   : $ZONE
+  route53 zone      : $ZONE
   s3 bucket         : $S3_BUCKET_URL   (name: $BUCKET_NAME)
   chroma collection : $CHROMA_COLLECTION
   cloudfront dist   : ${CF_DIST_ID:-<none yet — manual step 5>}
@@ -249,7 +249,7 @@ if [ "$SLUG" != "lfucg" ]; then
 fi
 
 if [ "$DRY_RUN" = "1" ]; then
-  log "DRY-RUN: config parsed and validated. No AWS/Cloudflare/SSH calls will be made."
+  log "DRY-RUN: config parsed and validated. No AWS/SSH calls will be made."
 fi
 
 # ── Preflight: tooling + env the operator must have ──────────────────────────
@@ -260,10 +260,9 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
 # is only the sftp subsystem.
 need aws; need python3; need openssl; need ssh; need curl
 if [ "$DRY_RUN" != "1" ]; then
-  [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "CLOUDFLARE_API_TOKEN not set (needed for DNS in phase 7)"
   aws sts get-caller-identity >/dev/null 2>&1 || die "AWS credentials not working (aws sts get-caller-identity failed)"
 fi
-log "preflight ok${DRY_RUN:+ (dry-run: skipped CLOUDFLARE_API_TOKEN + AWS identity checks)}"
+log "preflight ok${DRY_RUN:+ (dry-run: skipped AWS identity check)}"
 
 # AWS account id (for ARNs); placeholder under dry-run.
 if [ "$DRY_RUN" = "1" ]; then
@@ -548,73 +547,50 @@ else
   fi
 fi
 
-# ── Phase 7: Cloudflare DNS (public proxied + origin grey) [once] ────────────
-phase "7 — Cloudflare DNS: public (proxied) + origin (grey) [once]"
-# Resolve the zone id once, then create-or-update each record. Uses
-# CLOUDFLARE_API_TOKEN from the operator's env. Idempotent: looks up an
-# existing record by name first and PUTs (updates) instead of duplicating.
-cf_api() {  # cf_api <METHOD> <path> [json-body]
-  local method="$1" path="$2" body="${3-}"
-  if [ -n "$body" ]; then
-    curl -fsS -X "$method" "https://api.cloudflare.com/client/v4${path}" \
-      -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-      -H "Content-Type: application/json" \
-      --data "$body"
-  else
-    curl -fsS -X "$method" "https://api.cloudflare.com/client/v4${path}" \
-      -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-      -H "Content-Type: application/json"
-  fi
-}
-
-upsert_dns() {  # upsert_dns <name> <type> <content> <proxied:true|false> [comment]
-  local rec_name="$1" rec_type="$2" rec_content="$3" rec_proxied="$4" rec_comment="${5-}"
-  local body
-  body="$(python3 - "$rec_name" "$rec_type" "$rec_content" "$rec_proxied" "$rec_comment" <<'PY'
+# ── Phase 7: Route 53 DNS (public -> CloudFront, origin -> static IP) [once] ──
+phase "7 — Route 53 DNS: public (CNAME->CloudFront) + origin (A->static IP) [once]"
+# The civicmemory.news zone lives in Route 53 (registered there). Route 53 is
+# authoritative-only — no proxy/grey-cloud concept — so both records resolve
+# directly: CloudFront fronts the public host, and the origin host points
+# straight at the box so Caddy HTTP-01 + CloudFront-to-origin both work.
+# UPSERT is natively idempotent (create-or-replace), so re-runs are safe.
+upsert_dns() {  # upsert_dns <name> <type> <content>
+  local rec_name="$1" rec_type="$2" rec_content="$3" batch
+  batch="$(python3 - "$rec_name" "$rec_type" "$rec_content" <<'PY'
 import json, sys
-name, rtype, content, proxied, comment = sys.argv[1:6]
-print(json.dumps({"type": rtype, "name": name, "content": content,
-                  "ttl": 1, "proxied": proxied == "true",
-                  **({"comment": comment} if comment else {})}))
+name, rtype, content = sys.argv[1:4]
+print(json.dumps({"Changes": [{"Action": "UPSERT", "ResourceRecordSet": {
+    "Name": name, "Type": rtype, "TTL": 300,
+    "ResourceRecords": [{"Value": content}]}}]}))
 PY
 )"
   if [ "$DRY_RUN" = "1" ]; then
-    echo "DRY-RUN would upsert Cloudflare DNS: $rec_type $rec_name -> $rec_content (proxied=$rec_proxied)"
+    echo "DRY-RUN would UPSERT Route53 ($ZONE): $rec_type $rec_name -> $rec_content"
     return 0
   fi
-  # Find existing record id (if any) by exact name.
-  local existing_id
-  existing_id="$(cf_api GET "/zones/${ZONE_ID}/dns_records?type=${rec_type}&name=${rec_name}" \
-    | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r[0]["id"] if r else "")')"
-  if [ -n "$existing_id" ]; then
-    log "updating existing DNS record $rec_name ($existing_id)"
-    cf_api PUT "/zones/${ZONE_ID}/dns_records/${existing_id}" "$body" >/dev/null
-  else
-    log "creating DNS record $rec_name -> $rec_content (proxied=$rec_proxied)"
-    cf_api POST "/zones/${ZONE_ID}/dns_records" "$body" >/dev/null
-  fi
+  aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" \
+    --change-batch "$batch" --query 'ChangeInfo.Status' --output text >/dev/null
+  log "upserted $rec_type $rec_name -> $rec_content"
 }
 
 if [ "$DRY_RUN" = "1" ]; then
   ZONE_ID="<ZONE_ID>"
-  log "DRY-RUN: would look up zone id for $ZONE"
+  log "DRY-RUN: would look up Route53 hosted zone for $ZONE"
 else
-  ZONE_ID="$(cf_api GET "/zones?name=${ZONE}" | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r[0]["id"] if r else "")')"
-  [ -n "$ZONE_ID" ] || die "Cloudflare zone '$ZONE' not found for this token"
+  ZONE_ID="$(aws route53 list-hosted-zones-by-name --dns-name "$ZONE" \
+    --query "HostedZones[?Name=='${ZONE}.'].Id | [0]" --output text 2>/dev/null | sed 's#/hostedzone/##')"
+  [ -n "$ZONE_ID" ] && [ "$ZONE_ID" != "None" ] || die "Route53 hosted zone '$ZONE' not found — register the domain / add the zone first"
 fi
-# Public record -> CloudFront, PROXIED (orange). CloudFront's domain is only
-# known after the dist exists; CNAME to the dist's *.cloudfront.net domain is
-# the usual target. We look it up from the dist id (skip under dry-run).
+# Public record -> CloudFront (CNAME to the dist's *.cloudfront.net domain),
+# resolved from the dist id (skipped under dry-run).
 if [ "$DRY_RUN" = "1" ]; then
   CF_DOMAIN="<dist>.cloudfront.net"
 else
   CF_DOMAIN="$(aws cloudfront get-distribution --id "$CF_DIST_ID" --query 'Distribution.DomainName' --output text 2>/dev/null || echo '')"
   [ -n "$CF_DOMAIN" ] || die "could not resolve CloudFront domain for dist $CF_DIST_ID"
 fi
-upsert_dns "$PUBLIC_HOST" CNAME "$CF_DOMAIN" true  "public CDN ($SLUG) -> CloudFront"
-# Origin record -> static IP, DNS-ONLY (grey) so Caddy can complete HTTP-01 and
-# CloudFront can reach the box directly. MUST be grey, not proxied.
-upsert_dns "$ORIGIN_HOST" A "$STATIC_IP" false  "Caddy origin ($SLUG) -> Lightsail static IP (DNS-only)"
+upsert_dns "$PUBLIC_HOST" CNAME "$CF_DOMAIN"
+upsert_dns "$ORIGIN_HOST" A "$STATIC_IP"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ON-BOX PROVISIONING (steps 8-14) — all [idem], run over SSH
@@ -896,7 +872,7 @@ DNS / enable the cron. (This script intentionally does NOT spend LLM \$.)
    [ ] feeds webhook points at the new ingest path
 
 ── DELIBERATELY NOT scripted (one-time human integration; spec §2.5) ─────────
-   [ ] Cloudflare WAF crawler allow-list (shared zone rule)
+   [ ] (optional) AWS WAF / CloudFront crawler rules — civicmemory.news is Route 53 + CloudFront, no Cloudflare
    [ ] paulBot !ask + feeds civic-memory widget wiring (cross-repo)
    [ ] master ~/lt/CLAUDE.md update
 
