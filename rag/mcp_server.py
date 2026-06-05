@@ -52,11 +52,41 @@ OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 # override (the historical knob).
 SITE_URL = (os.environ.get("LFUCG_SITE_URL") or _CFG.site_url).rstrip("/")
 
+# Provenance + citation wording differs for document-driven jurisdictions
+# (e.g. Paris on CivicClerk — no Granicus, no audio/Whisper) vs video ones
+# (LFUCG on Granicus). LFUCG keeps its exact historical wording.
+if _CFG.source_type == "civicclerk":
+    _PROVENANCE = (
+        "Every meeting record is built from the official CivicClerk agenda & minutes "
+        "documents, summarized via GPT-4o + Claude Sonnet, and indexed for both keyword "
+        "search (BM25) and semantic search (RAG)."
+    )
+    _GET_CLIP_LINE = (
+        "  • get_meeting_clip — fetch full metadata + summary + source document URL for "
+        "one clip.\n"
+    )
+    _CITE_LINE = (
+        "Every clip links back to its official meeting record (agenda & minutes, plus a "
+        "meeting-video link where available). Always cite the meeting URL when quoting."
+    )
+else:
+    _PROVENANCE = (
+        "Every clip is downloaded from Granicus, transcribed via Whisper, summarized via "
+        "GPT-4o + Claude Sonnet, and indexed for both keyword search (BM25) and semantic "
+        "search (RAG)."
+    )
+    _GET_CLIP_LINE = (
+        "  • get_meeting_clip — fetch full metadata + summary + Granicus video URL for one "
+        "clip.\n"
+    )
+    _CITE_LINE = (
+        "Every clip links back to the canonical Granicus video at the exact timestamp the "
+        "answer was synthesized from. Always cite the meeting URL when quoting."
+    )
+
 SERVER_INSTRUCTIONS = (
     f"Searchable archive of {_CFG.name} "
-    "council and committee meetings. Every clip is downloaded from Granicus, "
-    "transcribed via Whisper, summarized via GPT-4o + Claude Sonnet, and "
-    "indexed for both keyword search (BM25) and semantic search (RAG).\n\n"
+    f"council and committee meetings. {_PROVENANCE}\n\n"
     "Pick a tool by intent:\n"
     "  • ask_meetings — natural-language Q&A across the whole archive (one-shot, returns "
     "a synthesized answer + cited clips with video timestamps).\n"
@@ -64,11 +94,9 @@ SERVER_INSTRUCTIONS = (
     "snippets, optionally filtered by meeting body, speaker, or date range.\n"
     "  • find_related_clips — given one clip_id, find similar clips by embedding "
     "centroid (useful for expanding a single hit into a thread).\n"
-    "  • get_meeting_clip — fetch full metadata + summary + Granicus video URL for one "
-    "clip.\n"
+    f"{_GET_CLIP_LINE}"
     "  • list_recent_meetings — browse the newest meetings (optionally filtered by body).\n\n"
-    "Every clip links back to the canonical Granicus video at the exact timestamp the "
-    "answer was synthesized from. Always cite the meeting URL when quoting."
+    f"{_CITE_LINE}"
 )
 
 
@@ -493,7 +521,9 @@ def list_recent_meetings_impl(limit: int = 20, meeting_body: Optional[str] = Non
 def build_mcp_server() -> FastMCP:
     """Build the FastMCP server and register all tools."""
     mcp = FastMCP(
-        name="lfucg-meeting-archive",
+        # Slug-derived so each jurisdiction's MCP serverInfo.name is its own
+        # (LFUCG stays "lfucg-meeting-archive" byte-identical).
+        name=f"{_CFG.slug}-meeting-archive",
         instructions=SERVER_INSTRUCTIONS,
         stateless_http=True,
         # FastMCP's internal route defaults to "/mcp"; we mount the app

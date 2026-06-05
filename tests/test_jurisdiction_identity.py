@@ -338,6 +338,27 @@ class TestSyntheticJurisdictionIdentity:
             get_config.cache_clear()
             importlib.reload(mcp_module)
 
+    def test_mcp_instructions_document_driven_for_paris(self, monkeypatch):
+        # Paris (real toml) is CivicClerk/document-driven: MCP instructions must
+        # describe agenda & minutes documents, NOT 'Granicus'/'Whisper' (which
+        # would be a false provenance claim), and the serverInfo name is slugged.
+        import rag.mcp_server as mcp_module
+
+        monkeypatch.setenv("JURISDICTION", "paris")
+        get_config.cache_clear()
+        mcp_module = importlib.reload(mcp_module)
+        try:
+            instr = mcp_module.SERVER_INSTRUCTIONS
+            assert "City of Paris, Kentucky" in instr
+            assert "CivicClerk agenda & minutes" in instr
+            assert "Granicus" not in instr
+            assert "Whisper" not in instr
+            assert mcp_module.mcp_server.name == "paris-meeting-archive"
+        finally:
+            monkeypatch.setenv("JURISDICTION", "lfucg")
+            get_config.cache_clear()
+            importlib.reload(mcp_module)
+
     def test_fastapi_title_carries_testville_identity(self, testcounty_config, monkeypatch):
         # rag/server.py builds the FastAPI title from publication_name at import,
         # so reload it under the active jurisdiction and assert the real app.title.
