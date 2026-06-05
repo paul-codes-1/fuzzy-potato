@@ -566,6 +566,122 @@ class TestIngestClip:
         ingest_clip(9999, tmp_path, chroma_collection, mock_openai_batch_embeddings)
         assert chroma_collection.count() >= 1
 
+    def test_ingest_clip_stamps_canonical_url(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+        """PR-6 fix #1: the clip's metadata.json["url"] is stamped onto every
+        chunk's ChromaDB metadata as canonical_url (so rag.query can cite the
+        right URL for non-Granicus clips)."""
+        from rag.ingest import ingest_clip
+
+        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
+        results = chroma_collection.get(include=["metadatas"])
+        assert results["metadatas"]
+        for meta in results["metadatas"]:
+            assert meta.get("canonical_url") == (
+                "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true")
+
+
+def _civicclerk_clip(tmp_path, clip_id, transcript_source, *, minutes=True, agenda=True):
+    """Build a minimal document-driven clip dir: the minutes (or agenda) text
+    is BOTH the minutes/agenda file AND the transcript artifact (one synthetic
+    segment) — mirroring what process_clip writes on the document-driven path."""
+    clip_dir = tmp_path / "clips" / str(clip_id)
+    clip_dir.mkdir(parents=True)
+    files = {"transcript_segments": "transcript_segments.json"}
+
+    minutes_text = "Motion by Smith to approve the FY27 budget. Passed 5-0 by roll call."
+    agenda_text = "I. Call to order. II. Budget hearing. III. Adjourn."
+    content = minutes_text if transcript_source == "civicclerk_minutes" else agenda_text
+
+    # Transcript artifact == the content (single segment, no video timestamps).
+    (clip_dir / "transcript_segments.json").write_text(
+        json.dumps([{"text": content, "start": 0.0, "end": 0.0}]))
+
+    if minutes:
+        files["minutes_txt"] = "minutes.txt"
+        (clip_dir / "minutes.txt").write_text(minutes_text)
+    if agenda:
+        files["agenda_txt"] = "agenda.txt"
+        (clip_dir / "agenda.txt").write_text(agenda_text)
+
+    meta = {
+        "clip_id": clip_id,
+        "url": "https://parisky.portal.civicclerk.com/event/322",
+        "date": "2026-05-12",
+        "meeting_body": "City Commission",
+        "title": "City Commission Meeting",
+        "transcript_source": transcript_source,
+        "files": files,
+    }
+    (clip_dir / "metadata.json").write_text(json.dumps(meta))
+    return clip_dir
+
+
+class TestDocumentDrivenIngest:
+    """PR-6 fix #2: a document-driven clip must NOT double-index the document
+    that already became its transcript artifact."""
+
+    def test_minutes_not_double_indexed_for_civicclerk_minutes(
+            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+        from rag.ingest import ingest_clip
+
+        _civicclerk_clip(tmp_path, 5, "civicclerk_minutes", minutes=True, agenda=True)
+        ingest_clip(5, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+
+        results = chroma_collection.get(include=["metadatas"])
+        sources = [m["source"] for m in results["metadatas"]]
+        # The minutes IS the transcript → no separate "minutes" source chunks.
+        assert "minutes" not in sources
+        # But it IS indexed once, as the transcript.
+        assert "transcript" in sources
+        # The OTHER document (agenda) still indexes normally.
+        assert "agenda" in sources
+
+    def test_agenda_not_double_indexed_for_civicclerk_agenda(
+            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+        from rag.ingest import ingest_clip
+
+        # Minutes not yet published → agenda became the transcript content.
+        _civicclerk_clip(tmp_path, 6, "civicclerk_agenda", minutes=False, agenda=True)
+        ingest_clip(6, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+
+        results = chroma_collection.get(include=["metadatas"])
+        sources = [m["source"] for m in results["metadatas"]]
+        assert "agenda" not in sources       # agenda IS the transcript
+        assert "transcript" in sources
+
+    def test_minutes_clip_still_indexes_agenda_as_distinct_source(
+            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+        """For a minutes-clip, the agenda is a genuinely different document and
+        must still be indexed (only the minutes is skipped)."""
+        from rag.ingest import ingest_clip
+
+        _civicclerk_clip(tmp_path, 7, "civicclerk_minutes", minutes=True, agenda=True)
+        ingest_clip(7, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+        agenda_chunks = chroma_collection.get(where={"source": "agenda"}, include=["metadatas"])
+        assert len(agenda_chunks["ids"]) >= 1
+
+    def test_no_duplicate_concept_chunks(
+            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+        """The budget-motion concept text appears exactly ONCE (as transcript),
+        not twice (transcript + minutes)."""
+        from rag.ingest import ingest_clip
+
+        _civicclerk_clip(tmp_path, 8, "civicclerk_minutes", minutes=True, agenda=False)
+        ingest_clip(8, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+        results = chroma_collection.get(include=["documents"])
+        hits = [d for d in results["documents"] if "approve the FY27 budget" in d]
+        assert len(hits) == 1
+
+    def test_granicus_clip_still_indexes_minutes_separately(
+            self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+        """Byte-identity: a normal Granicus clip (no civicclerk transcript
+        source) still indexes minutes as its own source."""
+        from rag.ingest import ingest_clip
+
+        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
+        minutes_chunks = chroma_collection.get(where={"source": "minutes"}, include=["metadatas"])
+        assert len(minutes_chunks["ids"]) >= 1
+
 
 # ============================================================
 # 7. Incremental ingestion tests

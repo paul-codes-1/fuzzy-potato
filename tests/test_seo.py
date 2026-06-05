@@ -162,7 +162,9 @@ class TestBuildClipMarkdown:
         entry = {"clip_id": 6757, "date": "2026-05-12", "title": "City Commission Meeting"}
         md = build_clip_markdown(entry, tmp_path, "https://paris.civicmemory.news")
         assert "Auto-generated content" in md
-        assert "official CivicClerk agenda and minutes" in md
+        # Fix 4: only the minutes became the record content — name just minutes.
+        assert "official CivicClerk minutes" in md
+        assert "agenda and minutes" not in md
         assert "there is no verbatim transcript" in md
         # Must NOT claim a Whisper transcript.
         assert "Whisper-1" not in md

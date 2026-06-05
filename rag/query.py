@@ -27,6 +27,24 @@ def granicus_clip_url(clip_id, timestamp: int = 0) -> str:
     view_id = os.getenv("GRANICUS_VIEW_ID", "14")
     return f"https://{host}/player/clip/{clip_id}?view_id={view_id}&entrytime={timestamp}"
 
+
+def clip_citation_url(clip_id, canonical_url: str = "", timestamp: int = 0) -> str:
+    """The citation/source link for a clip, honoring non-Granicus sources.
+
+    PR-6: document-driven jurisdictions (e.g. Paris on CivicClerk) store their
+    own ``canonical_url`` in the chunk metadata (== ``source.canonical_url`` at
+    process time). Use it verbatim for those — they have no Granicus host and
+    no video timestamp deep-link.
+
+    Granicus stays byte-identical: a Granicus ``player/clip`` permalink (or no
+    stored URL at all, the OLD already-ingested LFUCG case) falls back to
+    ``granicus_clip_url(clip_id, timestamp)`` so the ``&entrytime=`` deep-link
+    is preserved exactly as before.
+    """
+    if canonical_url and "/player/clip/" not in canonical_url:
+        return canonical_url
+    return granicus_clip_url(clip_id, timestamp or 0)
+
 _MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
 _MONTHS.update({name.lower(): i for i, name in enumerate(calendar.month_abbr) if name})
 _RECENCY_RE = re.compile(r"\b(most recent|latest|newest|last|recent|recently|lately)\b", re.IGNORECASE)
@@ -377,7 +395,12 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
             "title": clip_meta.get("title", "Unknown Meeting"),
             "meeting_body": meta.get("meeting_body", ""),
             "excerpt": doc[:200] + "..." if len(doc) > 200 else doc,
-            "granicus_url": granicus_clip_url(clip_id, timestamp or 0),
+            # Honor a non-Granicus canonical_url (Paris/CivicClerk) stored at
+            # ingest; Granicus + old LFUCG chunks fall back to the Granicus
+            # deep-link (byte-identical). Key stays "granicus_url" for
+            # backward compat with the frontend / MCP consumers.
+            "granicus_url": clip_citation_url(
+                clip_id, meta.get("canonical_url", ""), timestamp or 0),
         }
         if timestamp is not None:
             source_entry["timestamp"] = timestamp

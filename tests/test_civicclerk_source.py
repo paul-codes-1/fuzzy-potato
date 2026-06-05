@@ -247,6 +247,45 @@ class TestListEventsPagination:
                    side_effect=Exception("boom")):
             assert src._list_events() == []
 
+    def test_max_pages_cap_logs_warning(self, tmp_path):
+        """PR-6 fix #5: when every page is full and we exhaust max_pages, warn
+        that the catalog may be truncated (so a larger jurisdiction notices)."""
+        logs = []
+        src = CivicClerkSource(_cc_cfg(tmp_path), lambda msg, level="INFO": logs.append((level, msg)))
+
+        def fake_get(url, params=None, timeout=None, headers=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            # ALWAYS return a full page → never short-circuits → cap is hit.
+            resp.json = MagicMock(return_value={"value": [{"id": i} for i in range(10)]})
+            return resp
+
+        with patch("sources.civicclerk_source.requests.get", side_effect=fake_get):
+            events = src._list_events(page_size=10, max_pages=3)
+
+        assert len(events) == 30  # 3 full pages
+        warnings = [m for lvl, m in logs if lvl == "WARNING"]
+        assert any("max_pages=3" in m and "truncated" in m for m in warnings)
+
+    def test_short_page_does_not_log_cap_warning(self, tmp_path):
+        """The normal end-of-catalog path (short final page) must NOT warn."""
+        logs = []
+        src = CivicClerkSource(_cc_cfg(tmp_path), lambda msg, level="INFO": logs.append((level, msg)))
+
+        def fake_get(url, params=None, timeout=None, headers=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            skip = params["$skip"]
+            resp.json = MagicMock(
+                return_value={"value": [{"id": i} for i in range(10)]} if skip == 0
+                else {"value": [{"id": 99}]})  # short page → stop
+            return resp
+
+        with patch("sources.civicclerk_source.requests.get", side_effect=fake_get):
+            src._list_events(page_size=10, max_pages=50)
+
+        assert not any("truncated" in m for lvl, m in logs)
+
 
 # ---------------------------------------------------------------------------
 # (b) reverse-map resolution + (canonical_url)
@@ -476,6 +515,45 @@ class TestMinutesAsContent:
         assert "Motion by Smith" in tfile.read_text()
         segs = json.loads((clip_dir / meta["files"]["transcript_segments"]).read_text())
         assert segs[0]["text"].startswith("Motion by Smith")
+
+    def test_process_clip_does_not_double_fetch_docs(self, tmp_path):
+        """PR-6 fix #3: the transcript-content step + steps 6/6b must fetch the
+        agenda/minutes ONCE each (not twice). Under force_reprocess the disk
+        cache is bypassed, so a second call would be a real second network hit."""
+        pipe = self._doc_driven_pipeline(tmp_path)
+        pipe._force_reprocess = True  # force: cache bypassed → double-fetch would show
+
+        src = MagicMock()
+        src.get_clip_title.return_value = "City Commission Meeting"
+        src.canonical_url.return_value = "https://parisky.portal.civicclerk.com/event/322"
+        src.fetch_captions.return_value = None
+        src.download_audio.return_value = None
+        src.download_minutes.return_value = {
+            "pdf_file": "m.pdf", "html_file": None, "txt_file": "m.txt",
+            "text": "Motion to approve passed 5-0.",
+        }
+        src.download_agenda.return_value = {
+            "pdf_file": "a.pdf", "txt_file": "a.txt", "text": "I. Call to order.",
+        }
+        pipe.source = src
+
+        with patch.object(pipe, "scrape_clip_metadata",
+                          return_value={"date": "2026-05-12",
+                                        "meeting_body": "City Commission",
+                                        "title": "City Commission Meeting"}), \
+             patch.object(pipe, "generate_search_index"), \
+             patch.object(pipe, "apply_tables_from_agenda"):
+            ok = pipe.process_clip(9)
+
+        assert ok is True
+        # Each document fetched exactly ONCE despite the transcript step +
+        # steps 6/6b both needing the result.
+        assert src.download_minutes.call_count == 1
+        assert src.download_agenda.call_count == 1
+        # And steps 6/6b still populated the file metadata from the reused docs.
+        meta = json.loads((tmp_path / "clips" / "9" / "metadata.json").read_text())
+        assert meta["files"]["minutes_txt"] == "m.txt"
+        assert meta["files"]["agenda_txt"] == "a.txt"
 
     def test_process_clip_falls_back_to_agenda_when_no_minutes(self, tmp_path):
         pipe = self._doc_driven_pipeline(tmp_path)

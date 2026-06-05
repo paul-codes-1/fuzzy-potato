@@ -486,7 +486,7 @@ function MeetingDetail() {
           <>
             This record is built from the official CivicClerk{' '}
             {meeting.transcript_source === 'civicclerk_minutes'
-              ? 'agenda and minutes'
+              ? 'minutes'
               : 'agenda (minutes not yet published)'}{' '}
             {meeting.url ? (
               <a href={meeting.url} target="_blank" rel="noopener noreferrer">

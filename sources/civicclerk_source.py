@@ -218,6 +218,7 @@ class CivicClerkSource:
         url = f"{self.api_base}/v1/Events"
 
         events: List[Dict[str, Any]] = []
+        exhausted = False
         for page in range(max_pages):
             params = {
                 "$filter": flt,
@@ -234,12 +235,24 @@ class CivicClerkSource:
                 data = resp.json()
             except Exception as e:
                 self.log(f"CivicClerk events list failed (page {page}): {e}", "WARNING")
+                exhausted = True  # error stop, not a cap truncation
                 break
             value = data.get("value") if isinstance(data, dict) else None
             batch = value or []
             events.extend(batch)
             if len(batch) < page_size:
+                exhausted = True  # short page → we reached the end of the catalog
                 break
+        if not exhausted:
+            # We ran the full max_pages and the last page was STILL full — the
+            # catalog is larger than max_pages*page_size and we've silently
+            # truncated it. Warn so a future larger jurisdiction raises the cap.
+            self.log(
+                f"CivicClerk events list hit max_pages={max_pages} cap "
+                f"(page_size={page_size}); catalog may be truncated at "
+                f"{len(events)} events — raise the cap for this jurisdiction",
+                "WARNING",
+            )
         return events
 
     @staticmethod

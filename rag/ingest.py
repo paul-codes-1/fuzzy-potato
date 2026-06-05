@@ -547,6 +547,14 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
             # rather than a Whisper transcript.
             if chunk.get("transcript_source"):
                 meta["transcript_source"] = chunk["transcript_source"]
+            # Canonical source-video / portal permalink (== the source
+            # adapter's canonical_url, recorded in metadata.json["url"] at
+            # process time). Stored so rag.query can cite the RIGHT URL for
+            # non-Granicus clips (e.g. a Paris CivicClerk portal link) instead
+            # of hardcoding the LFUCG Granicus host. OLD LFUCG chunks lack this
+            # key and fall back to granicus_clip_url() — citations unchanged.
+            if chunk.get("canonical_url"):
+                meta["canonical_url"] = chunk["canonical_url"]
             # ChromaDB metadata is scalar-only — join speaker list.
             if chunk.get("speakers"):
                 meta["speakers"] = ", ".join(chunk["speakers"])
@@ -599,6 +607,19 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
     meeting_body = metadata.get("meeting_body") or ""
     files = metadata.get("files", {})
     transcript_source = metadata.get("transcript_source")
+    # Canonical permalink for citations (source.canonical_url at process time).
+    # Empty for older LFUCG clips that predate this field — rag.query falls
+    # back to granicus_clip_url() for those, so LFUCG citations are unchanged.
+    canonical_url = metadata.get("url") or ""
+
+    # Document-driven sources (PR-6: CivicClerk / Paris) write the official
+    # minutes (or agenda) AS the transcript artifact, so that document is
+    # ALREADY indexed via the transcript source below. Skip re-indexing it as
+    # its own source to avoid double-counting the same text (which would skew
+    # Paris search ranking). The OTHER document still indexes normally (e.g. a
+    # minutes-clip's agenda is a distinct source).
+    skip_minutes_source = transcript_source == "civicclerk_minutes"
+    skip_agenda_source = transcript_source == "civicclerk_agenda"
 
     all_chunks = []
 
@@ -621,7 +642,7 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
 
     # 1. Minutes chunks (official ground-truth source)
     minutes_file = files.get("minutes_txt")
-    if minutes_file:
+    if minutes_file and not skip_minutes_source:
         minutes_path = clip_dir / minutes_file
         if minutes_path.exists():
             minutes_text = minutes_path.read_text()
@@ -629,7 +650,7 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
 
     # 2. Agenda chunks
     agenda_file = files.get("agenda_txt")
-    if agenda_file:
+    if agenda_file and not skip_agenda_source:
         agenda_path = clip_dir / agenda_file
         if agenda_path.exists():
             agenda_text = agenda_path.read_text()
@@ -647,6 +668,12 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
                 for c in transcript_chunks:
                     c["transcript_source"] = transcript_source
             all_chunks.extend(transcript_chunks)
+
+    # Stamp the canonical permalink onto every chunk so it lands in ChromaDB
+    # metadata (read back by rag.query when building citation links).
+    if canonical_url:
+        for c in all_chunks:
+            c["canonical_url"] = canonical_url
 
     if all_chunks:
         try:

@@ -1541,6 +1541,13 @@ Guidelines:
             transcript_source = "whisper-1"
             speakers: List[str] = []
             audio_path: Optional[Path] = None
+            # Document-driven path may fetch agenda/minutes up front (they ARE
+            # the content). Steps 6/6b below reuse these instead of re-fetching
+            # (re-fetching with --force bypasses the disk cache → double the
+            # network calls). None means "not yet fetched" (the Granicus/
+            # YouTube/Whisper paths leave them None → steps 6/6b fetch as before).
+            agenda_doc: Optional[Dict[str, Any]] = None
+            minutes_doc: Optional[Dict[str, Any]] = None
 
             if caption_info and caption_info.get("transcript_text"):
                 # VTT path: Granicus stenographer captions are the
@@ -1571,9 +1578,10 @@ Guidelines:
                 # when minutes aren't published yet) as the clip's transcript
                 # artifact so the existing downstream flow runs UNCHANGED.
                 #
-                # These fetches are cached on disk; steps 6/6b below re-read
-                # the same files (idempotent) to populate files["agenda_*"]/
-                # files["minutes_*"] in metadata.
+                # The fetched minutes_doc/agenda_doc are REUSED by steps 6/6b
+                # below (they populate files["agenda_*"]/files["minutes_*"]) —
+                # we don't re-fetch, which under --force would bypass the disk
+                # cache and double the network calls.
                 doc_body = clip_metadata.get("meeting_body")
                 minutes_doc = self._minutes_with_fallback(
                     clip_id, clip_dir, title=title, meeting_date=meeting_date,
@@ -1666,10 +1674,15 @@ Guidelines:
             # Step 6: Download and extract agenda (optional - don't fail if
             # unavailable). Falls back to the separate AgendaSource (WS4) only
             # when the video source has no agenda AND one is configured — never
-            # for LFUCG/Granicus (agenda_source is None).
-            agenda_result = self._agenda_with_fallback(
-                clip_id, clip_dir, title=title, meeting_date=meeting_date,
-                body=clip_metadata.get("meeting_body"))
+            # for LFUCG/Granicus (agenda_source is None). The document-driven
+            # path already fetched this above (agenda_doc is set) — reuse it
+            # rather than re-fetching (a --force re-fetch would skip the cache).
+            if agenda_doc is not None:
+                agenda_result = agenda_doc
+            else:
+                agenda_result = self._agenda_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=clip_metadata.get("meeting_body"))
             if agenda_result["pdf_file"]:
                 files["agenda_pdf"] = agenda_result["pdf_file"]
             if agenda_result["txt_file"]:
@@ -1688,10 +1701,14 @@ Guidelines:
 
             # Step 6b: Download and extract minutes (optional - don't fail if
             # unavailable). Same AgendaSource fallback as the agenda step;
-            # no-op for LFUCG (agenda_source is None).
-            minutes_result = self._minutes_with_fallback(
-                clip_id, clip_dir, title=title, meeting_date=meeting_date,
-                body=clip_metadata.get("meeting_body"))
+            # no-op for LFUCG (agenda_source is None). Reuse the document-driven
+            # path's already-fetched minutes_doc when present (see step 6).
+            if minutes_doc is not None:
+                minutes_result = minutes_doc
+            else:
+                minutes_result = self._minutes_with_fallback(
+                    clip_id, clip_dir, title=title, meeting_date=meeting_date,
+                    body=clip_metadata.get("meeting_body"))
             if minutes_result["pdf_file"]:
                 files["minutes_pdf"] = minutes_result["pdf_file"]
             if minutes_result["html_file"]:

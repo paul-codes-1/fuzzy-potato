@@ -185,11 +185,11 @@ def build_clip_markdown(
         )
     elif transcript_source in ("civicclerk_minutes", "civicclerk_agenda"):
         # Document-driven record (PR-6: CivicClerk / Paris). No verbatim
-        # transcript exists — the page is built from the official agenda +
-        # minutes documents, which are the authoritative record of what the
-        # meeting did (votes, motions, appropriations).
+        # transcript exists — the page's content IS the official document that
+        # became the record (the minutes when published, else the agenda).
+        # Name only the document that actually became the content, not both.
         _doc_phrase = (
-            "official CivicClerk agenda and minutes"
+            "official CivicClerk minutes"
             if transcript_source == "civicclerk_minutes"
             else "official CivicClerk agenda (minutes not yet published)"
         )

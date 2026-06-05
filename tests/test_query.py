@@ -905,3 +905,95 @@ class TestRewriteQuery:
         rewrite_query("anything", client)
         kwargs = client.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == "gpt-4o-mini"
+
+
+# ============================================================
+# Citation URL: honor non-Granicus canonical_url (PR-6 review fix #1)
+# ============================================================
+
+class TestClipCitationUrl:
+    """clip_citation_url must keep Granicus byte-identical (fall back to the
+    granicus deep-link) while citing a non-Granicus canonical_url verbatim."""
+
+    def test_no_canonical_url_falls_back_to_granicus(self):
+        """OLD already-ingested LFUCG chunks have no stored canonical_url."""
+        from rag.query import clip_citation_url, granicus_clip_url
+        assert clip_citation_url(6669, "", 90) == granicus_clip_url(6669, 90)
+
+    def test_granicus_player_canonical_url_still_uses_deep_link(self):
+        """A NEWLY ingested LFUCG chunk DOES carry a granicus player URL, but
+        it must STILL resolve to the granicus_clip_url deep-link (with
+        &entrytime=) — not the bare player URL — so LFUCG citations don't
+        regress when re-ingested."""
+        from rag.query import clip_citation_url, granicus_clip_url
+        granicus_canonical = "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true"
+        out = clip_citation_url(6669, granicus_canonical, 90)
+        assert out == granicus_clip_url(6669, 90)
+        assert "entrytime=90" in out
+
+    def test_civicclerk_canonical_url_used_verbatim(self):
+        """A Paris/CivicClerk clip cites its stored portal permalink as-is."""
+        from rag.query import clip_citation_url
+        cc = "https://parisky.portal.civicclerk.com/event/322"
+        # Even with a non-zero timestamp arg, a doc-source URL is used verbatim
+        # (no video deep-link exists for a document-driven record).
+        assert clip_citation_url(5, cc, 90) == cc
+
+
+class TestAskCitesCorrectUrl:
+    """End-to-end through ask(): a granicus chunk cites the granicus URL; a
+    civicclerk chunk cites its CivicClerk canonical_url."""
+
+    def _synth(self, mock_client, text="answer"):
+        choice = MagicMock()
+        choice.message.content = text
+        resp = MagicMock()
+        resp.choices = [choice]
+        mock_client.chat.completions.create.return_value = resp
+
+    def test_granicus_clip_cites_granicus_url(
+            self, chroma_collection, mock_openai_batch_embeddings):
+        from rag.query import ask
+        from rag.ingest import store_chunks
+
+        # A granicus chunk carrying its (player-format) canonical_url.
+        store_chunks([
+            {"text": "Zoning ordinance passed 8-0.",
+             "clip_id": 6669, "date": "2026-01-22", "meeting_body": "Council",
+             "source": "summary", "section_type": "Key Decisions",
+             "canonical_url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true"},
+        ], chroma_collection, mock_openai_batch_embeddings)
+        self._synth(mock_openai_batch_embeddings)
+
+        result = ask(
+            question="zoning?", collection=chroma_collection,
+            openai_client=mock_openai_batch_embeddings,
+            clip_metadata={6669: {"title": "Council", "date": "2026-01-22"}},
+        )
+        url = result["sources"][0]["granicus_url"]
+        assert url.startswith("https://lfucg.granicus.com/player/clip/6669")
+        assert "entrytime=" in url  # the deep-link form, not the bare permalink
+
+    def test_civicclerk_clip_cites_civicclerk_url(
+            self, chroma_collection, mock_openai_batch_embeddings):
+        from rag.query import ask
+        from rag.ingest import store_chunks
+
+        store_chunks([
+            {"text": "Motion to approve the budget passed 5-0.",
+             "clip_id": 5, "date": "2026-05-12", "meeting_body": "City Commission",
+             "source": "transcript", "start_time": 0.0, "end_time": 0.0,
+             "transcript_source": "civicclerk_minutes",
+             "canonical_url": "https://parisky.portal.civicclerk.com/event/322"},
+        ], chroma_collection, mock_openai_batch_embeddings)
+        self._synth(mock_openai_batch_embeddings)
+
+        result = ask(
+            question="budget?", collection=chroma_collection,
+            openai_client=mock_openai_batch_embeddings,
+            clip_metadata={5: {"title": "City Commission Meeting", "date": "2026-05-12"}},
+        )
+        assert result["sources"][0]["granicus_url"] == (
+            "https://parisky.portal.civicclerk.com/event/322")
+        # Crucially NOT a granicus URL.
+        assert "granicus.com" not in result["sources"][0]["granicus_url"]
