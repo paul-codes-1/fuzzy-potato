@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useChat } from '../hooks/useChat'
 import ChatMessage from './ChatMessage'
 import ModelSelector from './ModelSelector'
+import { getSiteConfig } from '../config/site'
 
 const SUGGESTED_QUESTIONS = [
   "What budget changes were approved in 2024?",
@@ -11,11 +12,16 @@ const SUGGESTED_QUESTIONS = [
 ]
 
 export default function ChatLFUCG() {
+  const chat = getSiteConfig().chat || {}
   const { messages, filters, modelProvider, loading, error,
           sendMessage, setModelProvider, setFilters, clearChat, retry } = useChat()
   const [input, setInput] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    document.title = `Chat | ${getSiteConfig().archive_name}`
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -41,15 +47,15 @@ export default function ChatLFUCG() {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <h2>ChatLFUCG</h2>
+        <h2>{chat.title}</h2>
         <button className="chat-new-btn" onClick={clearChat}>New Chat</button>
       </div>
 
       {messages.length === 0 && !loading ? (
         <div className="chat-empty-state">
           <div className="chatlfucg-logo">🐴</div>
-          <h3>ChatLFUCG</h3>
-          <p>Ask questions about Lexington city council meetings, votes, budgets, and more.</p>
+          <h3>{chat.title}</h3>
+          <p>{chat.description}</p>
           <div className="chat-suggested-questions">
             {SUGGESTED_QUESTIONS.map((q) => (
               <button
@@ -92,7 +98,7 @@ export default function ChatLFUCG() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about city meetings..."
+            placeholder={chat.placeholder}
             rows={1}
             disabled={loading}
           />

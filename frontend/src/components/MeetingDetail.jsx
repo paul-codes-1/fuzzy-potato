@@ -13,10 +13,17 @@ import {
   buildMeetingGraph,
   setJsonLdScript,
 } from '../utils/seo'
+import { getSiteConfig } from '../config/site'
 
-const SITE_URL = 'https://meetings.lexingtonky.news'
-const DEFAULT_DESCRIPTION =
-  'Searchable archive of Lexington-Fayette Urban County Government council and committee meetings — transcripts, summaries, agendas, and minutes.'
+// Pull the YouTube video id out of a watch/share/embed URL (or a bare id).
+function extractYouTubeId(url) {
+  if (!url) return null
+  const m = String(url).match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/
+  )
+  if (m) return m[1]
+  return /^[\w-]{11}$/.test(url) ? url : null
+}
 
 function formatRevisionDate(iso) {
   if (!iso) return ''
@@ -196,6 +203,9 @@ function MeetingDetail() {
   const [searchParams] = useSearchParams()
   const highlightTerm = searchParams.get('highlight') || ''
   const { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
+  const site = getSiteConfig()
+  const SITE_URL = site.site_url
+  const DEFAULT_DESCRIPTION = site.description
   const feedsLink = useFeedsLink(clipId)
   const [activeTab, setActiveTab] = useState('overview')
   const [videoStartTime, setVideoStartTime] = useState(null)
@@ -235,7 +245,7 @@ function MeetingDetail() {
     const url = `${SITE_URL}/meeting/${clipId}`
 
     const previousTitle = document.title
-    document.title = `${seoTitle} | LFUCG Meeting Archive`
+    document.title = `${seoTitle} | ${site.archive_name}`
     setMetaTag('name', 'description', description)
     setMetaTag('property', 'og:title', seoTitle)
     setMetaTag('property', 'og:description', description)
@@ -447,7 +457,7 @@ function MeetingDetail() {
         {feedsLink && (
           <p className="feeds-link">
             <a href={feedsLink.link} target="_blank" rel="noopener noreferrer">
-              Read the article on Lexington Times →
+              Read the article on {site.feeds?.publication_name || 'Lexington Times'} →
             </a>
           </p>
         )}
@@ -516,7 +526,7 @@ function MeetingDetail() {
           </time>.</>
         )}{' '}
         <a href={`/about/methodology`}>Full methodology</a> ·{' '}
-        <a href={`mailto:editor@lexingtonky.news?subject=${encodeURIComponent(`Correction: clip ${clipId}`)}`}>
+        <a href={`mailto:${site.contact_email}?subject=${encodeURIComponent(`Correction: clip ${clipId}`)}`}>
           Spot an error?
         </a>
       </aside>
@@ -633,7 +643,7 @@ function MeetingDetail() {
                     <h3>
                       Votes &amp; Decisions
                       {extractedFacts.motions_source === 'table_of_motions' && (
-                        <span className="official-badge" title="From the official LFUCG Table of Motions">
+                        <span className="official-badge" title={`From the official ${site.jurisdiction_short_name} ${site.records_table_name}`}>
                           Official record
                         </span>
                       )}
@@ -642,7 +652,7 @@ function MeetingDetail() {
                       <p className="official-note">
                         Work sessions have no formal minutes. These motions are the
                         authoritative record — movers, seconders, and outcomes — as
-                        published in the LFUCG <strong>Table of Motions</strong>
+                        published in the {site.jurisdiction_short_name} <strong>{site.records_table_name}</strong>
                         {extractedFacts.table_of_motions_ref?.source_clip_id && (
                           <>
                             {' '}printed in the{' '}
@@ -908,50 +918,88 @@ function MeetingDetail() {
         </div>
       )}
 
-      {/* Video Player Embed */}
-      <div className="video-embed" ref={videoContainerRef}>
-        <h2>
-          Watch Meeting Video
-          {videoStartTime !== null && (
-            <span className="video-timestamp-indicator">
-              {' '}— Starting at {formatTimestamp(videoStartTime)}
-            </span>
-          )}
-        </h2>
-        <p className="video-fallback-link">
-          <a
-            href={`https://lfucg.granicus.com/player/clip/${clipId}?view_id=14${videoStartTime ? `&entrytime=${videoStartTime}` : ''}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open video on Granicus →
-          </a>
-          {videoStartTime !== null && (
-            <button
-              onClick={() => setVideoStartTime(null)}
-              className="reset-video-btn"
-            >
-              Reset to start
-            </button>
-          )}
-        </p>
-        <div className="video-container">
-          {videoLoading && (
-            <div className="video-loading-overlay">
-              <div className="video-loading-spinner"></div>
-              <span>Loading video at {formatTimestamp(videoStartTime)}...</span>
-            </div>
-          )}
-          <iframe
-            width="100%"
-            height="100%"
-            frameBorder="0"
-            allowFullScreen
-            onLoad={() => setVideoLoading(false)}
-            src={`//lfucg.granicus.com/player/clip/${clipId}?view_id=14&redirect=true&embed=1${videoStartTime ? `&entrytime=${videoStartTime}&autostart=1` : '&autostart=0'}`}
-          />
-        </div>
-      </div>
+      {/* Video Player Embed — provider-driven. Granicus cities embed the
+          Granicus player (with transcript-timestamp seeking); YouTube cities
+          (e.g. Paris) embed the matched per-clip video_url; document-driven
+          clips with no matched video show nothing. */}
+      {(() => {
+        const provider = site.video?.provider
+        const ytId = provider === 'youtube' ? extractYouTubeId(meeting.video_url) : null
+        const showGranicus = provider === 'granicus'
+        if (!ytId && !showGranicus) return null
+        const granicusBase = site.video?.granicus_base_url || ''
+        const viewId = site.video?.granicus_view_id ?? 14
+        const platform = site.source?.platform || 'Granicus'
+        return (
+          <div className="video-embed" ref={videoContainerRef}>
+            <h2>
+              Watch Meeting Video
+              {showGranicus && videoStartTime !== null && (
+                <span className="video-timestamp-indicator">
+                  {' '}— Starting at {formatTimestamp(videoStartTime)}
+                </span>
+              )}
+            </h2>
+            {ytId ? (
+              // The city's YouTube uploads have embedding disabled by the owner,
+              // so an inline player renders a dead "Video unavailable" card.
+              // A clickable thumbnail always works and looks intentional.
+              <a
+                className="video-youtube-card"
+                href={meeting.video_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Watch this meeting on YouTube"
+              >
+                <img
+                  className="video-youtube-thumb"
+                  src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`}
+                  alt=""
+                  loading="lazy"
+                />
+                <span className="video-youtube-play" aria-hidden="true">▶</span>
+                <span className="video-youtube-cta">Watch on YouTube</span>
+              </a>
+            ) : (
+              <>
+                <p className="video-fallback-link">
+                  <a
+                    href={`${granicusBase}/player/clip/${clipId}?view_id=${viewId}${videoStartTime ? `&entrytime=${videoStartTime}` : ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open video on {platform} →
+                  </a>
+                  {videoStartTime !== null && (
+                    <button
+                      onClick={() => setVideoStartTime(null)}
+                      className="reset-video-btn"
+                    >
+                      Reset to start
+                    </button>
+                  )}
+                </p>
+                <div className="video-container">
+                  {videoLoading && (
+                    <div className="video-loading-overlay">
+                      <div className="video-loading-spinner"></div>
+                      <span>Loading video at {formatTimestamp(videoStartTime)}...</span>
+                    </div>
+                  )}
+                  <iframe
+                    width="100%"
+                    height="100%"
+                    frameBorder="0"
+                    allowFullScreen
+                    onLoad={() => setVideoLoading(false)}
+                    src={`${granicusBase}/player/clip/${clipId}?view_id=${viewId}&redirect=true&embed=1${videoStartTime ? `&entrytime=${videoStartTime}&autostart=1` : '&autostart=0'}`}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {relatedClips.length > 0 && (
         <section className="related-meetings">

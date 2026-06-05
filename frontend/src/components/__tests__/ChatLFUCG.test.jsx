@@ -58,7 +58,7 @@ describe('ChatLFUCG', () => {
     })
 
     renderChat()
-    const input = screen.getByPlaceholderText(/ask about city meetings/i)
+    const input = screen.getByPlaceholderText(/ask a question about/i)
     await userEvent.type(input, 'What about zoning?')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
@@ -81,7 +81,7 @@ describe('ChatLFUCG', () => {
     })
 
     renderChat()
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'test')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'test')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {
@@ -108,7 +108,7 @@ describe('ChatLFUCG', () => {
     })
 
     renderChat()
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'parks')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'parks')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {
@@ -133,7 +133,7 @@ describe('ChatLFUCG', () => {
     mockFetch.mockImplementation(() => new Promise(() => {})) // never resolves
 
     renderChat()
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'test')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'test')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {
@@ -152,7 +152,7 @@ describe('ChatLFUCG', () => {
     })
 
     renderChat()
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'test')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'test')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {
@@ -179,7 +179,7 @@ describe('ChatLFUCG', () => {
     })
 
     renderChat()
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'first question')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'first question')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {
@@ -199,7 +199,7 @@ describe('ChatLFUCG', () => {
       }),
     })
 
-    await userEvent.type(screen.getByPlaceholderText(/ask about city meetings/i), 'second question')
+    await userEvent.type(screen.getByPlaceholderText(/ask a question about/i), 'second question')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
 
     await waitFor(() => {

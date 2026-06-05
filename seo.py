@@ -358,6 +358,23 @@ def generate_seo_artifacts(
     """
     cfg = get_config()
     site_url = (site_url or os.environ.get("LFUCG_SITE_URL") or cfg.site_url).rstrip("/")
+
+    # ---- site.json — runtime config the React SPA fetches at boot for ALL
+    # jurisdiction-specific copy (header, tagline, footer, video provider, chat
+    # text, …). Written to output_dir so sync_data_s3.sh ships it as
+    # /data/site.json (sibling of index.json). One SPA bundle serves every
+    # county; only this file differs. Best-effort — never block SEO artifacts.
+    try:
+        from config import build_site_config
+
+        site_cfg = build_site_config(cfg)
+        (output_dir / "site.json").write_text(
+            json.dumps(site_cfg, indent=2) + "\n", encoding="utf-8"
+        )
+        log(f"Wrote site.json ({site_cfg.get('archive_name')})")
+    except Exception as e:  # pragma: no cover - defensive
+        log(f"site.json generation error: {e}", "WARNING")
+
     if public_dir is None:
         public_dir = Path(__file__).parent / "frontend" / "public"
     if not public_dir.exists():

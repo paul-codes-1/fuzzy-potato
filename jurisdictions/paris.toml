@@ -38,10 +38,17 @@ name = "City of Paris, Kentucky"
 type = "civicclerk"
 
 [source.youtube]
-# Unused by the document-driven path, but CivicClerkSource reuses the
-# `start_id` knob to seed its synthetic clip-id map (events have portal
-# ids we don't control, so we map them onto a local 1..N sequence).
+# CivicClerkSource reuses the `start_id` knob to seed its synthetic clip-id
+# map (events have portal ids we don't control, so we map them onto a local
+# 1..N sequence).
 start_id = 1
+# Paris posts each REGULAR commission meeting to this YouTube channel (the
+# document-driven pipeline can't DOWNLOAD/caption from the box, but the public
+# can watch — and the box CAN still LIST the channel). `--match-videos` lists
+# this channel, parses the date out of each title, and stamps a per-clip
+# `video_url` so meeting pages link to the real YouTube video. Workshops /
+# special meetings aren't posted, so those clips get no video link.
+channel_url = "https://www.youtube.com/@CityofParisKY"
 
 [taxonomy]
 # Paris is governed by a City Commission; keep the generic body words so
@@ -69,4 +76,25 @@ origin_hostname = "paris-origin.civicmemory.news"  # pending civicmemory.news re
 [publication]
 publication_name = "Paris Meeting Archive"
 operator_name = "Paul Oliva"
-editor_email = "editor@civicmemory.news"           # pending civicmemory.news registration
+editor_email = "editor@civicmemory.news"
+
+[frontend]
+# SPA copy overrides deep-merged onto config.build_site_config()'s derivations.
+# Only the bits the generic derivation gets wrong for a document-driven city are
+# set here; everything else (archive_name, site_url, contact_email, source.kind=
+# document, feeds.enabled=false, …) derives correctly from the fields above.
+jurisdiction_short_name = "Paris"
+default_seo_title = "Paris Meeting"
+# Document-driven: no verbatim transcript, and it's a Commission (not Council).
+tagline = "City of Paris, Kentucky Meeting Records & Summaries"
+description = "Searchable archive of City of Paris, Kentucky commission and committee meetings — official agendas, minutes, AI summaries, and structured facts."
+
+[frontend.video]
+# Regular meetings are matched to City of Paris YouTube videos (per-clip
+# video_url); unmatched workshops/special meetings show no video section.
+provider = "youtube"
+
+[frontend.chat]
+title = "Ask the Paris Archive"
+description = "Ask questions about City of Paris, Kentucky commission meetings, votes, budgets, and more."
+placeholder = "Ask a question about Paris city meetings..."

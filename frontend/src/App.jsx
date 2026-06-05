@@ -5,22 +5,30 @@ import AskQuestion from './components/AskQuestion'
 import ChatLFUCG from './components/ChatLFUCG'
 import { About, Methodology, Corrections } from './components/StaticPages'
 import RouteChangeTracker from './components/RouteChangeTracker'
+import { getSiteConfig } from './config/site'
 
 function App() {
+  const site = getSiteConfig()
+  // Document-driven cities (CivicClerk minutes) have no video/transcript, so
+  // the footer source clause differs from video (Granicus/YouTube) cities.
+  const sourceClause =
+    site.source?.kind === 'document'
+      ? `Summaries and structured facts are auto-generated from the official ${site.source?.platform || ''} agenda & minutes documents; verify against the source documents for high-stakes use.`
+      : `Transcripts and summaries are auto-generated from public ${site.jurisdiction_short_name} ${site.source?.platform || ''} video; verify against the official video and minutes for high-stakes use.`
   return (
     <div className="app">
       <RouteChangeTracker />
       <header className="header">
         <div className="container">
           <div className="header-top">
-            <h1>LFUCG Meeting Archive</h1>
+            <h1>{site.archive_name}</h1>
             <nav className="header-nav">
               <Link to="/" className="header-link">Browse</Link>
               <Link to="/chat" className="header-link">Chat</Link>
               <Link to="/ask" className="header-link">Ask a Question</Link>
             </nav>
           </div>
-          <p>Lexington-Fayette Urban County Government Meeting Transcripts & Summaries</p>
+          <p>{site.tagline}</p>
         </div>
       </header>
 
@@ -47,9 +55,7 @@ function App() {
             <a href="/sitemap_index.xml">Sitemap</a>
           </nav>
           <p className="site-footer-disclosure">
-            Operated by Paul Oliva as a civic-tech side project. Transcripts and
-            summaries are auto-generated from public LFUCG Granicus video; verify
-            against the official video and minutes for high-stakes use.
+            {site.operator_bio} {sourceClause}
           </p>
         </div>
       </footer>

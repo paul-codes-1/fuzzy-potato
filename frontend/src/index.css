@@ -1127,6 +1127,66 @@ a:hover {
   border: none;
 }
 
+/* YouTube thumbnail card — used when the source video has embedding disabled
+   (document-driven jurisdictions linking to the city's YouTube uploads). */
+.video-youtube-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+  background: #000;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+
+.video-youtube-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  display: block;
+  object-fit: cover;
+  opacity: 0.92;
+  transition: opacity 0.15s ease;
+}
+
+.video-youtube-card:hover .video-youtube-thumb {
+  opacity: 1;
+}
+
+.video-youtube-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 68px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.video-youtube-cta {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 6px);
+  pointer-events: none;
+}
+
 .video-loading-overlay {
   position: absolute;
   top: 0;

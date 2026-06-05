@@ -76,6 +76,14 @@ _LFUCG_DEFAULTS: dict = {
     "publication_name": "LFUCG Meeting Archive",
     "operator_name": "Paul Oliva",
     "editor_email": "editor@lexingtonky.news",
+    # Frontend SPA identity overrides (WS-frontend). The React SPA is a single
+    # bundle served to every jurisdiction; it fetches /data/site.json at boot
+    # for all jurisdiction-specific strings (header, tagline, footer, video
+    # provider, chat copy, …). `build_site_config()` DERIVES that JSON from the
+    # fields above so the LFUCG defaults stay byte-identical; a TOML `[frontend]`
+    # table deep-merges on top for per-county copy (e.g. document-driven cities
+    # that have no "transcript"/"video", or a different short name). Stored raw.
+    "_frontend": {},
 }
 
 
@@ -102,6 +110,7 @@ class Jurisdiction:
     publication_name: str
     operator_name: str
     editor_email: str
+    frontend_overrides: dict
     output_dir: str
 
 
@@ -164,6 +173,13 @@ def _load_toml(slug: str) -> dict:
             flat["source_youtube_title_date_pattern"] = youtube_block["title_date_pattern"]
         if "start_id" in youtube_block:
             flat["source_youtube_start_id"] = youtube_block["start_id"]
+
+    # [frontend] — free-form SPA copy overrides, passed through raw and
+    # deep-merged onto the derived defaults by build_site_config(). Supports
+    # nested tables ([frontend.video], [frontend.chat], [frontend.source]).
+    frontend_block = raw.get("frontend", {})
+    if isinstance(frontend_block, dict) and frontend_block:
+        flat["_frontend"] = frontend_block
     return flat
 
 
@@ -211,5 +227,113 @@ def get_config() -> Jurisdiction:
         publication_name=base["publication_name"],
         operator_name=base["operator_name"],
         editor_email=base["editor_email"],
+        frontend_overrides=dict(base.get("_frontend", {})),
         output_dir=output_dir,
     )
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge ``override`` onto a copy of ``base`` (override wins).
+    Nested dicts merge key-by-key; scalars/lists replace."""
+    out = dict(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def build_site_config(cfg: "Jurisdiction | None" = None) -> dict:
+    """Build the runtime ``site.json`` the React SPA fetches at boot.
+
+    Everything is DERIVED from the resolved :class:`Jurisdiction` so the LFUCG
+    defaults reproduce the historical hard-coded SPA strings byte-for-byte, then
+    the jurisdiction's TOML ``[frontend]`` table deep-merges on top. A new county
+    needs zero code: drop a ``[frontend]`` block (or rely on the derivations).
+
+    `source.kind` drives whether the SPA talks about "transcripts/video"
+    (Granicus/YouTube cities) or "agenda & minutes documents" (CivicClerk
+    document-driven cities). `video.provider` chooses the meeting-page player:
+    ``granicus`` (embed by clip id), ``youtube`` (per-clip ``video_url`` from the
+    clip metadata), or ``none`` (hide the section).
+    """
+    cfg = cfg or get_config()
+    host = cfg.granicus_host
+    granicus_base = f"https://{host}" if host else ""
+    st = cfg.source_type
+    source_kind = "document" if st == "civicclerk" else "video"
+    platform = {
+        "granicus": "Granicus",
+        "civicclerk": "CivicClerk",
+        "youtube": "YouTube",
+    }.get(st, "Granicus")
+    short = cfg.slug.upper()
+    derived = {
+        "archive_name": cfg.publication_name,
+        "jurisdiction_full_name": cfg.name,
+        "jurisdiction_short_name": short,
+        "site_url": cfg.site_url.rstrip("/"),
+        "contact_email": cfg.editor_email,
+        "operator_name": cfg.operator_name,
+        "operator_bio": f"Operated by {cfg.operator_name} as a civic-tech side project.",
+        "operator_author_url": "",
+        "tagline": f"{cfg.name} Meeting Transcripts & Summaries",
+        "description": (
+            f"Searchable archive of {cfg.name} council and committee meetings "
+            "— transcripts, summaries, agendas, and minutes."
+        ),
+        "default_seo_title": f"{short} Meeting",
+        "records_table_name": "Table of Motions",
+        # The /ask "Coverage note" (transcription backlog, GitHub donate link) is
+        # LFUCG-specific data — only shown on LFUCG unless a TOML override sets it.
+        "show_coverage_note": cfg.slug == "lfucg",
+        "source": {
+            "kind": source_kind,
+            "platform": platform,
+            "has_transcript": source_kind == "video",
+        },
+        "video": {
+            # Granicus cities embed the Granicus player; everyone else defaults
+            # to "none" until a TOML [frontend.video] override (e.g. youtube).
+            "provider": "granicus" if st == "granicus" else "none",
+            "granicus_base_url": granicus_base,
+            "granicus_view_id": cfg.default_view_id,
+        },
+        "chat": {
+            "title": f"Chat{short}",
+            "description": (
+                f"Ask questions about {cfg.name} council meetings, votes, "
+                "budgets, and more."
+            ),
+            "placeholder": f"Ask a question about {cfg.name} meetings...",
+        },
+        # The feeds.lexingtonky.news cross-link ("Read the article on …") is an
+        # LFUCG-only integration. Off (and blank, to avoid leaking the LFUCG
+        # host) for every other jurisdiction unless a [frontend.feeds] override
+        # turns it on.
+        "feeds": (
+            {
+                "enabled": True,
+                "base_url": "https://feeds.lexingtonky.news",
+                "source_id": "lfucg-meeting-archive",
+                "publication_name": "Lexington Times",
+            }
+            if cfg.slug == "lfucg"
+            else {"enabled": False, "base_url": "", "source_id": "", "publication_name": ""}
+        ),
+    }
+    # LFUCG's historical SPA copy that the generic derivation can't reproduce
+    # (the full operator bio, the feeds author link). Pinned here so the LFUCG
+    # site.json stays byte-identical; other jurisdictions never see it.
+    if cfg.slug == "lfucg":
+        derived["operator_bio"] = "Operated by Paul Oliva as a civic-tech side project."
+        derived["operator_author_url"] = "https://lexingtonky.news/author/paulmoliva/"
+        derived["chat"]["title"] = "ChatLFUCG"
+        derived["chat"]["description"] = (
+            "Ask questions about Lexington city council meetings, votes, "
+            "budgets, and more."
+        )
+        derived["chat"]["placeholder"] = "Ask a question about Lexington city meetings..."
+
+    return _deep_merge(derived, cfg.frontend_overrides)

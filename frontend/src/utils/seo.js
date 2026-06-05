@@ -3,6 +3,8 @@
 // Keep this file in sync with `seo.py::clean_title / format_long_date /
 // build_seo_title / build_seo_description`.
 
+import { getSiteConfig } from '../config/site'
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -31,7 +33,7 @@ export function buildSeoTitle(title, isoDate) {
   const cleaned = cleanTitle(title)
   const formatted = formatLongDate(isoDate)
   if (cleaned && formatted) return `${cleaned} - ${formatted}`
-  return cleaned || formatted || 'LFUCG Meeting'
+  return cleaned || formatted || getSiteConfig().default_seo_title
 }
 
 export function buildSeoDescription(summaryText, fallback = '', maxChars = 200) {
@@ -92,46 +94,48 @@ export function setMarkdownAlternate(url) {
   el.setAttribute('href', url)
 }
 
-const SITE_URL = 'https://meetings.lexingtonky.news'
-const ORG_ID = `${SITE_URL}#organization`
-const SITE_ID = `${SITE_URL}#website`
-
-// Stable Organization + WebSite nodes — referenced by per-page Article
-// via @id so Google sees a coherent graph across the archive.
-export const ORGANIZATION_NODE = {
-  '@type': 'Organization',
-  '@id': ORG_ID,
-  name: 'LFUCG Meeting Archive',
-  url: SITE_URL,
-  description:
-    'Searchable archive of Lexington-Fayette Urban County Government council and committee meetings.',
-  founder: {
+// Stable Organization + WebSite nodes — referenced by per-page Article via @id
+// so Google sees a coherent graph across the archive. Built from the runtime
+// site config (functions, not constants, so they read the config that loaded at
+// boot rather than freezing the import-time default).
+export function organizationNode() {
+  const site = getSiteConfig()
+  const orgId = `${site.site_url}#organization`
+  const founder = {
     '@type': 'Person',
-    '@id': `${SITE_URL}/about/paul-oliva#person`,
-    name: 'Paul Oliva',
-    url: 'https://pauloliva.com',
-    sameAs: [
-      'https://pauloliva.com',
-      'https://github.com/paul-codes-1',
-      'https://lexingtonky.news/author/paulmoliva/',
-    ],
-  },
+    '@id': `${site.site_url}/about/${(site.operator_name || 'operator').toLowerCase().replace(/\s+/g, '-')}#person`,
+    name: site.operator_name,
+  }
+  if (site.operator_author_url) {
+    founder.sameAs = [site.operator_author_url]
+  }
+  return {
+    '@type': 'Organization',
+    '@id': orgId,
+    name: site.archive_name,
+    url: site.site_url,
+    description: site.description,
+    founder,
+  }
 }
 
-export const WEBSITE_NODE = {
-  '@type': 'WebSite',
-  '@id': SITE_ID,
-  url: SITE_URL,
-  name: 'LFUCG Meeting Archive',
-  publisher: { '@id': ORG_ID },
-  potentialAction: {
-    '@type': 'SearchAction',
-    target: {
-      '@type': 'EntryPoint',
-      urlTemplate: `${SITE_URL}/?q={search_term_string}`,
+export function websiteNode() {
+  const site = getSiteConfig()
+  return {
+    '@type': 'WebSite',
+    '@id': `${site.site_url}#website`,
+    url: site.site_url,
+    name: site.archive_name,
+    publisher: { '@id': `${site.site_url}#organization` },
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${site.site_url}/?q={search_term_string}`,
+      },
+      'query-input': 'required name=search_term_string',
     },
-    'query-input': 'required name=search_term_string',
-  },
+  }
 }
 
 // Build a coherent JSON-LD @graph for a meeting detail page. Article
@@ -152,9 +156,16 @@ export function buildMeetingGraph({
   transcriptWords,
 }) {
   if (!clipId) return null
-  const url = `${SITE_URL}/meeting/${clipId}`
+  const site = getSiteConfig()
+  const orgId = `${site.site_url}#organization`
+  const siteId = `${site.site_url}#website`
+  const url = `${site.site_url}/meeting/${clipId}`
   const seoTitle = buildSeoTitle(title, date)
   const dateModified = summaryUpdatedAt || processedAt || date
+  const producerName =
+    site.source?.kind === 'document'
+      ? 'GPT-4o (fact extraction), Anthropic Claude Sonnet (narrative summary)'
+      : 'OpenAI Whisper-1 (audio→text), GPT-4o (fact extraction), Anthropic Claude Sonnet (narrative summary)'
 
   const article = {
     '@type': 'Article',
@@ -165,14 +176,14 @@ export function buildMeetingGraph({
     mainEntityOfPage: url,
     datePublished: date,
     dateModified,
-    author: { '@id': ORG_ID },
-    publisher: { '@id': ORG_ID },
-    isPartOf: { '@id': SITE_ID },
+    author: { '@id': orgId },
+    publisher: { '@id': orgId },
+    isPartOf: { '@id': siteId },
     inLanguage: 'en-US',
-    creativeWorkStatus: 'Auto-transcribed',
+    creativeWorkStatus: site.source?.kind === 'document' ? 'Auto-summarized' : 'Auto-transcribed',
     producer: {
       '@type': 'Organization',
-      name: 'OpenAI Whisper-1 (audio→text), GPT-4o (fact extraction), Anthropic Claude Sonnet (narrative summary)',
+      name: producerName,
     },
     isBasedOn: granicusUrl || undefined,
     description: description || undefined,
@@ -183,7 +194,7 @@ export function buildMeetingGraph({
 
   return {
     '@context': 'https://schema.org',
-    '@graph': [article, ORGANIZATION_NODE, WEBSITE_NODE],
+    '@graph': [article, organizationNode(), websiteNode()],
   }
 }
 

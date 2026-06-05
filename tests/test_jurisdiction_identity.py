@@ -216,6 +216,22 @@ class TestLfucgIdentityDefaults:
         # The static crawler allow-list survives generation.
         assert "User-agent: GPTBot" in robots
 
+    def test_site_json_keeps_lfucg_identity(self, lfucg_config, tmp_path):
+        output_dir, _ = _generate(tmp_path)
+        site = json.loads((output_dir / "site.json").read_text(encoding="utf-8"))
+        # Byte-identity proxies for the historical hard-coded SPA strings.
+        assert site["archive_name"] == "LFUCG Meeting Archive"
+        assert site["jurisdiction_full_name"] == "Lexington-Fayette Urban County Government"
+        assert site["jurisdiction_short_name"] == "LFUCG"
+        assert site["contact_email"] == "editor@lexingtonky.news"
+        assert site["tagline"].startswith("Lexington-Fayette Urban County Government")
+        # LFUCG is a video (Granicus) jurisdiction with the feeds cross-link on.
+        assert site["source"]["kind"] == "video"
+        assert site["source"]["platform"] == "Granicus"
+        assert site["video"]["provider"] == "granicus"
+        assert site["feeds"]["enabled"] is True
+        assert site["chat"]["title"] == "ChatLFUCG"
+
     def test_clip_md_keeps_lfucg_editor_email(self, lfucg_config, tmp_path):
         output_dir, _ = _generate(tmp_path)
         clip_md = (output_dir / "clips" / "100" / "clip.md").read_text(encoding="utf-8")
@@ -244,6 +260,7 @@ class TestSyntheticJurisdictionIdentity:
         news = (public_dir / "news-sitemap.xml").read_text(encoding="utf-8")
         llms_full = (public_dir / "llms-full.txt").read_text(encoding="utf-8")
         robots = (public_dir / "robots.txt").read_text(encoding="utf-8")
+        site_json = (output_dir / "site.json").read_text(encoding="utf-8")
         clip_md = (output_dir / "clips" / "100" / "clip.md").read_text(encoding="utf-8")
 
         # Testville identity is present.
@@ -256,6 +273,13 @@ class TestSyntheticJurisdictionIdentity:
         # robots.txt sitemap/pointer lines carry the Testville host, not LFUCG's.
         assert "Sitemap: https://meetings.testville.example/sitemap_index.xml" in robots
         assert "LLM: https://meetings.testville.example/llms.txt" in robots
+        # site.json carries Testville identity and the LFUCG-only feeds link is
+        # disabled + blanked (so the lexingtonky host can't leak through it).
+        site = json.loads(site_json)
+        assert site["archive_name"] == "Testville Meeting Archive"
+        assert site["jurisdiction_full_name"] == "Testville City Council"
+        assert site["feeds"]["enabled"] is False
+        assert site["feeds"]["base_url"] == ""
 
         # Zero jurisdiction-identity leakage across every SEO surface.
         for name, text in (
@@ -263,6 +287,7 @@ class TestSyntheticJurisdictionIdentity:
             ("news-sitemap.xml", news),
             ("llms-full.txt", llms_full),
             ("robots.txt", robots),
+            ("site.json", site_json),
             ("clip.md", clip_md),
         ):
             cleaned = _strip_ecosystem_brand(text)

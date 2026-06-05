@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-
-const FEEDS_BASE = 'https://feeds.lexingtonky.news'
+import { getSiteConfig } from '../config/site'
 
 // Module-level cache so navigating between meeting pages doesn't
 // re-fetch what we already know. Keyed by clipId; values are either
@@ -20,7 +19,9 @@ export function useFeedsLink(clipId) {
   const [link, setLink] = useState(() => _cache.get(String(clipId)) ?? null)
 
   useEffect(() => {
-    if (!clipId) {
+    const feeds = getSiteConfig().feeds || {}
+    // The feeds cross-link is an LFUCG-only integration; off elsewhere.
+    if (!clipId || !feeds.enabled || !feeds.base_url) {
       setLink(null)
       return
     }
@@ -33,7 +34,7 @@ export function useFeedsLink(clipId) {
 
     let cancelled = false
     const controller = new AbortController()
-    const url = `${FEEDS_BASE}/api/by-source?source=lfucg-meeting-archive&clipId=${encodeURIComponent(key)}`
+    const url = `${feeds.base_url}/api/by-source?source=${encodeURIComponent(feeds.source_id || '')}&clipId=${encodeURIComponent(key)}`
 
     fetch(url, { signal: controller.signal })
       .then((r) => {

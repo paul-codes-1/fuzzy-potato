@@ -1,8 +1,10 @@
+import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMeetings } from '../hooks/useMeetings'
 import { useSearch } from '../hooks/useSearch'
 import SearchBar from './SearchBar'
 import TopicFilter from './TopicFilter'
+import { getSiteConfig } from '../config/site'
 
 const PER_PAGE = 24
 
@@ -134,6 +136,13 @@ function MeetingList() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { meetings, loading, error } = useMeetings()
+
+  // Homepage route: the static index.html <title> is the LFUCG default; set the
+  // browser title to this jurisdiction's archive name (the SPA serves one bundle
+  // to every county).
+  useEffect(() => {
+    document.title = getSiteConfig().archive_name
+  }, [])
   const {
     query,
     setQuery,
