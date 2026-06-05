@@ -215,6 +215,12 @@ class TestLfucgIdentityDefaults:
         assert "LLM-Trust: https://meetings.lexingtonky.news/.well-known/llm-trust.json" in robots
         # The static crawler allow-list survives generation.
         assert "User-agent: GPTBot" in robots
+        # LFUCG is the lexingtonky ecosystem: skill.md is the canonical shared
+        # "Lexington Times" guide, and llm-trust.json is NOT generated (the
+        # checked-in static cross-repo manifest is served verbatim).
+        skill = (public_dir / "skill.md").read_text(encoding="utf-8")
+        assert "Lexington Times" in skill
+        assert not (public_dir / ".well-known" / "llm-trust.json").exists()
 
     def test_site_json_keeps_lfucg_identity(self, lfucg_config, tmp_path):
         output_dir, _ = _generate(tmp_path)
@@ -261,6 +267,8 @@ class TestSyntheticJurisdictionIdentity:
         llms_full = (public_dir / "llms-full.txt").read_text(encoding="utf-8")
         robots = (public_dir / "robots.txt").read_text(encoding="utf-8")
         site_json = (output_dir / "site.json").read_text(encoding="utf-8")
+        skill = (public_dir / "skill.md").read_text(encoding="utf-8")
+        trust = (public_dir / ".well-known" / "llm-trust.json").read_text(encoding="utf-8")
         clip_md = (output_dir / "clips" / "100" / "clip.md").read_text(encoding="utf-8")
 
         # Testville identity is present.
@@ -281,6 +289,18 @@ class TestSyntheticJurisdictionIdentity:
         assert site["feeds"]["enabled"] is False
         assert site["feeds"]["base_url"] == ""
 
+        # Non-Lexington jurisdiction: skill.md + llm-trust.json are GENERATED with
+        # this jurisdiction's identity + MCP server, under the Civic Memory
+        # umbrella (NOT the shared "Lexington Times" canonical).
+        assert "Testville Meeting Archive" in skill
+        assert "Civic Memory" in skill
+        assert "https://meetings.testville.example/api/mcp" in skill
+        assert "Lexington Times" not in skill
+        trust_obj = json.loads(trust)
+        assert trust_obj["name"] == "Testville Meeting Archive"
+        assert trust_obj["mcp_servers"][0]["url"] == "https://meetings.testville.example/api/mcp"
+        assert trust_obj["umbrella"]["name"] == "Civic Memory"
+
         # Zero jurisdiction-identity leakage across every SEO surface.
         for name, text in (
             ("llms.txt", llms),
@@ -288,6 +308,8 @@ class TestSyntheticJurisdictionIdentity:
             ("llms-full.txt", llms_full),
             ("robots.txt", robots),
             ("site.json", site_json),
+            ("skill.md", skill),
+            ("llm-trust.json", trust),
             ("clip.md", clip_md),
         ):
             cleaned = _strip_ecosystem_brand(text)

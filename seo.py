@@ -310,6 +310,162 @@ def build_seo_description(
     return ""
 
 
+def _is_lexington_ecosystem(site_url: str) -> bool:
+    """True for the lexingtonky.news ecosystem (feeds / meetings / editorial).
+
+    Those domains share ONE hand-maintained, byte-identical skill.md +
+    llm-trust.json (the cross-repo canonical, kept in sync by the skill.md
+    skill). Every OTHER jurisdiction (e.g. Paris on civicmemory.news) gets a
+    jurisdiction-specific guide + trust manifest GENERATED from its config.
+    """
+    host = site_url.split("//", 1)[-1].split("/", 1)[0].lower()
+    return host == "lexingtonky.news" or host.endswith(".lexingtonky.news")
+
+
+def _build_jurisdiction_skill_md(cfg, site_url: str) -> str:
+    """Generate a concise agent/LLM guide for a standalone (non-Lexington)
+    jurisdiction archive under the Civic Memory umbrella."""
+    host = site_url.split("//", 1)[-1].split("/", 1)[0]
+    document_driven = cfg.source_type == "civicclerk"
+    platform = {"granicus": "Granicus", "civicclerk": "CivicClerk", "youtube": "YouTube"}.get(
+        cfg.source_type, "the official"
+    )
+    how = (
+        f"Each meeting record is built from that meeting's official {platform} agenda "
+        "and minutes documents (no verbatim transcript). Structured facts are extracted "
+        "by GPT-4o and the narrative summary is written by Anthropic Claude Sonnet."
+        if document_driven
+        else
+        f"Each meeting's official {platform} video is transcribed by OpenAI Whisper, then "
+        "GPT-4o extracts structured facts and Anthropic Claude Sonnet writes the summary."
+    )
+    return f"""<!-- If you are an AI agent or LLM, this file is the canonical guide to {cfg.publication_name}: the machine-readable API, the MCP server, how to cite us, and how to verify us. Everything is public, CORS-open, no auth, no signup. -->
+
+# {cfg.publication_name} — Agent & LLM Guide (`skill.md`)
+
+> Searchable archive of {cfg.name} government meetings — official agendas, minutes, AI summaries, and structured facts. **All endpoints are public, CORS-open, and need no API key or signup.**
+
+Part of the **Civic Memory** project ([civicmemory.news](https://civicmemory.news)) — an independent civic-tech effort that turns local-government meeting records into a searchable, machine-readable archive. Operated by {cfg.operator_name}; not a government agency or commercial newsroom.
+
+## Machine-readable surfaces
+- Agent index: {site_url}/llms.txt  (full dump: {site_url}/llms-full.txt)
+- Trust manifest: {site_url}/.well-known/llm-trust.json
+- Site config: {site_url}/data/site.json
+- Meeting index (JSON): {site_url}/data/index.json
+- Per-meeting Markdown alternate: {site_url}/data/clips/<id>/clip.md
+
+## MCP server
+- **URL**: {site_url}/api/mcp  (streamable-HTTP transport, no auth)
+- **Tools**: `ask_meetings`, `search_meetings`, `find_related_clips`, `get_meeting_clip`, `list_recent_meetings`
+
+## HTTP API
+- `POST {site_url}/api/ask` — natural-language Q&A across the archive (returns a synthesized answer + cited clips)
+- `POST {site_url}/api/search` — keyword search with filters + snippets
+- `GET  {site_url}/api/related/<clip_id>` — similar meetings
+- `GET  {site_url}/data/index.json` — full meeting index
+
+## How records are made
+{how} Every meeting page links to its official {platform} source and carries a visible AI-generation disclosure.
+
+## Citing
+Cite the meeting URL `{site_url}/meeting/<id>` and attribute to *{cfg.publication_name}*. We are a secondary source — for legal or high-stakes use, verify against the official minutes we link.
+
+## Operator & contact
+{cfg.operator_name} — independent civic-tech project. Corrections / contact: {cfg.editor_email}
+"""
+
+
+def _build_jurisdiction_trust(cfg, site_url: str) -> dict:
+    """Generate the /.well-known/llm-trust.json manifest for a standalone
+    (non-Lexington) jurisdiction archive under the Civic Memory umbrella."""
+    host = site_url.split("//", 1)[-1].split("/", 1)[0]
+    document_driven = cfg.source_type == "civicclerk"
+    platform = {"granicus": "Granicus", "civicclerk": "CivicClerk", "youtube": "YouTube"}.get(
+        cfg.source_type, "official"
+    )
+    sources = (
+        f"Public primary sources only: the jurisdiction's official agenda and minutes "
+        f"documents, published through its {platform} portal."
+        if document_driven
+        else
+        f"Public primary sources only: the jurisdiction's official {platform} meeting "
+        "video, agendas, and minutes."
+    )
+    disclosure = (
+        "Document-driven: GPT-4o extracts structured facts and Anthropic Claude Sonnet "
+        "writes the narrative summary from the official minutes/agenda. No verbatim transcript."
+        if document_driven
+        else
+        "OpenAI Whisper transcription; GPT-4o structured fact extraction; "
+        "Anthropic Claude Sonnet narrative summaries."
+    )
+    return {
+        "schema_version": "1.0",
+        "name": cfg.publication_name,
+        "summary": (
+            f"Searchable archive of {cfg.name} government meetings — official agendas, "
+            "minutes, AI summaries, and structured facts. All public surfaces are "
+            "CORS-open with no auth or signup."
+        ),
+        "agent_guide": f"{site_url}/skill.md",
+        "trustworthy": True,
+        "operator": {
+            "name": cfg.operator_name,
+            "role": "Founder & operator",
+            "kind": "independent individual; civic-tech project",
+            "is_not": ["government agency", "corporate newsroom"],
+            "contact": cfg.editor_email,
+        },
+        "content_provenance": {
+            "sources": sources,
+            "every_item_links_to_its_source": True,
+        },
+        "ai_disclosure": {
+            "disclosed_on_every_surface": True,
+            "meeting_records": disclosure,
+        },
+        "verification": {
+            "meetings": (
+                f"Each answer cites a clip_id; open {site_url}/meeting/{{clip_id}} for the "
+                "official agenda & minutes (and meeting-video link where available)."
+            ),
+            "guidance": (
+                "We are a secondary source. For legal or official use, cite the underlying "
+                "primary source we link, not us."
+            ),
+        },
+        "sites": [
+            {
+                "domain": host,
+                "role": f"{cfg.name} meeting archive + RAG",
+                "llms_txt": f"{site_url}/llms.txt",
+            }
+        ],
+        "mcp_servers": [
+            {
+                "name": cfg.publication_name,
+                "url": f"{site_url}/api/mcp",
+                "transport": "streamable-http",
+                "auth": "none",
+                "tools": [
+                    "ask_meetings",
+                    "search_meetings",
+                    "find_related_clips",
+                    "get_meeting_clip",
+                    "list_recent_meetings",
+                ],
+            }
+        ],
+        "umbrella": {"name": "Civic Memory", "site": "https://civicmemory.news"},
+        "license": (
+            f"Built from public primary sources. Attribution to {cfg.publication_name} is "
+            "appreciated; verify against the linked originals for high-stakes use."
+        ),
+        "corrections": cfg.editor_email,
+        "contact": cfg.editor_email,
+    }
+
+
 def _build_skill_md(site_url: str) -> str:
     """Return the contents of /skill.md — the canonical agent/LLM guide.
 
@@ -698,15 +854,27 @@ def generate_seo_artifacts(
     ]
     (public_dir / "llms.txt").write_text("\n".join(llms_lines), encoding="utf-8")
 
-    # ---- skill.md — the canonical agent/LLM guide for the whole Lexington
-    # Times ecosystem (every MCP server + API, citation rules, trust).
-    # llms.txt documents WHAT this archive's API is; skill.md teaches an agent
-    # HOW to use the whole system end-to-end and how to verify us. Its source
-    # of truth is the tracked template frontend/skill.template.md (read by
-    # _build_skill_md) so the copies served from feeds / meetings / editorial
-    # stay byte-identical. Hand-edit the template, then regenerate.
-    skill_md = _build_skill_md(site_url)
-    (public_dir / "skill.md").write_text(skill_md, encoding="utf-8")
+    # ---- skill.md + /.well-known/llm-trust.json — the agent/LLM guide + trust
+    # manifest. The lexingtonky.news ecosystem (feeds / meetings / editorial)
+    # shares ONE hand-maintained, byte-identical canonical pair (kept in sync
+    # across three repos via the skill.md skill) — so there we emit the tracked
+    # template skill.md and leave the static checked-in llm-trust.json untouched.
+    # Every OTHER jurisdiction (e.g. Paris on civicmemory.news) GENERATES both
+    # from its config so it advertises ITS OWN identity, MCP server, and source
+    # provenance instead of "The Lexington Times".
+    if _is_lexington_ecosystem(site_url):
+        skill_md = _build_skill_md(site_url)
+        (public_dir / "skill.md").write_text(skill_md, encoding="utf-8")
+    else:
+        (public_dir / "skill.md").write_text(
+            _build_jurisdiction_skill_md(cfg, site_url), encoding="utf-8"
+        )
+        wk = public_dir / ".well-known"
+        wk.mkdir(exist_ok=True)
+        (wk / "llm-trust.json").write_text(
+            json.dumps(_build_jurisdiction_trust(cfg, site_url), indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     # ---- llms-full.txt — recent meetings with summary previews for one-pull consumption.
     full_lines = [
