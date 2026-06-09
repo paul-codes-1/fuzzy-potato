@@ -281,10 +281,10 @@ class TestGenerateSection:
 
         generate_section(
             mock_client, "Test", "instruction", "{}",
-            "Council", "2026-01-22", model="claude-sonnet-4-20250514",
+            "Council", "2026-01-22", model="claude-sonnet-4-6",
         )
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-4-6"
         assert call_kwargs["temperature"] == 0.3
 
 

@@ -263,7 +263,7 @@ def _generate_agenda_item_sections(facts: dict) -> list[dict]:
 
 def generate_section(anthropic_client, section_name: str, instruction: str,
                      facts_json: str, meeting_body: str, date: str,
-                     model: str = "claude-sonnet-4-20250514") -> Optional[str]:
+                     model: str = "claude-sonnet-4-6") -> Optional[str]:
     """Generate a single summary section using Claude Sonnet.
 
     Returns the section text including the ## header, or None on failure.
@@ -294,7 +294,7 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
                         agenda_text: Optional[str], minutes_text: Optional[str],
                         meeting_body: str = "Unknown", date: str = "Unknown",
                         extraction_model: str = "gpt-4o",
-                        narration_model: str = "claude-sonnet-4-20250514",
+                        narration_model: str = "claude-sonnet-4-6",
                         log_fn=None) -> tuple[Optional[str], Optional[dict]]:
     """Two-pass summary generation.
 
