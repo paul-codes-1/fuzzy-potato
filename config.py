@@ -197,7 +197,32 @@ def get_config() -> Jurisdiction:
 
     slug = os.getenv("JURISDICTION", "lfucg")
     base = dict(_LFUCG_DEFAULTS)
-    base.update(_load_toml(slug))
+    toml_values = _load_toml(slug)
+    if slug != "lfucg":
+        # Fail loud instead of silently degrading to the LFUCG defaults — a
+        # second county serving LFUCG host/views/identity is a real failure
+        # mode (MULTI_COUNTY_EXPANSION_SPEC §2.7). The lfucg/unset path keeps
+        # the historical degrade-to-defaults behavior per the module docstring.
+        if not toml_values:
+            toml_path = Path(__file__).resolve().parent / "jurisdictions" / f"{slug}.toml"
+            if not toml_path.exists():
+                raise RuntimeError(
+                    f"JURISDICTION={slug!r} is set but jurisdictions/{slug}.toml "
+                    "does not exist — create it (see MULTI_COUNTY_EXPANSION_SPEC "
+                    "§2.3/§2.6) or unset JURISDICTION"
+                )
+            raise RuntimeError(
+                f"jurisdictions/{slug}.toml exists but loaded empty — no TOML "
+                "parser is available (requires Python 3.11+ tomllib or the "
+                "tomli package) or the file defines no recognized keys"
+            )
+        toml_slug = toml_values.get("slug")
+        if toml_slug is not None and toml_slug != slug:
+            raise RuntimeError(
+                f"jurisdictions/{slug}.toml declares slug={toml_slug!r} but "
+                f"JURISDICTION={slug!r} — the TOML's slug must match its filename"
+            )
+    base.update(toml_values)
 
     # env var > toml/default for the historically env-driven fields.
     granicus_host = os.getenv("GRANICUS_HOST", base["granicus_host"])

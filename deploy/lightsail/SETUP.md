@@ -91,6 +91,16 @@ Onboarding flow: write `jurisdictions/<slug>.toml` (discovery sub-procedure in
 `MULTI_COUNTY_EXPANSION_SPEC.md` §2.3) → `provision-jurisdiction.sh <slug>` →
 cold-start (§2.6) → validate (§2.7) → flip public DNS → enable the cron.
 
+> **Cold-start + validation are NOT in this file.** The per-jurisdiction
+> cold-start commands and the post-provision checklist (health/search/ask/MCP
+> smoke tests, the identity-leak check on `llms.txt`/`skill.md`, rollback +
+> teardown) live in `MULTI_COUNTY_EXPANSION_SPEC.md` **§2.6** (cold-start vs
+> seeded) and **§2.7** (validation checklist + rollback). Follow that checklist
+> verbatim after provisioning — `/api/health` now reports the active
+> `jurisdiction` slug, and `get_config()` fails loud (RuntimeError) when a
+> non-lfucg `JURISDICTION` has a missing/unreadable TOML or a slug mismatch,
+> so a misconfigured box can't silently serve LFUCG identity.
+
 ---
 
 ## 1. Provision the box

@@ -396,3 +396,49 @@ class TestSyntheticJurisdictionIdentity:
             monkeypatch.setenv("JURISDICTION", "lfucg")
             get_config.cache_clear()
             importlib.reload(prompts_module)
+
+
+# --------------------------------------------------------------------------
+# Test C — fail-loud guard: a non-lfucg slug must never silently degrade to
+# the LFUCG defaults (spec §2.7 failure mode); the lfucg/unset path keeps the
+# historical degrade-to-defaults behavior.
+# --------------------------------------------------------------------------
+
+
+class TestFailLoudJurisdictionGuard:
+    def test_missing_toml_raises(self, monkeypatch):
+        _set_jurisdiction(monkeypatch, "nosuchcounty")
+        try:
+            with pytest.raises(RuntimeError, match=r"jurisdictions/nosuchcounty\.toml"):
+                get_config()
+        finally:
+            get_config.cache_clear()
+
+    def test_slug_mismatch_raises(self, monkeypatch):
+        toml_path = _JURIS_DIR / "mismatchcounty.toml"
+        toml_path.write_text(
+            '[jurisdiction]\nslug = "othercounty"\nname = "Mismatch County"\n',
+            encoding="utf-8",
+        )
+        _set_jurisdiction(monkeypatch, "mismatchcounty")
+        try:
+            with pytest.raises(RuntimeError, match=r"othercounty.*mismatchcounty|mismatchcounty.*othercounty"):
+                get_config()
+        finally:
+            get_config.cache_clear()
+            toml_path.unlink()
+
+    def test_lfucg_and_unset_paths_unaffected(self, monkeypatch):
+        # Even when the TOML loads empty (file absent / no TOML parser), the
+        # lfucg and unset paths must keep degrading to the built-in defaults
+        # — the module docstring guarantees byte-identical LFUCG behavior.
+        monkeypatch.setattr(config, "_load_toml", lambda slug: {})
+        for slug in ("lfucg", None):
+            _set_jurisdiction(monkeypatch, slug)
+            try:
+                cfg = get_config()
+                assert cfg.slug == "lfucg"
+                assert cfg.publication_name == "LFUCG Meeting Archive"
+                assert cfg.granicus_host == "lfucg.granicus.com"
+            finally:
+                get_config.cache_clear()

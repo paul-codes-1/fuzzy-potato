@@ -608,7 +608,7 @@ def related_endpoint_direct(clip_id: int, limit: int = 5):
 @app.get("/health")
 def health_endpoint():
     """Lightweight health check — no ChromaDB loading."""
-    result = {"status": "ok"}
+    result = {"status": "ok", "jurisdiction": get_config().slug}
     if _collection is not None:
         result["chunks_indexed"] = _collection.count()
     if _clip_metadata is not None:
