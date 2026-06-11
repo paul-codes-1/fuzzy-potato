@@ -2,12 +2,15 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 import hashlib
 import sys
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_config
@@ -71,10 +74,15 @@ def chunk_summary(summary_text: str, clip_id: int, date: str, meeting_body: str)
             "section_type": section_type,
         }
 
-        # Parse [timestamp: MM:SS] for video deep-linking
-        time_match = re.search(r'\[timestamp:\s*(\d+):(\d+)\]', text)
+        # Parse [timestamp: MM:SS] or [timestamp: H:MM:SS] for video
+        # deep-linking. The optional hour group matters: matching only two
+        # fields would read "1:23:45" as 1m23s.
+        time_match = re.search(r'\[timestamp:\s*(?:(\d+):)?(\d+):(\d{2})\]', text)
         if time_match:
-            chunk["start_time"] = int(time_match.group(1)) * 60 + int(time_match.group(2))
+            hours = int(time_match.group(1)) if time_match.group(1) else 0
+            chunk["start_time"] = (hours * 3600
+                                   + int(time_match.group(2)) * 60
+                                   + int(time_match.group(3)))
 
         chunks.append(chunk)
 
@@ -679,7 +687,13 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
         try:
             collection.delete(where={"clip_id": clip_id})
         except Exception:
-            pass
+            # A failed delete means stale old-chunker chunks would sit next
+            # to the fresh upsert (e.g. pre-Table-of-Motions Whisper votes
+            # contradicting the official record). Abort this clip's
+            # re-ingest rather than double-index it.
+            logger.exception("Failed to delete existing chunks for clip %s; "
+                             "skipping re-ingest to avoid duplicates", clip_id)
+            return
         store_chunks(all_chunks, collection, openai_client)
         if verbose:
             print(f"  Ingested clip {clip_id}: {len(all_chunks)} chunks")

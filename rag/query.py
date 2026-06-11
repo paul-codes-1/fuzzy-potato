@@ -12,11 +12,34 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
-from rag.prompts import SYNTHESIS_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT, QUERY_REWRITE_PROMPT
+from rag.prompts import (
+    SYNTHESIS_SYSTEM_PROMPT,
+    CHAT_SYSTEM_PROMPT,
+    CONDENSE_QUESTION_PROMPT,
+    QUERY_REWRITE_PROMPT,
+)
 
 DEFAULT_MODEL = "gpt-4o"
 MAX_HISTORY_PAIRS = 10
 MAX_REWRITTEN_QUERIES = 3
+
+# Synthesis must be deterministic-ish: it reports votes, names, and tallies
+# from retrieved text. The OpenAI default (temperature 1.0) was a major
+# hallucination source.
+SYNTHESIS_TEMPERATURE = 0.1
+SYNTHESIS_MAX_TOKENS = 2048
+
+# Chunks with cosine distance above this never reach the LLM. The collection
+# uses hnsw:space=cosine with text-embedding-3-small; relevant chunks land
+# well under this, blatant nearest-neighbor junk lands above it. Tunable per
+# deployment without a code change.
+MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", "0.75"))
+
+NO_COVERAGE_ANSWER = (
+    "The meeting archive's indexed excerpts don't appear to cover this topic. "
+    "It may not have come up in an indexed meeting, or the relevant meeting "
+    "may not be transcribed yet."
+)
 
 
 def granicus_clip_url(clip_id, timestamp: int = 0) -> str:
@@ -78,21 +101,25 @@ def extract_temporal_signals(question: str) -> dict:
         m = re.search(r"\bbefore\s+(\d{4})\b", q)
         if m:
             signals["date_before"] = f"{int(m.group(1)) - 1:04d}-12-31"
-        # Bare year — only if no month+year matched and no since/before
+        # Bare year — only if no month+year matched and no since/before.
+        # Lookarounds keep this from firing on identifiers like
+        # "Resolution 2023-456" or "0016-26".
         if "date_after" not in signals and "date_before" not in signals:
-            years = re.findall(r"\b(19|20)(\d{2})\b", q)
+            years = re.findall(r"(?<![\d-])\b(19|20)(\d{2})\b(?![\d-])", q)
             if len(years) == 1:
                 year = int(years[0][0] + years[0][1])
                 signals["date_after"] = f"{year:04d}-01-01"
                 signals["date_before"] = f"{year:04d}-12-31"
 
-    # "past year", "last 12 months", "past 6 months"
-    m = re.search(r"\b(?:past|last)\s+(\d+)\s+months?\b", q)
-    if m:
-        cutoff = date.today() - timedelta(days=int(m.group(1)) * 31)
-        signals["date_after"] = cutoff.isoformat()
-    elif re.search(r"\b(?:past|last)\s+year\b", q):
-        signals["date_after"] = (date.today() - timedelta(days=365)).isoformat()
+    # "past year", "last 12 months", "past 6 months" — only when no explicit
+    # date range was already parsed (e.g. "April 2025" must not be overridden).
+    if "date_after" not in signals and "date_before" not in signals:
+        m = re.search(r"\b(?:past|last)\s+(\d+)\s+months?\b", q)
+        if m:
+            cutoff = date.today() - timedelta(days=int(m.group(1)) * 31)
+            signals["date_after"] = cutoff.isoformat()
+        elif re.search(r"\b(?:past|last)\s+year\b", q):
+            signals["date_after"] = (date.today() - timedelta(days=365)).isoformat()
 
     # Recency keywords → post-retrieval re-rank toward newest
     if _RECENCY_RE.search(q):
@@ -223,18 +250,23 @@ def rewrite_query(question: str, openai_client) -> list[str]:
     return [question]
 
 
+def _format_chunk_context(chunk: dict) -> str:
+    """Render one retrieved chunk as a clearly-delimited excerpt block."""
+    header = f"--- Meeting: {chunk.get('title', 'Unknown')} | {chunk['date']} | {chunk['meeting_body']} | Clip {chunk['clip_id']} ---"
+    source_info = f"[Source: {chunk['source']}"
+    if "start_time" in chunk and "end_time" in chunk:
+        source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}-{_fmt_timestamp(chunk['end_time'])}"
+    elif "start_time" in chunk:
+        source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}"
+    if chunk.get("placeholder_transcript"):
+        source_info += ", closed-caption placeholder (noisy)"
+    source_info += "]"
+    return f"{header}\n{source_info}\n{chunk['text']}"
+
+
 def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
     """Build the messages array for the LLM synthesis call."""
-    context_parts = []
-    for chunk in chunks:
-        header = f"--- Meeting: {chunk.get('title', 'Unknown')} | {chunk['date']} | {chunk['meeting_body']} | Clip {chunk['clip_id']} ---"
-        source_info = f"[Source: {chunk['source']}"
-        if "start_time" in chunk and "end_time" in chunk:
-            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}-{_fmt_timestamp(chunk['end_time'])}"
-        elif "start_time" in chunk:
-            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}"
-        source_info += "]"
-        context_parts.append(f"{header}\n{source_info}\n{chunk['text']}")
+    context_parts = [_format_chunk_context(chunk) for chunk in chunks]
 
     context = "\n\n".join(context_parts)
 
@@ -257,8 +289,12 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     if total_chunks == 0:
         return None
 
-    # 1. Rewrite the question into focused search queries
+    # 1. Rewrite the question into focused search queries. Always embed the
+    # original question too — a lossy rewrite (dropped name spelling,
+    # ordinance number) must not be able to silently sink retrieval.
     search_queries = rewrite_query(question, openai_client)
+    if question not in search_queries:
+        search_queries = search_queries[:MAX_REWRITTEN_QUERIES] + [question]
 
     # 2. Embed all queries
     q_response = openai_client.embeddings.create(
@@ -307,6 +343,11 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
             ):
                 if id_ in seen_ids:
                     continue
+                # Relevance gate: nearest-neighbor search always returns
+                # *something*; far-away chunks must not reach the LLM, where
+                # they read as plausible meeting excerpts and invite fusion.
+                if dist is not None and dist > MAX_DISTANCE:
+                    continue
                 if (date_after or date_before) and not _date_in_range(
                     meta.get("date", ""), date_after, date_before
                 ):
@@ -331,7 +372,14 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     # 5. Deduplicate
     deduped = deduplicate_results(merged)
 
-    # 5b. Recency re-rank: for "last/recent/latest" queries, prefer newer clips
+    # 5b. Final cap BEFORE any recency reorder: top_k is the contract for how
+    # much context reaches the LLM. Capping while still distance-sorted keeps
+    # the most relevant chunks; capping after a date-desc reorder would let
+    # new-but-marginal chunks evict relevant ones.
+    if len(deduped["ids"]) > top_k:
+        deduped = {k: v[:top_k] for k, v in deduped.items()}
+
+    # 5c. Recency re-rank: for "last/recent/latest" queries, prefer newer clips
     # (dated chunks first, sorted by date desc; undated chunks trail in original order).
     if prefer_recent and deduped["metadatas"]:
         bundle = list(zip(deduped["ids"], deduped["documents"],
@@ -348,7 +396,7 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
         }
 
     deduped_count = len(deduped["ids"])
-    logger.info("Retrieved %d unique chunks (%d after dedup) for question: %s",
+    logger.info("Retrieved %d unique chunks (%d after dedup/cap) for question: %s",
                 len(all_ids), deduped_count, question[:120])
 
     for i, (doc, meta, dist) in enumerate(zip(
@@ -384,6 +432,8 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
         if "start_time" in meta:
             chunk_info["start_time"] = meta["start_time"]
             chunk_info["end_time"] = meta.get("end_time", meta["start_time"])
+        if meta.get("transcript_source") == "granicus_vtt":
+            chunk_info["placeholder_transcript"] = True
 
         synthesis_chunks.append(chunk_info)
 
@@ -409,6 +459,39 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     return synthesis_chunks, sources
 
 
+# Matches [Clip 6669], [Clip 6669, 12:34], and range forms like
+# [Clip 6669, 107:06-109:11].
+_CITATION_RE = re.compile(r"\[Clip\s+(\d+)[^\]]*\]")
+
+
+def verify_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
+    """Post-hoc grounding check on the synthesized answer.
+
+    - Strips bracket citations whose Clip ID was never retrieved (the model
+      invented them) and logs the event.
+    - Marks each source with ``cited: true/false`` and reorders cited
+      sources first so the UI can collapse the uncited remainder.
+    """
+    retrieved_ids = {str(s.get("clip_id")) for s in sources}
+    cited_ids = set(_CITATION_RE.findall(answer))
+
+    invented = cited_ids - retrieved_ids
+    if invented:
+        logger.warning("Answer cited clip IDs not in retrieved set (stripped): %s",
+                       sorted(invented))
+
+        def _strip_invented(m: re.Match) -> str:
+            return "" if m.group(1) in invented else m.group(0)
+
+        answer = _CITATION_RE.sub(_strip_invented, answer)
+        cited_ids &= retrieved_ids
+
+    for s in sources:
+        s["cited"] = str(s.get("clip_id")) in cited_ids
+    sources = sorted(sources, key=lambda s: not s["cited"])
+    return answer, sources
+
+
 def ask(question: str, collection, openai_client, clip_metadata: dict = None,
         filters: dict = None, top_k: int = 15, model: str = DEFAULT_MODEL) -> dict:
     """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize."""
@@ -424,6 +507,17 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
 
     synthesis_chunks, sources = result
 
+    # Nothing relevant survived the distance/date/dedup gates: answer
+    # honestly WITHOUT calling the LLM. An empty-context synthesis call is
+    # an invitation to answer from parametric memory.
+    if not synthesis_chunks:
+        return {
+            "answer": NO_COVERAGE_ANSWER,
+            "sources": [],
+            "filters_applied": filters or {},
+            "chunks_retrieved": 0,
+        }
+
     # Synthesize answer via LLM
     messages = build_synthesis_messages(question, synthesis_chunks)
 
@@ -436,9 +530,13 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
     chat_response = openai_client.chat.completions.create(
         model=model,
         messages=messages,
+        temperature=SYNTHESIS_TEMPERATURE,
+        max_tokens=SYNTHESIS_MAX_TOKENS,
     )
     answer = chat_response.choices[0].message.content
     logger.info("=== LLM Response (%d chars) ===", len(answer))
+
+    answer, sources = verify_citations(answer, sources)
 
     return {
         "answer": answer,
@@ -451,18 +549,7 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
 def build_chat_synthesis_messages(messages: list[dict], chunks: list[dict]) -> list[dict]:
     """Build messages array for multi-turn chat synthesis."""
     # Build context block (same format as build_synthesis_messages)
-    context_parts = []
-    for chunk in chunks:
-        header = f"--- Meeting: {chunk.get('title', 'Unknown')} | {chunk['date']} | {chunk['meeting_body']} | Clip {chunk['clip_id']} ---"
-        source_info = f"[Source: {chunk['source']}"
-        if "start_time" in chunk and "end_time" in chunk:
-            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}-{_fmt_timestamp(chunk['end_time'])}"
-        elif "start_time" in chunk:
-            source_info += f", Timestamp: {_fmt_timestamp(chunk['start_time'])}"
-        source_info += "]"
-        context_parts.append(f"{header}\n{source_info}\n{chunk['text']}")
-
-    context = "\n\n".join(context_parts)
+    context = "\n\n".join(_format_chunk_context(chunk) for chunk in chunks)
 
     # Trim history to last MAX_HISTORY_PAIRS * 2 messages
     trimmed = messages[-(MAX_HISTORY_PAIRS * 2):]
@@ -494,11 +581,48 @@ def synthesize_with_anthropic(messages: list[dict], anthropic_client,
 
     response = anthropic_client.messages.create(
         model=model,
-        max_tokens=2048,
+        max_tokens=SYNTHESIS_MAX_TOKENS,
+        temperature=SYNTHESIS_TEMPERATURE,
         system=system_content,
         messages=remaining,
     )
     return response.content[0].text
+
+
+def condense_question(messages: list[dict], openai_client) -> str:
+    """Rewrite the latest chat message as a standalone question for retrieval.
+
+    Follow-ups like "what about the vote?" carry no entities — retrieving on
+    them returns unrelated chunks, and the model then answers from its own
+    prior turn (the classic multi-turn hallucination amplifier). Uses the
+    last few turns of history to resolve references; falls back to the raw
+    last message on any failure.
+    """
+    question = messages[-1]["content"]
+    if len(messages) < 2:
+        return question
+
+    history = messages[-7:-1]  # up to 3 prior exchange pairs
+    transcript = "\n".join(f"{m['role']}: {m['content'][:500]}" for m in history)
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": CONDENSE_QUESTION_PROMPT},
+                {"role": "user",
+                 "content": f"Conversation:\n{transcript}\n\nLatest message: {question}"},
+            ],
+            temperature=0,
+            max_tokens=200,
+        )
+        condensed = (response.choices[0].message.content or "").strip()
+        if condensed:
+            if condensed != question:
+                logger.info("Condensed follow-up %r -> %r", question[:80], condensed[:120])
+            return condensed
+    except Exception:
+        logger.exception("Question condensation failed, using raw last message")
+    return question
 
 
 def chat(messages: list[dict], collection, openai_client,
@@ -506,8 +630,9 @@ def chat(messages: list[dict], collection, openai_client,
          filters: dict = None, model_provider: str = "openai",
          top_k: int = 15) -> dict:
     """Multi-turn chat: retrieve context for latest question, synthesize with history."""
-    # Extract latest user message
-    question = messages[-1]["content"]
+    # Retrieval works on a standalone version of the latest question so
+    # follow-ups ("what about the vote?") still retrieve the right chunks.
+    question = condense_question(messages, openai_client)
 
     result = _retrieve_and_prepare(question, collection, openai_client,
                                    clip_metadata, filters, top_k)
@@ -516,12 +641,22 @@ def chat(messages: list[dict], collection, openai_client,
             "role": "assistant",
             "content": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
             "sources": [],
-            "model_used": "gpt-4o" if model_provider == "openai" else "claude-sonnet",
+            "model_used": DEFAULT_MODEL if model_provider == "openai" else "claude-sonnet",
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
 
     synthesis_chunks, sources = result
+
+    if not synthesis_chunks:
+        return {
+            "role": "assistant",
+            "content": NO_COVERAGE_ANSWER,
+            "sources": [],
+            "model_used": DEFAULT_MODEL if model_provider == "openai" else "claude-sonnet",
+            "filters_applied": filters or {},
+            "chunks_retrieved": 0,
+        }
 
     # Build chat messages with context
     synth_messages = build_chat_synthesis_messages(messages, synthesis_chunks)
@@ -540,13 +675,17 @@ def chat(messages: list[dict], collection, openai_client,
         model_used = "claude-sonnet"
     else:
         chat_response = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model=DEFAULT_MODEL,
             messages=synth_messages,
+            temperature=SYNTHESIS_TEMPERATURE,
+            max_tokens=SYNTHESIS_MAX_TOKENS,
         )
         content = chat_response.choices[0].message.content
-        model_used = "gpt-4o"
+        model_used = DEFAULT_MODEL
 
     logger.info("=== Chat LLM Response (%s, %d chars) ===", model_used, len(content))
+
+    content, sources = verify_citations(content, sources)
 
     return {
         "role": "assistant",

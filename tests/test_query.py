@@ -797,7 +797,7 @@ class TestChat:
         assert result["model_used"] == "claude-sonnet"
         mock_anthropic_client.messages.create.assert_called_once()
 
-    def test_chat_uses_latest_user_message_for_retrieval(self, mock_openai_client):
+    def test_chat_uses_condensed_question_for_retrieval(self, mock_openai_client):
         from rag.query import chat
 
         mock_collection = self._make_mock_collection()
@@ -810,17 +810,41 @@ class TestChat:
             {"role": "user", "content": "What about the zoning vote?"},
         ]
 
-        chat(
-            messages=messages,
-            collection=mock_collection,
-            openai_client=mock_openai_client,
-            clip_metadata=clip_metadata,
-        )
+        # Retrieval embeds the standalone (condensed) question, not the raw
+        # follow-up — history-resolved entities are what make retrieval work.
+        with patch("rag.query.condense_question",
+                   return_value="What about the zoning vote?") as mock_condense:
+            chat(
+                messages=messages,
+                collection=mock_collection,
+                openai_client=mock_openai_client,
+                clip_metadata=clip_metadata,
+            )
+        mock_condense.assert_called_once()
 
-        # The embedding should be created from the LAST user message
         embed_call = mock_openai_client.embeddings.create.call_args
         embed_input = embed_call.kwargs.get("input") or embed_call[1].get("input")
         assert embed_input == ["What about the zoning vote?"]
+
+    def test_condense_question_single_message_passthrough(self, mock_openai_client):
+        from rag.query import condense_question
+
+        question = condense_question(
+            [{"role": "user", "content": "What about parks?"}], mock_openai_client
+        )
+        assert question == "What about parks?"
+        mock_openai_client.chat.completions.create.assert_not_called()
+
+    def test_condense_question_failure_falls_back(self, mock_openai_client):
+        from rag.query import condense_question
+
+        mock_openai_client.chat.completions.create.side_effect = RuntimeError("api down")
+        messages = [
+            {"role": "user", "content": "First question about parks"},
+            {"role": "assistant", "content": "Parks were discussed."},
+            {"role": "user", "content": "What about the zoning vote?"},
+        ]
+        assert condense_question(messages, mock_openai_client) == "What about the zoning vote?"
 
 
 # ============================================================
@@ -997,3 +1021,106 @@ class TestAskCitesCorrectUrl:
             "https://parisky.portal.civicclerk.com/event/322")
         # Crucially NOT a granicus URL.
         assert "granicus.com" not in result["sources"][0]["granicus_url"]
+
+
+# ============================================================
+# Grounding / anti-hallucination guards
+# ============================================================
+
+class TestGroundingGuards:
+    """Distance gate, zero-chunk short-circuit, citation verification,
+    deterministic synthesis params."""
+
+    def _collection_with_distances(self, distances):
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = len(distances)
+        mock_collection.query.return_value = {
+            "ids": [[f"id{i}" for i in range(len(distances))]],
+            "documents": [[f"doc {i}" for i in range(len(distances))]],
+            "metadatas": [[{"clip_id": 6000 + i, "date": "2026-01-08",
+                            "meeting_body": "Council", "source": "summary"}
+                           for i in range(len(distances))]],
+            "distances": [list(distances)],
+        }
+        return mock_collection
+
+    def test_far_chunks_never_reach_llm(self, mock_openai_client):
+        from rag.query import MAX_DISTANCE, ask
+
+        collection = self._collection_with_distances([MAX_DISTANCE + 0.05,
+                                                      MAX_DISTANCE + 0.1])
+        result = ask("Did the council ban pit bulls?", collection, mock_openai_client)
+
+        # Everything was gated out → canned no-coverage answer, no LLM call.
+        assert result["chunks_retrieved"] == 0
+        assert result["sources"] == []
+        mock_openai_client.chat.completions.create.assert_called_once()  # rewrite only
+
+    def test_zero_chunks_short_circuits_without_synthesis(self, mock_openai_client):
+        from rag.query import NO_COVERAGE_ANSWER, ask
+
+        collection = self._collection_with_distances([0.2])
+        # Date filter excludes the only chunk.
+        result = ask("parks", collection, mock_openai_client,
+                     filters={"date_after": "2027-01-01"})
+
+        assert result["answer"] == NO_COVERAGE_ANSWER
+        assert result["sources"] == []
+
+    def test_synthesis_uses_low_temperature_and_max_tokens(self, mock_openai_client):
+        from rag.query import SYNTHESIS_MAX_TOKENS, SYNTHESIS_TEMPERATURE, ask
+
+        collection = self._collection_with_distances([0.2])
+        ask("parks", collection, mock_openai_client)
+
+        synth_call = mock_openai_client.chat.completions.create.call_args
+        assert synth_call.kwargs["temperature"] == SYNTHESIS_TEMPERATURE
+        assert synth_call.kwargs["max_tokens"] == SYNTHESIS_MAX_TOKENS
+
+    def test_final_context_capped_at_top_k(self, mock_openai_client):
+        from rag.query import ask
+
+        collection = self._collection_with_distances([0.1 + i * 0.001 for i in range(40)])
+        result = ask("parks", collection, mock_openai_client, top_k=5)
+
+        assert result["chunks_retrieved"] == 5
+
+
+class TestVerifyCitations:
+    def test_invented_clip_id_stripped_and_logged(self):
+        from rag.query import verify_citations
+
+        sources = [{"clip_id": 6669}, {"clip_id": 6670}]
+        answer = "The vote passed [Clip 6669]. Also discussed [Clip 9999, 12:34]."
+        cleaned, out_sources = verify_citations(answer, sources)
+
+        assert "[Clip 6669]" in cleaned
+        assert "9999" not in cleaned
+        assert out_sources[0]["clip_id"] == 6669
+        assert out_sources[0]["cited"] is True
+        assert out_sources[1]["cited"] is False
+
+    def test_cited_sources_ordered_first(self):
+        from rag.query import verify_citations
+
+        sources = [{"clip_id": 1}, {"clip_id": 2}, {"clip_id": 3}]
+        answer = "Only the last matters [Clip 3]."
+        _, out_sources = verify_citations(answer, sources)
+
+        assert [s["clip_id"] for s in out_sources] == [3, 1, 2]
+        assert [s["cited"] for s in out_sources] == [True, False, False]
+
+    def test_citation_with_timestamp_detected(self):
+        from rag.query import verify_citations
+
+        sources = [{"clip_id": 6669}]
+        _, out_sources = verify_citations("See [Clip 6669, 1:02:03].", sources)
+        assert out_sources[0]["cited"] is True
+
+    def test_no_citations_marks_all_uncited(self):
+        from rag.query import verify_citations
+
+        sources = [{"clip_id": 1}, {"clip_id": 2}]
+        answer, out_sources = verify_citations("No coverage found.", sources)
+        assert answer == "No coverage found."
+        assert all(s["cited"] is False for s in out_sources)
