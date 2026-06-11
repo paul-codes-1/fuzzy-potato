@@ -6,8 +6,12 @@
 # changes, which is a separate frontend code deploy via ../../deploy.sh).
 #
 # Mirrors the cache-control pools in ../../deploy.sh so CloudFront keeps
-# serving the per-clip tree from edge. `--size-only` means only new/
-# changed clip files upload, so each cron run pushes just the deltas.
+# serving the per-clip tree from edge. `--size-only` is used ONLY for the
+# truly-immutable PDF pool: mutable files (extracted_facts.json, summary
+# txt, clip.md, index.json) legitimately get rewritten in place, and a
+# same-size rewrite would silently never sync under --size-only. The
+# default time+size comparison uploads only files modified since their
+# last upload, so cron runs still push just the deltas.
 #
 set -euo pipefail
 export AWS_PAGER=""
@@ -22,29 +26,32 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" --size-only \
   --cache-control "public, max-age=31536000, immutable"
 
 # Per-clip Markdown alternates (clip.md): AI-agent discovery surface,
-# functionally immutable per processing run -> 1d fresh + 7d SWR.
-aws s3 sync "$SRC/" "$S3_BUCKET/data/" --size-only \
+# regenerated when a clip's summary/facts change -> 1d fresh + 7d SWR.
+aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --exclude "*" --include "clips/*/clip.md" \
   --content-type "text/markdown; charset=utf-8" \
   --cache-control "public, max-age=86400, stale-while-revalidate=604800"
 
 # Per-clip text + JSON + HTML (transcripts, summaries, agenda/minutes txt,
 # metadata.json, extracted_facts.json): 1d fresh + 7d SWR.
-aws s3 sync "$SRC/" "$S3_BUCKET/data/" --size-only \
+aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --exclude "*" \
   --include "clips/*/*.txt" \
   --include "clips/*/*.json" \
   --include "clips/*/*.html" \
   --cache-control "public, max-age=86400, stale-while-revalidate=604800"
 
-# Top-level data (index.json, llms.txt, available_clips.json, rag_state.json,
-# state.json): mutates every run -> no-cache. Exclude the big local-only
-# artifacts: chroma_db/ and search.db are served by the LOCAL RAG API now,
-# NOT from S3, so there's no reason to ship them (search.db = 300MB,
-# chroma_db = 5.1GB). Also exclude raw media + per-clip files (handled above).
-aws s3 sync "$SRC/" "$S3_BUCKET/data/" --size-only \
+# Top-level data (index.json, llms.txt, available_clips.json): mutates every
+# run -> no-cache. Exclude the big local-only artifacts: chroma_db/ and
+# search.db are served by the LOCAL RAG API now, NOT from S3, so there's no
+# reason to ship them (search.db = 300MB, chroma_db = 5.1GB). Also exclude
+# raw media + per-clip files (handled above) and internal pipeline state
+# (state.json / rag_state.json have no business on the public bucket).
+aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --cache-control "no-cache" \
   --exclude "clips/*" \
   --exclude "chroma_db/*" \
   --exclude "search.db" \
+  --exclude "state.json" \
+  --exclude "rag_state.json" \
   --exclude "*.mp3" --exclude "*.mp4" --exclude "*.part" --exclude "*.ytdl"
