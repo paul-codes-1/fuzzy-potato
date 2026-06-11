@@ -41,86 +41,67 @@ export function useMeeting(clipId) {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    let cancelled = false
+
+    // Reset everything on clip change so the previous clip's data never
+    // renders for the new one (e.g. a clip without minutes showing the
+    // previous clip's minutes forever).
+    setMeeting(null)
+    setExtractedFacts(null)
+    setTranscript(null)
+    setTranscriptSegments(null)
+    setAgenda(null)
+    setMinutes(null)
+    setError(null)
+    setLoading(true)
+
+    // Fetch one optional per-clip file; failures are non-fatal.
+    async function fetchFile(filename, parse, setter, label) {
+      if (!filename) return
+      try {
+        const response = await fetch(`/data/clips/${clipId}/${filename}`)
+        if (response.ok) {
+          const value = await parse(response)
+          if (!cancelled) setter(value)
+        }
+      } catch (e) {
+        console.warn(`Could not load ${label}:`, e)
+      }
+    }
+
     async function fetchMeeting() {
       try {
-        // Fetch metadata
+        // Metadata first — it tells us which other files exist
         const metaResponse = await fetch(`/data/clips/${clipId}/metadata.json`)
         if (!metaResponse.ok) {
           throw new Error('Meeting not found')
         }
         const metadata = await metaResponse.json()
+        if (cancelled) return
         setMeeting(metadata)
 
-        // Fetch extracted facts if available
-        if (metadata.files?.extracted_facts) {
-          try {
-            const factsResponse = await fetch(`/data/clips/${clipId}/${metadata.files.extracted_facts}`)
-            if (factsResponse.ok) {
-              setExtractedFacts(await factsResponse.json())
-            }
-          } catch (e) {
-            console.warn('Could not load extracted facts:', e)
-          }
-        }
-
-        // Fetch transcript if available
-        if (metadata.files?.transcript) {
-          try {
-            const transcriptResponse = await fetch(`/data/clips/${clipId}/${metadata.files.transcript}`)
-            if (transcriptResponse.ok) {
-              setTranscript(await transcriptResponse.text())
-            }
-          } catch (e) {
-            console.warn('Could not load transcript:', e)
-          }
-        }
-
-        // Fetch transcript segments (timestamped) if available
-        if (metadata.files?.transcript_segments) {
-          try {
-            const segmentsResponse = await fetch(`/data/clips/${clipId}/${metadata.files.transcript_segments}`)
-            if (segmentsResponse.ok) {
-              setTranscriptSegments(await segmentsResponse.json())
-            }
-          } catch (e) {
-            console.warn('Could not load transcript segments:', e)
-          }
-        }
-
-        // Fetch agenda text if available
-        if (metadata.files?.agenda_txt) {
-          try {
-            const agendaResponse = await fetch(`/data/clips/${clipId}/${metadata.files.agenda_txt}`)
-            if (agendaResponse.ok) {
-              setAgenda(await agendaResponse.text())
-            }
-          } catch (e) {
-            console.warn('Could not load agenda:', e)
-          }
-        }
-
-        // Fetch minutes text if available
-        if (metadata.files?.minutes_txt) {
-          try {
-            const minutesResponse = await fetch(`/data/clips/${clipId}/${metadata.files.minutes_txt}`)
-            if (minutesResponse.ok) {
-              setMinutes(await minutesResponse.text())
-            }
-          } catch (e) {
-            console.warn('Could not load minutes:', e)
-          }
-        }
+        // The rest are independent — fetch concurrently
+        await Promise.all([
+          fetchFile(metadata.files?.extracted_facts, r => r.json(), setExtractedFacts, 'extracted facts'),
+          fetchFile(metadata.files?.transcript, r => r.text(), setTranscript, 'transcript'),
+          fetchFile(metadata.files?.transcript_segments, r => r.json(), setTranscriptSegments, 'transcript segments'),
+          fetchFile(metadata.files?.agenda_txt, r => r.text(), setAgenda, 'agenda'),
+          fetchFile(metadata.files?.minutes_txt, r => r.text(), setMinutes, 'minutes'),
+        ])
       } catch (err) {
+        if (cancelled) return
         console.error('Error loading meeting:', err)
         setError(err.message)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     if (clipId) {
       fetchMeeting()
     }
+
+    return () => { cancelled = true }
   }, [clipId])
 
   return { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error }

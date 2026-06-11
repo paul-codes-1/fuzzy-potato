@@ -13,6 +13,7 @@ import {
   buildMeetingGraph,
   setJsonLdScript,
 } from '../utils/seo'
+import { parseClock } from '../utils/time'
 import { getSiteConfig } from '../config/site'
 
 // Pull the YouTube video id out of a watch/share/embed URL (or a bare id).
@@ -108,14 +109,17 @@ function HighlightedText({ text, searchTerm }) {
       </>
     )
   } else {
-    // Partial match (original behavior)
+    // Partial match (original behavior). With a single capture group,
+    // String.split puts captured matches at odd indices — testing each
+    // part against the stateful `gi` regex would advance lastIndex and
+    // skip alternating matches.
     regex = new RegExp(`(${escaped})`, 'gi')
     const parts = text.split(regex)
 
     return (
       <>
         {parts.map((part, i) =>
-          regex.test(part) ? (
+          i % 2 === 1 ? (
             <mark key={i} className="search-highlight">{part}</mark>
           ) : (
             <span key={i}>{part}</span>
@@ -587,8 +591,10 @@ function MeetingDetail() {
             {tabs.map(tab => (
               <button
                 key={tab.id}
+                id={`tab-${tab.id}`}
                 role="tab"
                 aria-selected={currentTab === tab.id}
+                aria-controls={`tabpanel-${tab.id}`}
                 className={`content-tab ${currentTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -606,7 +612,12 @@ function MeetingDetail() {
             </div>
           )}
 
-          <div className="content-panel" role="tabpanel">
+          <div
+            className="content-panel"
+            role="tabpanel"
+            id={`tabpanel-${currentTab}`}
+            aria-labelledby={`tab-${currentTab}`}
+          >
             {currentTab === 'overview' && extractedFacts && (
               <div className="meeting-overview">
                 {/* Meeting Info */}
@@ -693,8 +704,8 @@ function MeetingDetail() {
                           <button
                             className="timestamp-link"
                             onClick={() => {
-                              const [m, s] = vote.transcript_approx_time.split(':').map(Number)
-                              jumpToTime(m * 60 + (s || 0))
+                              const seconds = parseClock(vote.transcript_approx_time)
+                              if (seconds != null) jumpToTime(seconds)
                             }}
                           >
                             {vote.transcript_approx_time}
@@ -742,8 +753,8 @@ function MeetingDetail() {
                           <button
                             className="timestamp-link"
                             onClick={() => {
-                              const [m, s] = item.transcript_approx_time.split(':').map(Number)
-                              jumpToTime(m * 60 + (s || 0))
+                              const seconds = parseClock(item.transcript_approx_time)
+                              if (seconds != null) jumpToTime(seconds)
                             }}
                           >
                             {item.transcript_approx_time}
@@ -767,8 +778,8 @@ function MeetingDetail() {
                           <button
                             className="timestamp-link"
                             onClick={() => {
-                              const [m, s] = comment.transcript_approx_time.split(':').map(Number)
-                              jumpToTime(m * 60 + (s || 0))
+                              const seconds = parseClock(comment.transcript_approx_time)
+                              if (seconds != null) jumpToTime(seconds)
                             }}
                           >
                             {comment.transcript_approx_time}
@@ -987,6 +998,7 @@ function MeetingDetail() {
                     </div>
                   )}
                   <iframe
+                    title={`Meeting video player — ${cleanTitle(meeting.title)}`}
                     width="100%"
                     height="100%"
                     frameBorder="0"

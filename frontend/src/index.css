@@ -1824,6 +1824,27 @@ a:hover {
   color: var(--text-secondary);
 }
 
+.ask-sources-synthesis-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.ask-sources-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 8px;
+}
+.ask-sources-toggle:hover { color: var(--blue-700); }
+
+.ask-sources-other {
+  margin-top: 8px;
+}
+
 .ask-source-card {
   background: var(--surface);
   padding: 16px 20px;

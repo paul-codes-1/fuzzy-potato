@@ -1,6 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useFacets } from '../hooks/useFacets'
 import { getSiteConfig } from '../config/site'
+
+// Hard-coded fallback for when /api/facets hasn't loaded (or failed)
+const FALLBACK_MEETING_BODIES = ['Council', 'Committee', 'Commission', 'Board']
 
 function ChatLFUCGLogo() {
   return <span className="chatlfucg-logo" role="img" aria-label="ChatLFUCG logo">🐴</span>
@@ -52,14 +56,28 @@ export default function AskQuestion() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [showUncited, setShowUncited] = useState(false)
+  const abortRef = useRef(null)
+
+  const { facets } = useFacets()
+  const meetingBodies = facets?.bodies?.length ? facets.bodies : FALLBACK_MEETING_BODIES
+
+  // Abort any in-flight ask on unmount so a late response can't land
+  // after the component is gone.
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!question.trim()) return
 
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError(null)
     setResult(null)
+    setShowUncited(false)
 
     try {
       const body = { question: question.trim() }
@@ -71,6 +89,7 @@ export default function AskQuestion() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
@@ -80,11 +99,21 @@ export default function AskQuestion() {
       const data = await response.json()
       setResult(data)
     } catch (err) {
+      if (err.name === 'AbortError') return
       setError(err.message || 'Something went wrong. Please try again.')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }
+
+  // Split sources on the backend's `cited` flag. If no source carries the
+  // flag (older backend), fall back to the original render-everything
+  // behavior.
+  const sources = result?.sources || []
+  const hasCitedFlags = sources.some(s => s.cited !== undefined)
+  const citedSources = hasCitedFlags ? sources.filter(s => s.cited) : sources
+  const uncitedSources = hasCitedFlags ? sources.filter(s => !s.cited) : []
+  const citedMeetingCount = new Set(citedSources.map(s => s.clip_id)).size
 
   return (
     <div className="container ask-container">
@@ -113,6 +142,7 @@ export default function AskQuestion() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={chat.placeholder}
+            aria-label="Ask a question about the meeting archive"
             className="ask-input"
             disabled={loading}
           />
@@ -131,10 +161,9 @@ export default function AskQuestion() {
               disabled={loading}
             >
               <option value="">All</option>
-              <option value="Council">Council</option>
-              <option value="Committee">Committee</option>
-              <option value="Commission">Commission</option>
-              <option value="Board">Board</option>
+              {meetingBodies.map(body => (
+                <option key={body} value={body}>{body}</option>
+              ))}
             </select>
           </label>
           <label className="ask-filter">
@@ -177,12 +206,46 @@ export default function AskQuestion() {
             <div dangerouslySetInnerHTML={{ __html: simpleMarkdown(result.answer) }} />
           </div>
 
-          {result.sources && result.sources.length > 0 && (
+          {sources.length > 0 && !hasCitedFlags && (
+            // Backward compat: old backend without `cited` flags — render
+            // every retrieved source prominently, as before.
             <div className="ask-sources">
-              <h3>Sources ({result.sources.length})</h3>
-              {result.sources.map((source, i) => (
+              <h3>Sources ({sources.length})</h3>
+              {sources.map((source, i) => (
                 <SourceCard key={`${source.clip_id}-${i}`} source={source} />
               ))}
+            </div>
+          )}
+
+          {sources.length > 0 && hasCitedFlags && (
+            <div className="ask-sources">
+              {citedSources.length > 0 && (
+                <>
+                  <p className="ask-sources-synthesis-note">
+                    Answer synthesized from {citedSources.length} excerpt{citedSources.length !== 1 ? 's' : ''}{' '}
+                    across {citedMeetingCount} meeting{citedMeetingCount !== 1 ? 's' : ''}.
+                  </p>
+                  <h3>Cited in this answer ({citedSources.length})</h3>
+                  {citedSources.map((source, i) => (
+                    <SourceCard key={`${source.clip_id}-${i}`} source={source} />
+                  ))}
+                </>
+              )}
+              {uncitedSources.length > 0 && (
+                <div className="ask-sources-other">
+                  <button
+                    type="button"
+                    className="ask-sources-toggle"
+                    aria-expanded={showUncited}
+                    onClick={() => setShowUncited(!showUncited)}
+                  >
+                    {showUncited ? '▾' : '▸'} Other retrieved excerpts ({uncitedSources.length})
+                  </button>
+                  {showUncited && uncitedSources.map((source, i) => (
+                    <SourceCard key={`${source.clip_id}-${i}`} source={source} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

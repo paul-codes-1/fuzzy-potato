@@ -99,8 +99,20 @@ export function useSearch(meetings, searchParams, setSearchParams) {
         const meeting = meetingsById.get(r.clip_id)
         if (meeting) {
           ranked.push(meeting)
-          if (r.snippet) snippets.set(r.clip_id, r.snippet)
+        } else {
+          // The server's FTS index can know clips the static index.json
+          // hasn't caught up to yet — synthesize a renderable entry from
+          // the server result instead of silently dropping the hit.
+          ranked.push({
+            clip_id: r.clip_id,
+            title: r.title,
+            date: r.date,
+            meeting_body: r.meeting_body,
+            speakers: r.speakers,
+            transcript_words: r.transcript_words,
+          })
         }
+        if (r.snippet) snippets.set(r.clip_id, r.snippet)
       }
       return { filteredMeetings: sortMeetings(ranked), searchSnippets: snippets }
     }

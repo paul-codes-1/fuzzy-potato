@@ -51,7 +51,7 @@ function MeetingCard({ meeting, snippet, href, onClick }) {
   const duration = estimateDuration(meeting.transcript_words)
 
   return (
-    <a className="meeting-card" href={href} onClick={onClick} role="article">
+    <a className="meeting-card" href={href} onClick={onClick} aria-label={meeting.title}>
       <div className="meeting-card-header">
         <div className="meeting-card-date">{formatDate(meeting.date)}</div>
         {duration && (
@@ -114,6 +114,7 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
             <button
               key={page}
               className={`pagination-page ${page === currentPage ? 'active' : ''}`}
+              aria-current={page === currentPage ? 'page' : undefined}
               onClick={() => onPageChange(page)}
             >
               {page}

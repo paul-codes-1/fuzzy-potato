@@ -79,6 +79,7 @@ export function useServerSearch(query, options = {}) {
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (abortRef.current) abortRef.current.abort()
     }
   }, [query, meeting_body, speaker, date_after, date_before, limit])
 
