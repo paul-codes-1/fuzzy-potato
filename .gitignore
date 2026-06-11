@@ -2,8 +2,10 @@ pipeline.log
 probe.log
 *.log
 lfucg_output
+lfucg_test_output/
 .venv
 __pycache__
+.pytest_cache/
 .idea
 
 frontend/dist
@@ -16,5 +18,4 @@ frontend/public/llms-full.txt
 frontend/public/skill.md
 
 .env
-DEPLOY_RAG.md
 .claude/

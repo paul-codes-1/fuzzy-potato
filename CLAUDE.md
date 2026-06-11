@@ -242,9 +242,16 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
   - **minutes** — official minutes split by section boundaries with ~100-word overlap
   - **agenda** — agenda text split by section boundaries with ~100-word overlap
   - **transcript** — topic-aware chunks (~500 words) with silence gap and procedural phrase boundary detection, ~100-word overlap. When per-segment speakers exist, speaker changes are prefixed (`Mayor Gorton: ...`) into the embedded text, and `transcript_source` + comma-joined `speakers` are written to ChromaDB metadata.
-- **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 4 chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations
-- **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling. Also mounts the MCP server (see below) at `/api/mcp` and `/mcp`, threading the FastMCP session manager into the app's lifespan.
-- **`rag/prompts.py`** - System prompts for LLM synthesis. Instructs `[Clip ID, MM:SS]` citation format, prefers facts and minutes for precise data.
+- **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 4 chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations. Anti-hallucination guards (added 2026-06-11):
+  - Synthesis runs at `temperature=0.1` with explicit `max_tokens` (the OpenAI default of 1.0 was a major hallucination source)
+  - Cosine-distance gate (`RAG_MAX_DISTANCE`, default 0.75) — far-away nearest-neighbor chunks never reach the LLM
+  - Final context capped at `top_k` (was: unbounded, up to ~180 chunks)
+  - Zero surviving chunks → canned no-coverage answer WITHOUT calling the LLM (an empty-context call invites answering from parametric memory)
+  - The original question is always embedded alongside the rewrites (lossy rewrites can't sink retrieval)
+  - `verify_citations()` strips `[Clip N]` citations whose clip was never retrieved, marks each source `cited: true|false`, and orders cited sources first (frontend collapses the uncited remainder)
+  - Multi-turn `/api/chat` condenses follow-ups ("what about the vote?") into standalone questions via gpt-4o-mini before retrieval
+- **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling. Also mounts the MCP server (see below) at `/api/mcp` and `/mcp`, threading the FastMCP session manager into the app's lifespan. `POST /admin/reload` clears BOTH `rag.server` and `rag.mcp_server` per-process caches (the MCP module keeps its own `_collection`/`_clip_metadata` — forgetting it serves a stale index until restart). Forwarded-IP headers (`CF-Connecting-IP`/XFF) are only trusted when the socket peer is loopback/private (our own proxy) — otherwise they're client-spoofable and would bypass rate limits.
+- **`rag/prompts.py`** - System prompts for LLM synthesis. Instructs `[Clip ID, MM:SS]` citation format, prefers facts and minutes for precise data. Shared `_GROUNDING_RULES` block (both synthesis prompts): refusal template, no cross-meeting fact fusion, no outside knowledge, exact-name-form attribution (a question's "Shayla Sheehan" must not be confirmed when excerpts only say "Sheehan"), false-premise pushback, placeholder-transcript caveat.
 - Vector store: ChromaDB (local, persisted to `lfucg_output/chroma_db/`)
 - Embedding model: `text-embedding-3-small` (1536 dims)
 - Supports metadata filters: meeting_body, date_after, date_before
