@@ -64,6 +64,7 @@ class RateLimiter:
         self._lock = threading.Lock()
         # keyed by (tier, ip)
         self._buckets: Dict[Tuple[str, str], _Bucket] = defaultdict(_Bucket)
+        self._last_sweep = 0.0
 
     def _prune(self, dq: Deque[float], cutoff: float) -> None:
         while dq and dq[0] < cutoff:
@@ -88,6 +89,18 @@ class RateLimiter:
         day_cutoff = now - DAY_SECONDS
 
         with self._lock:
+            # Periodic sweep: idle IPs otherwise leave empty buckets behind
+            # forever (months of bot traffic = slow unbounded growth).
+            if now - self._last_sweep > 3600:
+                self._last_sweep = now
+                stale = [
+                    key for key, b in self._buckets.items()
+                    if (not b.hour or b.hour[-1] < day_cutoff)
+                    and (not b.day or b.day[-1] < day_cutoff)
+                ]
+                for key in stale:
+                    del self._buckets[key]
+
             bucket = self._buckets[(tier, ip)]
             self._prune(bucket.hour, hour_cutoff)
             if day_cap:

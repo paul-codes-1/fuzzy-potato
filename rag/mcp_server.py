@@ -26,11 +26,13 @@ without spinning up the HTTP transport.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import time
 from typing import Optional
 
+import anyio.to_thread
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -216,7 +218,7 @@ def ask_meetings_impl(
             error_type="internal",
         )
         logger.exception("ask_meetings failed")
-        return {"error": f"Could not synthesize an answer: {exc}"}
+        return {"error": "Could not synthesize an answer; please try again later."}
 
     sources = result.get("sources", [])
     log_query_event(
@@ -307,7 +309,7 @@ def search_meetings_impl(
             error_type="internal",
         )
         logger.exception("search_meetings failed")
-        return {"error": f"Search failed: {exc}"}
+        return {"error": "Search failed; please try again later."}
 
     # Decorate with canonical URLs so the agent doesn't have to know the
     # site-URL convention. Snippet HTML (with <mark>) is preserved verbatim.
@@ -366,7 +368,7 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
             error_type="internal",
         )
         logger.exception("find_related_clips failed")
-        return {"error": f"Could not find related clips: {exc}"}
+        return {"error": "Could not find related clips; please try again later."}
 
     for r in results:
         cid = r.get("clip_id")
@@ -518,6 +520,26 @@ def list_recent_meetings_impl(limit: int = 20, meeting_body: Optional[str] = Non
     }
 
 
+def _as_async_tool(impl):
+    """Wrap a sync tool impl so it runs in a worker thread.
+
+    The MCP SDK calls non-async tool functions inline on the event loop, so
+    a synchronous ask_meetings (rewrite → embeddings → Chroma → gpt-4o,
+    5-15s) would freeze every other request on the server — including
+    /health, which can trip health-check restarts. The wrapper preserves
+    the impl's signature and docstring so FastMCP derives the same tool
+    schema; tests keep calling the sync ``*_impl`` functions directly.
+    """
+
+    @functools.wraps(impl)
+    async def _tool(*args, **kwargs):
+        return await anyio.to_thread.run_sync(
+            functools.partial(impl, *args, **kwargs)
+        )
+
+    return _tool
+
+
 def build_mcp_server() -> FastMCP:
     """Build the FastMCP server and register all tools."""
     mcp = FastMCP(
@@ -539,11 +561,11 @@ def build_mcp_server() -> FastMCP:
             enable_dns_rebinding_protection=False
         ),
     )
-    mcp.add_tool(ask_meetings_impl, name="ask_meetings")
-    mcp.add_tool(search_meetings_impl, name="search_meetings")
-    mcp.add_tool(find_related_clips_impl, name="find_related_clips")
-    mcp.add_tool(get_meeting_clip_impl, name="get_meeting_clip")
-    mcp.add_tool(list_recent_meetings_impl, name="list_recent_meetings")
+    mcp.add_tool(_as_async_tool(ask_meetings_impl), name="ask_meetings")
+    mcp.add_tool(_as_async_tool(search_meetings_impl), name="search_meetings")
+    mcp.add_tool(_as_async_tool(find_related_clips_impl), name="find_related_clips")
+    mcp.add_tool(_as_async_tool(get_meeting_clip_impl), name="get_meeting_clip")
+    mcp.add_tool(_as_async_tool(list_recent_meetings_impl), name="list_recent_meetings")
     return mcp
 
 

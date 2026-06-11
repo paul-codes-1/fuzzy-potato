@@ -124,23 +124,42 @@ class _MCPTrailingSlashMiddleware:
 app.add_middleware(_MCPTrailingSlashMiddleware)
 
 
-def _client_ip_from_request(request: Request) -> Optional[str]:
-    """Prefer CF-Connecting-IP / X-Forwarded-For first hop, fall back to socket peer.
+def _peer_is_trusted_proxy(host: Optional[str]) -> bool:
+    """True when the direct socket peer is our own proxy layer (Caddy on
+    localhost, or anything on the box's private network) — the only case in
+    which forwarded-IP headers are trustworthy."""
+    if not host:
+        return False
+    try:
+        import ipaddress
 
-    Behind CloudFront → App Runner, request.client.host is always the App
-    Runner ingress IP — useless for rate limiting. CloudFront forwards the
-    original client IP in `CF-Connecting-IP` (always when proxied by us)
-    and X-Forwarded-For (standard). Trust the leftmost hop because the
-    chain terminates at our edge.
+        addr = ipaddress.ip_address(host)
+        return addr.is_loopback or addr.is_private
+    except ValueError:
+        return False
+
+
+def _client_ip_from_request(request: Request) -> Optional[str]:
+    """Resolve the real client IP for rate limiting.
+
+    Behind CloudFront → Caddy, request.client.host is the local proxy hop —
+    useless for rate limiting — and the original client IP arrives in
+    `CF-Connecting-IP` / `X-Forwarded-For`. But those headers are
+    client-controlled: anyone hitting the origin directly could rotate
+    `CF-Connecting-IP: <random>` per request and bypass the expensive-tier
+    caps entirely (unbounded OpenAI spend). So only honor them when the
+    socket peer is our own proxy; otherwise the peer IP *is* the client.
     """
-    cf = request.headers.get("cf-connecting-ip")
-    if cf:
-        return cf.strip()
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        # leftmost is the originating client
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else None
+    peer = request.client.host if request.client else None
+    if _peer_is_trusted_proxy(peer):
+        cf = request.headers.get("cf-connecting-ip")
+        if cf:
+            return cf.strip()
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            # leftmost is the originating client
+            return xff.split(",")[0].strip()
+    return peer
 
 
 @app.middleware("http")
@@ -543,6 +562,10 @@ def suggest_endpoint_direct(q: str = "", limit: int = 10):
 
 
 def _facets_handler():
+    decision = rate_check("cheap")
+    if not decision.allowed:
+        return _rate_limited_response(decision, endpoint="/api/facets")
+
     try:
         return search_facets(OUTPUT_DIR)
     except Exception as e:
@@ -644,6 +667,14 @@ def admin_reload(request: Request):
     global _collection, _clip_metadata
     _collection = None
     _clip_metadata = None
+    # The MCP module keeps its OWN per-process caches (same pattern, separate
+    # module). Without clearing them, the MCP surface keeps serving the stale
+    # pre-reload index until a full restart — worse, its cached Collection is
+    # bound to the orphaned Chroma system whose cache we clear below.
+    import rag.mcp_server as _mcp_mod
+
+    _mcp_mod._collection = None
+    _mcp_mod._clip_metadata = None
     # Dropping the _collection reference is NOT enough: ChromaDB keeps a
     # process-wide SharedSystemClient (keyed by path) whose in-memory segment
     # cache holds the HNSW index loaded at first use. A clip re-ingested by a
@@ -666,6 +697,6 @@ def admin_reload(request: Request):
     except Exception as e:  # pragma: no cover - best-effort
         logger.warning("admin reload: failed to close search connections: %s", e)
     logger.info(
-        "admin reload: dropped collection + metadata + Chroma system cache + search connection caches"
+        "admin reload: dropped HTTP + MCP collection/metadata caches + Chroma system cache + search connections"
     )
     return {"reloaded": True}

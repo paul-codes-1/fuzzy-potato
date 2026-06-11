@@ -114,7 +114,8 @@ class TestAskMeetings:
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             result = mcp_module.ask_meetings_impl(question="hi")
             assert "error" in result
-            assert "boom" in result["error"]
+            # Raw exception text must NOT leak to anonymous public clients.
+            assert "boom" not in result["error"]
 
     def test_response_shape(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
