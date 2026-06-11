@@ -45,6 +45,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = ROOT / "lfucg_output"
 DEFAULT_DB_PATH = DEFAULT_OUTPUT_DIR / "search.db"
 
+# Allow imports from repo root (for `python scripts/build_search_db.py`).
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from config import get_config  # noqa: E402
+
 
 def _read_text(path: Path) -> str:
     if not path.exists():
@@ -101,13 +107,19 @@ def _flatten_facts(facts: dict) -> str:
         summary = c.get("summary") or ""
         parts.append(f"Public comment by {speaker} on {topic}: {summary}")
 
+    # Schema keys are person/body_or_role (see EXTRACTION_SCHEMA in
+    # summary_v2.py); fall back to the legacy appointee/position keys in
+    # case any older facts files carry them.
     for ap in facts.get("appointments") or []:
-        parts.append(
-            f"Appointment {ap.get('appointee', '')} to {ap.get('position', '')}"
-        )
+        person = ap.get("person") or ap.get("appointee") or ""
+        role = ap.get("body_or_role") or ap.get("position") or ""
+        parts.append(f"Appointment {person} to {role}")
 
+    # Schema keys are topic/details; legacy fallback to description.
     for c in facts.get("contentious_items") or []:
-        parts.append(f"Contentious: {c.get('description', '')}")
+        topic = c.get("topic") or c.get("description") or ""
+        details = c.get("details") or ""
+        parts.append(f"Contentious: {topic} {details}".rstrip())
 
     return "\n".join(p for p in parts if p)
 
@@ -171,7 +183,9 @@ def _collect_clip(clip_dir: Path) -> dict | None:
 
     body = metadata.get("meeting_body") or ""
     if body:
-        acronyms = {"WQFB", "CAC", "LFUCG"}
+        # Same config-driven normalization main.py uses — the acronym set
+        # is per-jurisdiction, not a hard-coded LFUCG list.
+        acronyms = set(get_config().body_acronyms)
         body = body.upper() if body.upper() in acronyms else body.title()
 
     return {

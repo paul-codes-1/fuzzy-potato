@@ -66,3 +66,53 @@ class TestRebuildRagFlag:
         assert loaded["ingested_clips"] == [6669]
 
         client.delete_collection("rebuild_test")
+
+
+class TestFilterUpgradeCandidates:
+    """--upgrade-summaries must filter done clips BEFORE applying --max.
+
+    Slicing first took the N oldest (already-upgraded) clips and no-oped.
+    """
+
+    @staticmethod
+    def _make_clips(tmp_path, done_ids, pending_ids):
+        clips_dir = tmp_path / "clips"
+        for cid in list(done_ids) + list(pending_ids):
+            clip_dir = clips_dir / str(cid)
+            clip_dir.mkdir(parents=True)
+            (clip_dir / "metadata.json").write_text("{}")
+        for cid in done_ids:
+            (clips_dir / str(cid) / "extracted_facts.json").write_text("{}")
+        return clips_dir
+
+    def test_max_applies_after_filtering_done_clips(self, tmp_path):
+        from main import filter_upgrade_candidates
+
+        # The 3 oldest clips are already upgraded; --max 2 must still pick
+        # up the pending ones instead of slicing off the done prefix.
+        clips_dir = self._make_clips(tmp_path, done_ids=[1, 2, 3], pending_ids=[4, 5, 6])
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1, 2, 3, 4, 5, 6], max_clips=2, explicit=False, force=False)
+        assert clip_ids == [4, 5]
+        assert skipped == 3
+
+    def test_force_reprocesses_done_clips(self, tmp_path):
+        from main import filter_upgrade_candidates
+
+        clips_dir = self._make_clips(tmp_path, done_ids=[1, 2], pending_ids=[3])
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1, 2, 3], max_clips=2, explicit=False, force=True)
+        assert clip_ids == [1, 2]
+        assert skipped == 0
+
+    def test_explicit_clips_never_filtered_or_capped(self, tmp_path):
+        from main import filter_upgrade_candidates
+
+        clips_dir = self._make_clips(tmp_path, done_ids=[1, 2, 3], pending_ids=[])
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1, 2, 3], max_clips=1, explicit=True, force=False)
+        assert clip_ids == [1, 2, 3]
+        assert skipped == 0

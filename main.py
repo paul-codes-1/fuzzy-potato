@@ -16,6 +16,7 @@ Requirements:
 """
 
 import os
+import shutil
 import sys
 import json
 import argparse
@@ -169,21 +170,48 @@ class LFUCGPipeline:
             print(f"  → {msg}", flush=True)
 
     def load_state(self):
-        """Load pipeline state from file"""
+        """Load pipeline state from file (falls back to .bak when corrupt)"""
+        bak_file = self.state_file.with_name(self.state_file.name + ".bak")
         if self.state_file.exists():
-            with open(self.state_file) as f:
-                self.state = json.load(f)
-        else:
-            self.state = {
-                "last_processed_clip_id": 0,
-                "processed_clips": [],
-                "failed_clips": []
-            }
+            try:
+                with open(self.state_file) as f:
+                    self.state = json.load(f)
+                return
+            except json.JSONDecodeError as e:
+                # A crash mid-write (pre-atomic-write era) leaves a torn
+                # state.json that would otherwise crash every run forever.
+                self.log(f"state.json is corrupt ({e}) — falling back to {bak_file.name}", "ERROR")
+                if bak_file.exists():
+                    with open(bak_file) as f:
+                        self.state = json.load(f)
+                    return
+                self.log("No state.json.bak found — starting from empty state", "ERROR")
+        self.state = {
+            "last_processed_clip_id": 0,
+            "processed_clips": [],
+            "failed_clips": []
+        }
 
     def save_state(self):
-        """Save pipeline state to file"""
-        with open(self.state_file, 'w') as f:
+        """Save pipeline state to file (atomic, keeping a .bak of the last good state)"""
+        # Keep a copy of the last good state so a corrupt state.json is
+        # recoverable (see load_state), then write via tmp + os.replace so
+        # a crash mid-write never leaves a torn file (same pattern as
+        # scripts/build_search_db.py).
+        if self.state_file.exists():
+            bak_file = self.state_file.with_name(self.state_file.name + ".bak")
+            try:
+                with open(self.state_file) as f:
+                    json.load(f)  # only back up a parseable state
+                shutil.copyfile(self.state_file, bak_file)
+            except json.JSONDecodeError:
+                pass  # never clobber a good .bak with a corrupt state.json
+            except OSError as e:
+                self.log(f"Could not write {bak_file.name}: {e}", "WARNING")
+        tmp_file = self.state_file.with_name(self.state_file.name + ".tmp")
+        with open(tmp_file, 'w') as f:
             json.dump(self.state, f, indent=2)
+        os.replace(tmp_file, self.state_file)
 
     def sanitize_filename(self, title: str) -> str:
         """Sanitize title for use as filename"""
@@ -238,20 +266,30 @@ class LFUCGPipeline:
             self.log(f"Compression error: {e}", "ERROR")
             return False
 
-    def split_audio_into_chunks(self, audio_path: Path, num_chunks: int = 3) -> List[Path]:
-        """Split audio file into a fixed number of chunks."""
-        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+    # Seconds of audio repeated at the start of every chunk after the first,
+    # so a word straddling an exact chunk boundary isn't bisected (Whisper
+    # would garble or drop it in both halves).
+    CHUNK_OVERLAP_SECONDS = 2.0
 
-        # Get audio duration using ffprobe
+    def get_audio_duration(self, audio_path: Path) -> Optional[float]:
+        """Get audio duration in seconds via ffprobe. Returns None on failure."""
         try:
             result = subprocess.run(
                 ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                  "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
                 capture_output=True, text=True, check=True
             )
-            duration = float(result.stdout.strip())
+            return float(result.stdout.strip())
         except Exception as e:
             self.log(f"Could not get audio duration: {e}", "WARNING")
+            return None
+
+    def split_audio_into_chunks(self, audio_path: Path, num_chunks: int = 3) -> List[Path]:
+        """Split audio file into a fixed number of chunks (with overlapping starts)."""
+        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+
+        duration = self.get_audio_duration(audio_path)
+        if duration is None:
             # Estimate duration from file size (assume ~1MB per minute at low bitrate)
             duration = file_size_mb * 60
 
@@ -260,14 +298,18 @@ class LFUCGPipeline:
 
         chunk_paths = []
         for i in range(num_chunks):
-            start_time = i * chunk_duration
+            # Every chunk after the first starts CHUNK_OVERLAP_SECONDS early
+            # but still ends at its nominal boundary, so boundary words appear
+            # whole in at least one chunk.
+            overlap = self.CHUNK_OVERLAP_SECONDS if i > 0 else 0.0
+            start_time = i * chunk_duration - overlap
             chunk_path = audio_path.parent / f"{audio_path.stem}_chunk{i:02d}.mp3"
 
             cmd = [
                 "ffmpeg", "-y",
                 "-i", str(audio_path),
                 "-ss", str(start_time),
-                "-t", str(chunk_duration),
+                "-t", str(chunk_duration + overlap),
                 "-vn", "-c:a", "copy",
                 str(chunk_path)
             ]
@@ -332,12 +374,25 @@ class LFUCGPipeline:
             if num_chunks > 0:
                 chunk_paths = self.split_audio_into_chunks(transcribe_file, num_chunks=num_chunks)
 
-                if not chunk_paths:
-                    self.log("Failed to split audio into chunks", "ERROR")
-                    for f in cleanup_files:
+                # Every chunk must exist — a missing chunk means a missing
+                # third of the meeting, and a partial transcript would be
+                # cached as if it were complete.
+                if len(chunk_paths) != num_chunks:
+                    self.log(
+                        f"Failed to split audio into chunks "
+                        f"({len(chunk_paths)}/{num_chunks} created)", "ERROR")
+                    for f in cleanup_files + chunk_paths:
                         if f.exists():
                             f.unlink()
                     return None
+
+                # Nominal chunk length — fallback for per-chunk ffprobe
+                # failures below (chunk_duration=0 would collapse every
+                # subsequent segment offset onto the same spot).
+                total_duration = self.get_audio_duration(transcribe_file)
+                if total_duration is None:
+                    total_duration = file_size_mb * 60  # same estimate as the splitter
+                nominal_chunk_duration = total_duration / num_chunks
 
                 # Compress any chunks that exceed the Whisper API size limit
                 for i, chunk_path in enumerate(chunk_paths):
@@ -355,20 +410,18 @@ class LFUCGPipeline:
                 transcripts = []
                 all_segments = []
                 chunk_offset = 0.0  # Track time offset for each chunk
+                chunk_failed = False
 
                 for i, chunk_path in enumerate(chunk_paths):
                     self.progress(f"Transcribing chunk {i+1}/{len(chunk_paths)}...")
 
-                    # Get chunk duration for offset calculation
-                    try:
-                        result = subprocess.run(
-                            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                             "-of", "default=noprint_wrappers=1:nokey=1", str(chunk_path)],
-                            capture_output=True, text=True, check=True
-                        )
-                        chunk_duration = float(result.stdout.strip())
-                    except Exception:
-                        chunk_duration = 0
+                    # Get chunk duration for offset calculation; fall back to
+                    # the nominal length so one ffprobe hiccup doesn't zero
+                    # out every subsequent offset.
+                    chunk_duration = self.get_audio_duration(chunk_path)
+                    if chunk_duration is None:
+                        chunk_duration = nominal_chunk_duration + (
+                            self.CHUNK_OVERLAP_SECONDS if i > 0 else 0.0)
 
                     try:
                         with open(chunk_path, "rb") as audio_file:
@@ -399,22 +452,40 @@ class LFUCGPipeline:
                                             "end": getattr(seg, "end", 0) + chunk_offset,
                                             "text": getattr(seg, "text", "").strip()
                                         })
+                        else:
+                            self.log(f"Chunk {i+1} transcribed empty", "WARNING")
+                            chunk_failed = True
 
-                        # Update offset for next chunk
-                        chunk_offset += chunk_duration
+                        # Update offset for next chunk. The next chunk starts
+                        # CHUNK_OVERLAP_SECONDS before this one's end, so its
+                        # segment times overlap-correct back by that much.
+                        chunk_offset += chunk_duration - self.CHUNK_OVERLAP_SECONDS
 
                     except Exception as e:
                         self.log(f"Error transcribing chunk {i+1}: {e}", "WARNING")
-                        chunk_offset += chunk_duration  # Still advance offset
+                        chunk_failed = True
                     finally:
                         # Clean up chunk file
                         if chunk_path.exists():
                             chunk_path.unlink()
 
-                # Clean up compressed files
-                for f in cleanup_files:
+                    if chunk_failed:
+                        break
+
+                # Clean up compressed files and any chunks left after an
+                # early break.
+                for f in cleanup_files + chunk_paths:
                     if f.exists():
                         f.unlink()
+
+                # Any chunk failure fails the WHOLE attempt. Saving the
+                # partial join used to cache it as the complete transcript
+                # (the transcript_path.exists() check never refills it),
+                # permanently losing a third of the meeting. Returning None
+                # lets the retry machinery re-run transcription.
+                if chunk_failed:
+                    self.log("Chunk transcription failed - aborting so a retry can re-run it", "ERROR")
+                    return None
 
                 if not transcripts:
                     self.log("All chunks failed to transcribe", "ERROR")
@@ -637,7 +708,11 @@ class LFUCGPipeline:
         context_parts = []
 
         if agenda_text:
-            context_parts.append(f"MEETING AGENDA:\n{agenda_text}")
+            # Truncate agendas too — LFUCG agenda packets can run hundreds of
+            # pages and an unbounded paste blows the model's context window
+            # (API 400 → summary fails).
+            truncated_agenda = agenda_text[:30000] if len(agenda_text) > 30000 else agenda_text
+            context_parts.append(f"MEETING AGENDA:\n{truncated_agenda}")
 
         if minutes_text:
             # Truncate minutes if very long (they can be quite detailed)
@@ -794,9 +869,6 @@ Guidelines:
                             agenda_text = f.read()
                             agenda_preview = agenda_text[:500].replace('\n', ' ').strip()
 
-                # Summary preview extraction (temporarily disabled)
-                summary_preview = ""
-
                 # Normalize meeting body casing
                 body = metadata.get("meeting_body")
                 if body:
@@ -811,7 +883,6 @@ Guidelines:
                     "transcript_words": metadata.get("transcript_words", 0),
                     "transcript_preview": transcript_preview,
                     "agenda_preview": agenda_preview,
-                    "summary_preview": summary_preview,
                     "processed_at": metadata.get("processed_at"),
                     "speakers": metadata.get("speakers") or [],
                     "files": metadata.get("files", {})
@@ -838,8 +909,10 @@ Guidelines:
             "clips": index_entries
         }
 
+        # No indent — pretty-printing the full archive roughly doubles the
+        # multi-MB payload the frontend downloads.
         with open(index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
+            json.dump(index_data, f)
 
         self.log(f"Generated index with {len(index_entries)} clips at {index_path}")
 
@@ -930,23 +1003,30 @@ Guidelines:
             if minutes_result["txt_file"]:
                 metadata["files"]["minutes_txt"] = minutes_result["txt_file"]
 
-            # Force regenerate summary (delete existing to bypass cache)
+            # Regenerate into a temp file, then swap in on success. Deleting
+            # the old summary up front (the old bypass-the-cache trick) left
+            # the clip with NO summary whenever generation failed.
             summary_txt_path = clip_dir / "summary.txt"
-            if summary_txt_path.exists():
-                summary_txt_path.unlink()
+            tmp_summary_path = clip_dir / "summary.txt.tmp"
+            if tmp_summary_path.exists():
+                tmp_summary_path.unlink()
 
             # Generate new summary with all context
             summary = self.generate_summary(
                 clip_id,
                 transcript,
                 agenda_text,
-                summary_txt_path,
+                tmp_summary_path,
                 minutes_text=minutes_result.get("text")
             )
 
             if not summary:
                 self.log(f"Failed to generate summary for clip {clip_id}", "ERROR")
+                if tmp_summary_path.exists():
+                    tmp_summary_path.unlink()
                 return False
+
+            os.replace(tmp_summary_path, summary_txt_path)
 
             metadata["files"]["summary_txt"] = "summary.txt"
 
@@ -1728,8 +1808,44 @@ Guidelines:
                 files.pop("audio", None)
                 self.progress("Removed audio file (keep_audio=False)")
 
-            # Step 10: Save enhanced metadata
+            # Step 10: Save enhanced metadata. When the clip was processed
+            # before, MERGE with the existing metadata.json instead of
+            # rebuilding from scratch — a reprocess must not wipe the
+            # upgraded-summary artifacts (files.summary_txt /
+            # files.extracted_facts, summary_updated_at, topics) that
+            # --upgrade-summaries stamped in. The daily summaries cron skips
+            # clips by file-existence, so it would never restore the refs.
             end_time = datetime.now()
+            old_metadata = {}
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path) as f:
+                        old_metadata = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    old_metadata = {}
+
+            # Preserve file refs this run didn't produce, but only when the
+            # target file is still on disk (new values win on collision).
+            for key, fname in (old_metadata.get("files") or {}).items():
+                if key not in files and isinstance(fname, str) and fname \
+                        and (clip_dir / fname).exists():
+                    files[key] = fname
+
+            models = {
+                # Reflect what actually produced the transcript: the VTT
+                # and document-driven paths skip Whisper entirely, so
+                # claiming whisper-1 would be misleading downstream.
+                "transcribe": (
+                    transcript_source
+                    if transcript_source in (
+                        "granicus_vtt", "civicclerk_minutes", "civicclerk_agenda")
+                    else self.transcribe_model
+                ),
+            }
+            # Keep model attributions from earlier passes (summary, topics).
+            for key, value in (old_metadata.get("models") or {}).items():
+                models.setdefault(key, value)
+
             metadata = {
                 "clip_id": clip_id,
                 "url": self.source.canonical_url(clip_id),
@@ -1743,18 +1859,15 @@ Guidelines:
                 "audio_kept": self.keep_audio,
                 "transcript_source": transcript_source,
                 "speakers": speakers,
-                "models": {
-                    # Reflect what actually produced the transcript: the VTT
-                    # and document-driven paths skip Whisper entirely, so
-                    # claiming whisper-1 would be misleading downstream.
-                    "transcribe": (
-                        transcript_source
-                        if transcript_source in (
-                            "granicus_vtt", "civicclerk_minutes", "civicclerk_agenda")
-                        else self.transcribe_model
-                    ),
-                }
+                "models": models,
             }
+
+            # Carry over bookkeeping fields this run doesn't compute
+            # (summary_updated_at, topics, motions_source-style stamps, …) —
+            # keys the fresh run produced always win.
+            for key, value in old_metadata.items():
+                if key not in metadata:
+                    metadata[key] = value
 
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -2143,6 +2256,30 @@ Guidelines:
         return results
 
 
+def filter_upgrade_candidates(clips_dir: Path, all_clip_ids: List[int],
+                              max_clips: int, explicit: bool,
+                              force: bool) -> tuple[List[int], int]:
+    """Drop already-upgraded clips, THEN apply the --max cap.
+
+    Slicing before filtering took the N OLDEST (already-upgraded) clips, so
+    `--upgrade-summaries --max N` no-oped once the oldest N were done.
+    Explicitly-named clips are never filtered or capped.
+
+    Returns (clip_ids_to_process, skipped_count).
+    """
+    clip_ids = []
+    skipped = 0
+    for cid in all_clip_ids:
+        facts_path = clips_dir / str(cid) / "extracted_facts.json"
+        if facts_path.exists() and not explicit and not force:
+            skipped += 1
+        else:
+            clip_ids.append(cid)
+    if not explicit and max_clips:
+        clip_ids = clip_ids[:max_clips]
+    return clip_ids, skipped
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="LFUCG Meeting Pipeline - Download, transcribe, and generate meeting summaries",
@@ -2413,7 +2550,7 @@ Examples:
     # Handle test-summary mode
     if args.test_summary:
         try:
-            from summary_v2 import generate_summary_v2
+            from summary_v2 import build_timestamped_transcript, generate_summary_v2
             from clients import get_anthropic, MissingAPIKey
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
@@ -2464,21 +2601,20 @@ Examples:
             date = metadata.get("date", "Unknown")
             meeting_body = metadata.get("meeting_body", "Unknown")
 
-            # Load transcript
+            # Load transcript — prefer the segments JSON so real [H:MM:SS]
+            # markers are interleaved for Pass 1, same as --upgrade-summaries.
             transcript = ""
-            for key in ("transcript", "transcript_segments"):
-                fname = files.get(key)
-                if fname and key == "transcript":
-                    t_path = clip_dir / fname
-                    if t_path.exists():
-                        transcript = t_path.read_text()
-                        break
-                elif fname and key == "transcript_segments":
-                    t_path = clip_dir / fname
-                    if t_path.exists():
-                        segments = json.load(open(t_path))
-                        transcript = " ".join(s["text"] for s in segments)
-                        break
+            seg_file = files.get("transcript_segments")
+            txt_file = files.get("transcript")
+            if seg_file and (clip_dir / seg_file).exists():
+                try:
+                    with open(clip_dir / seg_file) as f:
+                        segments = json.load(f)
+                    transcript = build_timestamped_transcript(segments)
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass
+            if not transcript and txt_file and (clip_dir / txt_file).exists():
+                transcript = (clip_dir / txt_file).read_text()
 
             if not transcript:
                 print(f"[{i}/{len(test_clip_ids)}] Clip {clip_id}: no transcript, skipping")
@@ -2602,7 +2738,7 @@ Examples:
     # Handle upgrade-summaries mode
     if args.upgrade_summaries:
         try:
-            from summary_v2 import generate_summary_v2
+            from summary_v2 import build_timestamped_transcript, generate_summary_v2
             from clients import get_anthropic, MissingAPIKey
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
@@ -2644,18 +2780,13 @@ Examples:
                         all_clip_ids.append(int(name))
                     except ValueError:
                         continue
-            all_clip_ids = all_clip_ids[:args.max]
             explicit = False
 
-        # Skip clips that already have extracted_facts.json, unless explicitly named or --force
-        clip_ids = []
-        skipped = 0
-        for cid in all_clip_ids:
-            facts_path = clips_dir / str(cid) / "extracted_facts.json"
-            if facts_path.exists() and not explicit and not args.force:
-                skipped += 1
-            else:
-                clip_ids.append(cid)
+        # Skip clips that already have extracted_facts.json (unless explicitly
+        # named or --force), THEN apply --max — slicing first took the N
+        # oldest, already-done clips and no-oped.
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, all_clip_ids, args.max, explicit, args.force)
 
         print(f"\nUpgrading summaries: {len(clip_ids)} clips to process, {skipped} already done")
         print(f"Extraction model: {args.summary_model}")
@@ -2674,7 +2805,11 @@ Examples:
             date = metadata.get("date", "Unknown")
             meeting_body = metadata.get("meeting_body", "Unknown")
 
-            # Load transcript
+            # Load transcript. Built from the segments JSON when available so
+            # real [H:MM:SS] markers are interleaved — Pass 1 must COPY its
+            # transcript_approx_time values from those markers instead of
+            # inventing them. Plain text has no markers → the prompt's
+            # "no markers → null" rule applies.
             transcript = ""
             seg_file = files.get("transcript_segments")
             txt_file = files.get("transcript")
@@ -2682,10 +2817,10 @@ Examples:
                 try:
                     with open(clip_dir / seg_file) as f:
                         segments = json.load(f)
-                    transcript = " ".join(s["text"] for s in segments)
-                except (json.JSONDecodeError, KeyError):
+                    transcript = build_timestamped_transcript(segments)
+                except (json.JSONDecodeError, KeyError, TypeError):
                     segments = None
-            elif txt_file and (clip_dir / txt_file).exists():
+            if not transcript and txt_file and (clip_dir / txt_file).exists():
                 transcript = (clip_dir / txt_file).read_text()
 
             if not transcript:

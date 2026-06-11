@@ -5,9 +5,12 @@ Pass 2 (Claude Sonnet): Generate section-by-section narrative from extracted fac
 """
 
 import json
+import logging
 import os
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # Pass 1: Structured extraction prompt (GPT-4o)
@@ -50,7 +53,7 @@ Respond with valid JSON matching this schema:
       "votes_for": ["name1", "name2"],
       "votes_against": ["name1"],
       "conditions": "any conditions attached to approval or null",
-      "transcript_approx_time": "MM:SS or null"
+      "transcript_approx_time": "H:MM:SS copied from a transcript marker, or null"
     }
   ],
   "financial_items": [
@@ -67,7 +70,7 @@ Respond with valid JSON matching this schema:
       "speaker": "name or null",
       "topic": "brief topic",
       "summary": "1-2 sentence summary of their remarks",
-      "transcript_approx_time": "MM:SS or null"
+      "transcript_approx_time": "H:MM:SS copied from a transcript marker, or null"
     }
   ],
   "agenda_items": [
@@ -78,7 +81,7 @@ Respond with valid JSON matching this schema:
       "summary": "2-3 sentences on what was discussed",
       "key_speakers": ["name1"],
       "outcome": "approved|denied|tabled|deferred|first_reading|informational",
-      "transcript_approx_time": "MM:SS or null"
+      "transcript_approx_time": "H:MM:SS copied from a transcript marker, or null"
     }
   ],
   "appointments": [
@@ -95,7 +98,59 @@ Respond with valid JSON matching this schema:
       "details": "1-2 sentences"
     }
   ]
-}"""
+}
+
+Timestamp rule: the transcript may contain [H:MM:SS] markers showing real \
+elapsed meeting time. Every "transcript_approx_time" value MUST be copied \
+from the nearest [H:MM:SS] marker preceding the relevant discussion — never \
+estimate, interpolate, or invent a time. If the transcript contains no \
+[H:MM:SS] markers, use null for every "transcript_approx_time"."""
+
+
+def _format_marker_time(seconds: float) -> str:
+    """Render a second count as H:MM:SS (the transcript-marker format)."""
+    total = int(seconds)
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
+def build_timestamped_transcript(segments: list, marker_interval: float = 30.0) -> str:
+    """Join segment texts with [H:MM:SS] markers interleaved every ~30s of meeting time.
+
+    The markers give Pass 1 real anchors to copy "transcript_approx_time"
+    values from — without them the model INVENTS timestamps that become bogus
+    video deep-links and RAG citations. Markers are emitted roughly every
+    marker_interval seconds (not per segment) to keep token cost sane.
+
+    Segments with no real timing (e.g. document-driven clips where every
+    start/end is 0) fall back to a plain join, so the prompt's
+    "no markers → null" rule applies.
+    """
+    if not segments:
+        return ""
+
+    has_timing = any(
+        (s.get("start") or 0) > 0 or (s.get("end") or 0) > 0 for s in segments
+    )
+    texts_only = " ".join(
+        (s.get("text") or "").strip() for s in segments if (s.get("text") or "").strip()
+    )
+    if not has_timing:
+        return texts_only
+
+    parts: list[str] = []
+    next_marker = 0.0
+    for seg in segments:
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(seg.get("start") or 0)
+        if start >= next_marker:
+            parts.append(f"[{_format_marker_time(start)}]")
+            next_marker = start + marker_interval
+        parts.append(text)
+    return " ".join(parts)
 
 
 def build_extraction_prompt(transcript: str, agenda_text: Optional[str],
@@ -104,7 +159,10 @@ def build_extraction_prompt(transcript: str, agenda_text: Optional[str],
     parts = ["Extract structured meeting data from these sources.\n"]
 
     if agenda_text:
-        parts.append(f"MEETING AGENDA:\n{agenda_text}")
+        # Truncate agendas too — LFUCG agenda packets can run hundreds of
+        # pages and an unbounded paste blows the model's context window.
+        truncated_agenda = agenda_text[:30000] if len(agenda_text) > 30000 else agenda_text
+        parts.append(f"MEETING AGENDA:\n{truncated_agenda}")
 
     if minutes_text:
         truncated = minutes_text[:30000] if len(minutes_text) > 30000 else minutes_text
@@ -116,11 +174,78 @@ def build_extraction_prompt(transcript: str, agenda_text: Optional[str],
     return "\n\n---\n\n".join(parts)
 
 
+def _coerce_int(value) -> Optional[int]:
+    """Coerce ints / numeric strings to int; anything else becomes None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _string_list(value) -> list:
+    """Coerce to a list of strings; non-lists become [] and non-string entries are dropped."""
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, str)]
+
+
+def _validate_facts(facts: dict) -> dict:
+    """Validate/coerce Pass-1 output before it's persisted.
+
+    GPT-4o mostly honors the schema but not always: vote counts come back as
+    strings, list fields come back as null, motion entries come back as bare
+    strings. Coerce what's coercible and drop what isn't so the frontend
+    Overview tab / RAG ingestion never see a malformed entry.
+    """
+    # Empty/non-dict payloads stay {} so callers still see Pass 1 as failed.
+    if not isinstance(facts, dict) or not facts:
+        return {}
+
+    # Top-level sections that must be lists.
+    for field in ("motions_and_votes", "financial_items", "public_comments",
+                  "agenda_items", "appointments", "contentious_items"):
+        if not isinstance(facts.get(field), list):
+            facts[field] = []
+
+    # Attendance name lists.
+    attendance = facts.get("attendance")
+    if not isinstance(attendance, dict):
+        attendance = {}
+        facts["attendance"] = attendance
+    for field in ("present", "absent", "late"):
+        attendance[field] = _string_list(attendance.get(field))
+
+    # Motions: drop non-dict entries, coerce vote counts and name lists.
+    motions = []
+    for motion in facts["motions_and_votes"]:
+        if not isinstance(motion, dict):
+            logger.warning("Dropping non-dict motion entry: %r", motion)
+            continue
+        for field in ("ayes", "nays", "abstentions"):
+            motion[field] = _coerce_int(motion.get(field))
+        for field in ("votes_for", "votes_against"):
+            motion[field] = _string_list(motion.get(field))
+        if isinstance(motion.get("outcome"), str):
+            motion["outcome"] = motion["outcome"].lower()
+        motions.append(motion)
+    facts["motions_and_votes"] = motions
+
+    return facts
+
+
 def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[str],
                           minutes_text: Optional[str], model: str = "gpt-4o") -> dict:
     """Pass 1: Extract structured facts from meeting sources using GPT-4o.
 
-    Returns parsed JSON dict, or empty dict on failure.
+    Returns parsed + schema-validated JSON dict, or empty dict on failure.
     """
     prompt = build_extraction_prompt(transcript, agenda_text, minutes_text)
 
@@ -137,12 +262,12 @@ def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[
 
     raw = response.choices[0].message.content.strip()
     try:
-        return json.loads(raw)
+        return _validate_facts(json.loads(raw))
     except json.JSONDecodeError:
         # Try to extract JSON from markdown code fence
         match = re.search(r'```(?:json)?\s*\n(.*?)```', raw, re.DOTALL)
         if match:
-            return json.loads(match.group(1))
+            return _validate_facts(json.loads(match.group(1)))
         return {}
 
 
@@ -153,6 +278,9 @@ def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[
 NARRATION_SYSTEM_PROMPT = (
     "You are a government meeting analyst writing a public-facing summary. "
     "Write clear, factual prose from the provided structured data and source materials. "
+    "Write ONLY from the provided structured data — never add facts, names, or "
+    "framing that are not present in it, and omit anything null or empty rather "
+    "than guessing. "
     "Include specific names, numbers, and identifiers. Do not editorialize or speculate. "
     "Each section should be self-contained and understandable without the other sections.\n\n"
     "For each section, include transcript timestamps where available in the format "
@@ -275,13 +403,25 @@ def generate_section(anthropic_client, section_name: str, instruction: str,
         f"Write 100-400 words. Begin with ## {section_name}"
     )
 
-    response = anthropic_client.messages.create(
-        model=model,
-        max_tokens=1000,
-        system=NARRATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        temperature=0.3,
-    )
+    def _create(max_tokens: int):
+        return anthropic_client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=NARRATION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.3,
+        )
+
+    response = _create(1000)
+    # Truncated mid-sentence (hit the max_tokens cap rather than ending the
+    # turn)? Retry once with more headroom before giving up on a clean end.
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        logger.warning('Section "%s" hit max_tokens — retrying with max_tokens=2000', section_name)
+        response = _create(2000)
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            logger.warning(
+                'Section "%s" still truncated at max_tokens=2000 — '
+                "keeping the truncated text (may end mid-sentence)", section_name)
 
     text = response.content[0].text.strip()
     # Ensure it starts with the ## header

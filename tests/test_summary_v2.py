@@ -7,11 +7,13 @@ import pytest
 
 from summary_v2 import (
     build_extraction_prompt,
+    build_timestamped_transcript,
     extract_meeting_facts,
     generate_section,
     generate_summary_v2,
     _get_relevant_data,
     _generate_agenda_item_sections,
+    _validate_facts,
     SECTIONS,
 )
 
@@ -105,10 +107,79 @@ class TestBuildExtractionPrompt:
         assert "x" * 30000 in prompt
         assert "x" * 40000 not in prompt
 
+    def test_truncates_long_agenda(self):
+        long_agenda = "a" * 40000
+        prompt = build_extraction_prompt("transcript", long_agenda, None)
+        # Agenda packets run hundreds of pages — capped at 30000 chars
+        assert "a" * 30000 in prompt
+        assert "a" * 40000 not in prompt
+
     def test_includes_schema(self):
         prompt = build_extraction_prompt("transcript", None, None)
         assert "motions_and_votes" in prompt
         assert "financial_items" in prompt
+
+    def test_includes_timestamp_copy_rule(self):
+        prompt = build_extraction_prompt("transcript", None, None)
+        # Pass 1 must copy timestamps from [H:MM:SS] markers, never invent them
+        assert "[H:MM:SS]" in prompt
+        assert "never" in prompt.lower()
+
+
+# ============================================================
+# Timestamp-marker interleaving (anti-hallucination anchors)
+# ============================================================
+
+class TestBuildTimestampedTranscript:
+
+    def test_interleaves_markers_every_interval(self):
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Call to order."},
+            {"start": 5.0, "end": 28.0, "text": "Roll call."},
+            {"start": 31.0, "end": 60.0, "text": "First item."},
+            {"start": 62.0, "end": 90.0, "text": "Discussion continues."},
+        ]
+        result = build_timestamped_transcript(segments, marker_interval=30.0)
+        # Marker at the first segment, then again once 30s have elapsed
+        assert "[0:00:00]" in result
+        assert "[0:00:31]" in result
+        assert "[0:01:02]" in result
+        assert "Call to order. Roll call." in result
+
+    def test_does_not_mark_every_segment(self):
+        segments = [
+            {"start": float(i), "end": float(i + 1), "text": f"seg{i}"}
+            for i in range(20)
+        ]
+        result = build_timestamped_transcript(segments, marker_interval=30.0)
+        # 20 one-second segments within 30s → only the opening marker
+        assert result.count("[0:") == 1
+
+    def test_hour_format(self):
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Opening."},
+            {"start": 4530.0, "end": 4540.0, "text": "Late item."},
+        ]
+        result = build_timestamped_transcript(segments)
+        assert "[1:15:30]" in result
+
+    def test_no_timing_falls_back_to_plain_join(self):
+        # Document-driven clips: single synthetic segment with start/end 0
+        segments = [{"start": 0.0, "end": 0.0, "text": "Minutes text here."}]
+        result = build_timestamped_transcript(segments)
+        assert result == "Minutes text here."
+        assert "[" not in result
+
+    def test_empty_segments(self):
+        assert build_timestamped_transcript([]) == ""
+
+    def test_skips_empty_segment_text(self):
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "  "},
+            {"start": 5.0, "end": 10.0, "text": "Real text."},
+        ]
+        result = build_timestamped_transcript(segments)
+        assert result == "[0:00:05] Real text."
 
 
 class TestExtractMeetingFacts:
@@ -157,6 +228,104 @@ class TestExtractMeetingFacts:
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert call_kwargs["response_format"] == {"type": "json_object"}
         assert call_kwargs["temperature"] == 0.1
+
+
+# ============================================================
+# Schema validation of extracted facts
+# ============================================================
+
+class TestValidateFacts:
+
+    def test_coerces_numeric_string_vote_counts(self):
+        facts = _validate_facts({
+            "motions_and_votes": [
+                {"ayes": "8", "nays": 0, "abstentions": "junk", "outcome": "passed"}
+            ],
+        })
+        motion = facts["motions_and_votes"][0]
+        assert motion["ayes"] == 8
+        assert motion["nays"] == 0
+        assert motion["abstentions"] is None
+
+    def test_non_list_name_fields_become_empty_lists(self):
+        facts = _validate_facts({
+            "motions_and_votes": [
+                {"votes_for": "Beasley", "votes_against": None}
+            ],
+            "attendance": {"present": "everyone", "absent": None},
+        })
+        motion = facts["motions_and_votes"][0]
+        assert motion["votes_for"] == []
+        assert motion["votes_against"] == []
+        assert facts["attendance"]["present"] == []
+        assert facts["attendance"]["absent"] == []
+        assert facts["attendance"]["late"] == []
+
+    def test_name_lists_drop_non_string_entries(self):
+        facts = _validate_facts({
+            "motions_and_votes": [
+                {"votes_for": ["Beasley", 7, None, "Boone"]}
+            ],
+        })
+        assert facts["motions_and_votes"][0]["votes_for"] == ["Beasley", "Boone"]
+
+    def test_non_list_sections_become_empty_lists(self):
+        facts = _validate_facts({
+            "motions_and_votes": None,
+            "financial_items": "none",
+            "public_comments": {"speaker": "x"},
+            "agenda_items": None,
+            "appointments": None,
+            "contentious_items": None,
+        })
+        for field in ("motions_and_votes", "financial_items", "public_comments",
+                      "agenda_items", "appointments", "contentious_items"):
+            assert facts[field] == []
+
+    def test_drops_non_dict_motion_entries(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="summary_v2"):
+            facts = _validate_facts({
+                "motions_and_votes": [
+                    "Motion to approve the docket",
+                    {"identifier": "Ordinance 1", "outcome": "PASSED"},
+                ],
+            })
+        assert len(facts["motions_and_votes"]) == 1
+        assert facts["motions_and_votes"][0]["identifier"] == "Ordinance 1"
+        assert any("non-dict motion" in r.message for r in caplog.records)
+
+    def test_lowercases_outcome(self):
+        facts = _validate_facts({
+            "motions_and_votes": [{"outcome": "Passed"}],
+        })
+        assert facts["motions_and_votes"][0]["outcome"] == "passed"
+
+    def test_empty_dict_stays_empty(self):
+        # Callers treat {} as "Pass 1 failed" — don't grow a skeleton
+        assert _validate_facts({}) == {}
+
+    def test_non_dict_payload_returns_empty(self):
+        assert _validate_facts(["not", "a", "dict"]) == {}
+
+    def test_valid_facts_pass_through(self):
+        facts = _validate_facts(json.loads(json.dumps(SAMPLE_FACTS)))
+        assert facts["motions_and_votes"][0]["ayes"] == 8
+        assert facts["attendance"]["present"] == SAMPLE_FACTS["attendance"]["present"]
+
+    def test_applied_by_extract_meeting_facts(self):
+        dirty = dict(SAMPLE_FACTS)
+        dirty["motions_and_votes"] = [{"ayes": "8", "outcome": "Passed"}]
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps(dirty)
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = extract_meeting_facts(mock_client, "transcript", None, None)
+        assert result["motions_and_votes"][0]["ayes"] == 8
+        assert result["motions_and_votes"][0]["outcome"] == "passed"
 
 
 # ============================================================
@@ -286,6 +455,56 @@ class TestGenerateSection:
         call_kwargs = mock_client.messages.create.call_args[1]
         assert call_kwargs["model"] == "claude-sonnet-4-6"
         assert call_kwargs["temperature"] == 0.3
+
+    def _response(self, text, stop_reason="end_turn"):
+        resp = MagicMock()
+        resp.content = [MagicMock()]
+        resp.content[0].text = text
+        resp.stop_reason = stop_reason
+        return resp
+
+    def test_no_retry_when_end_turn(self):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = self._response("## Test\nDone.")
+
+        generate_section(
+            mock_client, "Test", "instruction", "{}", "Council", "2026-01-22",
+        )
+        assert mock_client.messages.create.call_count == 1
+
+    def test_retries_once_with_more_tokens_when_truncated(self):
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = [
+            self._response("## Test\nTruncated mid-", stop_reason="max_tokens"),
+            self._response("## Test\nComplete text."),
+        ]
+
+        result = generate_section(
+            mock_client, "Test", "instruction", "{}", "Council", "2026-01-22",
+        )
+        assert result == "## Test\nComplete text."
+        assert mock_client.messages.create.call_count == 2
+        first, second = mock_client.messages.create.call_args_list
+        assert first[1]["max_tokens"] == 1000
+        assert second[1]["max_tokens"] == 2000
+
+    def test_keeps_truncated_text_when_retry_also_truncates(self, caplog):
+        import logging
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = [
+            self._response("## Test\nStill trunc-", stop_reason="max_tokens"),
+            self._response("## Test\nStill trunc again-", stop_reason="max_tokens"),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="summary_v2"):
+            result = generate_section(
+                mock_client, "Test", "instruction", "{}", "Council", "2026-01-22",
+            )
+        # Keeps the (retried) truncated text but logs loudly — no third call
+        assert result == "## Test\nStill trunc again-"
+        assert mock_client.messages.create.call_count == 2
+        assert any("truncated" in r.message for r in caplog.records)
 
 
 # ============================================================

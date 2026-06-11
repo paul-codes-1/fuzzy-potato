@@ -80,11 +80,13 @@ class TestGranicusUrls:
 # ---------------------------------------------------------------------------
 
 # ViewPublisher row layout #1: hidden unix-timestamp span (view 14 archive).
-# 1736294400 == 2025-01-08 (UTC).
+# 1736384400 == 2025-01-08 8:00 PM EST == 2025-01-09 01:00 UTC — an evening
+# meeting that crosses midnight UTC, so this also guards the timezone fix
+# (a UTC conversion would yield the next-day date 2025-01-09).
 _LISTING_HTML_TS = """
 <table><tr>
   <td><a href="/AgendaViewer.php?view_id=14&clip_id=6669">January 8 2026 WQFB meeting</a></td>
-  <td><span style="display: none;">1736294400</span>January 8, 2025</td>
+  <td><span style="display: none;">1736384400</span>January 8, 2025</td>
 </tr></table>
 """
 
@@ -121,7 +123,11 @@ class TestFetchDateFromListing:
 
         with patch("sources.granicus.requests.get", side_effect=_by_view) as mock_get:
             assert src.fetch_date_from_listing(6770) == "2026-05-13"
-            # Prove the fallback was actually walked (default view tried first).
+            # Prove the fallback was actually walked (default view tried first)
+            # — and that each view was fetched only once (the str/int mix in
+            # views_to_try used to fetch the default view twice).
+            urls = [call.args[0] for call in mock_get.call_args_list]
+            assert len(urls) == len(set(urls))
             assert mock_get.call_count >= 2
 
     def test_returns_none_when_clip_absent(self):

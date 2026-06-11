@@ -296,3 +296,55 @@ def test_facets_returns_bodies_speakers_and_dates(search_db: Path) -> None:
     assert "Mayor Gorton" in speaker_names
     assert f["date_min"] == "2024-06-10"
     assert f["date_max"] == "2025-09-01"
+
+
+# --- facts flattening ----------------------------------------------------
+
+def test_flatten_facts_uses_schema_appointment_keys() -> None:
+    """Appointments use person/body_or_role (the EXTRACTION_SCHEMA keys)."""
+    from scripts.build_search_db import _flatten_facts
+
+    text = _flatten_facts({
+        "appointments": [
+            {"person": "Jane Doe", "body_or_role": "Planning Commission",
+             "action": "appointed"},
+        ],
+    })
+    assert "Jane Doe" in text
+    assert "Planning Commission" in text
+
+
+def test_flatten_facts_appointment_legacy_key_fallback() -> None:
+    from scripts.build_search_db import _flatten_facts
+
+    text = _flatten_facts({
+        "appointments": [
+            {"appointee": "Old Format", "position": "Old Board"},
+        ],
+    })
+    assert "Old Format" in text
+    assert "Old Board" in text
+
+
+def test_flatten_facts_uses_schema_contentious_keys() -> None:
+    """Contentious items use topic/details, not description."""
+    from scripts.build_search_db import _flatten_facts
+
+    text = _flatten_facts({
+        "contentious_items": [
+            {"topic": "Alcohol sales ordinance",
+             "nature": "community_opposition",
+             "details": "Several residents spoke against the expansion."},
+        ],
+    })
+    assert "Alcohol sales ordinance" in text
+    assert "spoke against the expansion" in text
+
+
+def test_flatten_facts_contentious_legacy_key_fallback() -> None:
+    from scripts.build_search_db import _flatten_facts
+
+    text = _flatten_facts({
+        "contentious_items": [{"description": "Legacy description text"}],
+    })
+    assert "Legacy description text" in text

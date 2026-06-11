@@ -23,8 +23,9 @@ import subprocess
 import threading
 import time
 from datetime import date as _date
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Any, Callable, Dict, List, Optional
 
 import requests
@@ -209,10 +210,13 @@ class GranicusSource:
             'september': 9, 'october': 10, 'november': 11, 'december': 12,
         }
 
-        views_to_try: List[int] = [self.view_id]
+        # Normalize to str — self.view_id is a string ("14") while the
+        # fallbacks are ints, so the dedup check never matched and the
+        # default view was fetched twice.
+        views_to_try: List[str] = [str(self.view_id)]
         for v in self.LISTING_VIEW_FALLBACKS:
-            if v not in views_to_try:
-                views_to_try.append(v)
+            if str(v) not in views_to_try:
+                views_to_try.append(str(v))
 
         for view_id in views_to_try:
             url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={view_id}"
@@ -231,7 +235,10 @@ class GranicusSource:
                 if m:
                     try:
                         ts = int(m.group(1))
-                        return datetime.fromtimestamp(ts, timezone.utc).date().isoformat()
+                        # Meeting-local timezone, NOT UTC — evening meetings
+                        # cross midnight UTC and would get next-day dates.
+                        return datetime.fromtimestamp(
+                            ts, ZoneInfo("America/New_York")).date().isoformat()
                     except Exception:
                         pass
                 # Fallback: displayed text. Granicus renders dates as
@@ -285,9 +292,15 @@ class GranicusSource:
             self.progress(f"Audio already exists ({size_mb:.2f} MB) - skipping download")
             return audio_filename
 
-        # Also check for any existing mp3 file in directory (handles renamed files)
+        # Also check for any existing mp3 file in directory (handles renamed
+        # files). Exclude compression/chunking intermediates — a crashed
+        # transcription run can leave *_chunk*.mp3 leftovers behind, and
+        # treating one as the full audio would transcribe a fragment.
         existing_mp3s = list(clip_dir.glob("*.mp3"))
-        existing_mp3s = [f for f in existing_mp3s if not f.name.endswith("_compressed.mp3")]
+        existing_mp3s = [
+            f for f in existing_mp3s
+            if not f.name.endswith("_compressed.mp3") and "_chunk" not in f.name
+        ]
         if existing_mp3s and not self.force_reprocess:
             existing = existing_mp3s[0]
             size_mb = existing.stat().st_size / (1024 * 1024)
