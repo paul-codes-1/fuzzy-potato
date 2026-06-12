@@ -332,6 +332,16 @@ def build_site_config(cfg: "Jurisdiction | None" = None) -> dict:
                 "budgets, and more."
             ),
             "placeholder": f"Ask a question about {cfg.name} meetings...",
+            # Starter chips on the /chat empty state. Generic derivations any
+            # county's archive can answer; jurisdictions with richer coverage
+            # override with curated questions (LFUCG below, or TOML
+            # [frontend.chat] suggested_questions).
+            "suggested_questions": [
+                "What was decided at the most recent meeting?",
+                "What zoning or development items have been discussed recently?",
+                "What budget items were approved this year?",
+                "Who voted against something recently?",
+            ],
         },
         # The feeds.lexingtonky.news cross-link ("Read the article on …") is an
         # LFUCG-only integration. Off (and blank, to avoid leaking the LFUCG
@@ -360,5 +370,14 @@ def build_site_config(cfg: "Jurisdiction | None" = None) -> dict:
             "budgets, and more."
         )
         derived["chat"]["placeholder"] = "Ask a question about Lexington city meetings..."
+        # Curated, RAG-verified showcase questions: each reliably produces a
+        # cited, specific answer (named roll call, multi-year STR timeline,
+        # ARPA spending breakdown, USB debate with named speakers).
+        derived["chat"]["suggested_questions"] = [
+            "How did each council member vote on the Government Center lease-to-own ordinance in December 2025?",
+            "What has the council done about short-term rental regulations?",
+            "How has the council spent the ARPA pandemic relief money?",
+            "What has the council discussed about expanding the urban service boundary?",
+        ]
 
     return _deep_merge(derived, cfg.frontend_overrides)

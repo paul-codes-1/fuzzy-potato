@@ -4,11 +4,14 @@ import ChatMessage from './ChatMessage'
 import ModelSelector from './ModelSelector'
 import { getSiteConfig } from '../config/site'
 
+// Fallback when site.json doesn't provide chat.suggested_questions — mirrors
+// the curated LFUCG list in config.build_site_config (the baked-in defaults
+// here are always the LFUCG strings; see config/site.js header note).
 const SUGGESTED_QUESTIONS = [
-  "What budget changes were approved in 2024?",
-  "How many zoning approvals were there last year?",
-  "What did council say about short-term rentals?",
-  "What infrastructure projects were discussed recently?",
+  "How did each council member vote on the Government Center lease-to-own ordinance in December 2025?",
+  "What has the council done about short-term rental regulations?",
+  "How has the council spent the ARPA pandemic relief money?",
+  "What has the council discussed about expanding the urban service boundary?",
 ]
 
 export default function ChatLFUCG() {
@@ -57,7 +60,7 @@ export default function ChatLFUCG() {
           <h3>{chat.title}</h3>
           <p>{chat.description}</p>
           <div className="chat-suggested-questions">
-            {SUGGESTED_QUESTIONS.map((q) => (
+            {(chat.suggested_questions || SUGGESTED_QUESTIONS).map((q) => (
               <button
                 key={q}
                 className="chat-suggested-btn"

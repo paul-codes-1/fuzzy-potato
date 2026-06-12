@@ -31,8 +31,8 @@ describe('ChatLFUCG', () => {
     renderChat()
     expect(screen.getByText(/ask questions about lexington/i)).toBeInTheDocument()
     // Should have suggested question buttons
-    expect(screen.getByText(/budget changes/i)).toBeInTheDocument()
-    expect(screen.getByText(/zoning approvals/i)).toBeInTheDocument()
+    expect(screen.getByText(/short-term rental regulations/i)).toBeInTheDocument()
+    expect(screen.getByText(/ARPA pandemic relief/i)).toBeInTheDocument()
   })
 
   it('renders send button', () => {
