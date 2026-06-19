@@ -1,4 +1,14 @@
-# Deploy ChatLFUCG RAG API on AWS App Runner
+> ⚠️ **SUPERSEDED (2026-06-11).** App Runner + ECR were retired. The RAG/MCP API
+> now runs on a **co-located AWS Lightsail box** (Ubuntu, `uvicorn rag.server:app`
+> under systemd `lfucg-rag`, behind Caddy TLS), sharing `lfucg_output/` on local
+> disk with the ingest pipeline (cron). New data goes live via `POST /admin/reload`
+> or `systemctl restart lfucg-rag` — no Docker image, no ECR push, no redeploy.
+>
+> **For the current deploy/runbook see [`deploy/lightsail/SETUP.md`](deploy/lightsail/SETUP.md)**
+> (architecture rationale in `deploy/lightsail/ARCHITECTURE_REVIEW.md`).
+> The App Runner instructions below are kept for historical reference only.
+
+# Deploy ChatLFUCG RAG API on AWS App Runner (LEGACY — retired 2026-06-11)
 
 ## Prerequisites
 

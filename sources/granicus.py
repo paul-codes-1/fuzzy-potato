@@ -65,6 +65,15 @@ class GranicusSource:
         # The pipeline keeps this in sync with its --force flag.
         self.force_reprocess = False
 
+        # When True, download the SMALLEST rendition that still carries audio
+        # (`bestaudio/worst`) instead of yt-dlp's default "best". The audio is
+        # always downsampled to 48kbps mono mp3 downstream, so a clip's video
+        # resolution never affects the transcript — for HD clips the default
+        # otherwise pulls a ~1GB video just to throw the pixels away. Left off
+        # by default to preserve the established Whisper/Lambda download path;
+        # the pipeline flips it on for the ElevenLabs Scribe backfill wave.
+        self.prefer_small_audio_format = False
+
     # ------------------------------------------------------------------
     # Filename helper (used by the download_* methods). Identical to the
     # pipeline's sanitize_filename so produced filenames are byte-stable.
@@ -319,9 +328,20 @@ class GranicusSource:
                 "--audio-format", "mp3",
                 "--audio-quality", "48k",  # Download at 48kbps - lower quality but smaller
                 "--postprocessor-args", "ffmpeg:-ar 22050 -ac 1",  # 22kHz mono
-                "-o", str(output_path),
-                url
             ]
+            if self.prefer_small_audio_format:
+                # Grab a standalone audio track if Granicus exposes one, else
+                # the lowest-bitrate muxed rendition — avoids pulling a full
+                # HD video just to extract 48kbps audio.
+                cmd += ["-f", "bestaudio/worst"]
+                # Granicus throttles a single HLS connection to ~1 MB/s, and
+                # full meeting videos are large (muxed AV, no audio-only
+                # track). Pulling fragments in parallel multiplies throughput
+                # several-fold — essential for the backfill wave's hundreds of
+                # clips. Gated to the Scribe path so the Whisper/Lambda
+                # downloader is unchanged.
+                cmd += ["--concurrent-fragments", "5"]
+            cmd += ["-o", str(output_path), url]
 
             # Run with real-time output and 30s stall timeout
             DOWNLOAD_STALL_TIMEOUT = 30

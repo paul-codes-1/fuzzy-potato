@@ -62,7 +62,8 @@ class LFUCGPipeline:
             keep_audio: bool = True,
             verbose: bool = True,
             force_reprocess: bool = False,
-            transcribe_timeout: int = 600
+            transcribe_timeout: int = 600,
+            transcriber: str = "whisper"
     ):
         # Active jurisdiction config (Granicus host/views, clip range,
         # body taxonomy). Defaults to LFUCG; see config.py / jurisdictions/.
@@ -78,6 +79,15 @@ class LFUCGPipeline:
         # Models
         self.transcribe_model = transcribe_model
         self.summary_model = summary_model
+
+        # Transcriber backend: "whisper" (OpenAI, default) or "elevenlabs"
+        # (Scribe). Env TRANSCRIBER lets the wave runner / Lambda flip it
+        # without threading the flag through every call site.
+        self.transcriber = (transcriber or os.getenv("TRANSCRIBER") or "whisper").lower()
+        if self.transcriber == "elevenlabs" and not os.getenv("ELEVENLABS_API_KEY"):
+            raise ValueError(
+                "transcriber='elevenlabs' requires ELEVENLABS_API_KEY in the environment"
+            )
 
         # First clip ID for auto-processing (per-jurisdiction; env
         # FIRST_CLIP_ID still wins via config resolution)
@@ -121,6 +131,10 @@ class LFUCGPipeline:
         self.source.view_id = self.view_id
         self.source.force_reprocess = self._force_reprocess
         self.source.progress = self.progress
+        # Scribe backfill: download the smallest audio-bearing rendition
+        # instead of full HD video (resolution is discarded downstream anyway).
+        if self.transcriber == "elevenlabs" and hasattr(self.source, "prefer_small_audio_format"):
+            self.source.prefer_small_audio_format = True
 
         # Optional, SEPARATE agenda-document portal (WS4). None for LFUCG (no
         # [agenda] config → Granicus supplies agendas in-band, untouched).
@@ -324,6 +338,62 @@ class LFUCGPipeline:
 
         return chunk_paths
 
+    def _transcribe_with_scribe(
+        self, audio_path: Path, transcript_path: Path, segments_path: Path
+    ) -> Optional[Dict[str, Any]]:
+        """Transcribe one clip via ElevenLabs Scribe (see elevenlabs_transcribe).
+
+        Returns the same ``{"text", "segments"}`` dict as the Whisper path and
+        writes both transcript artifacts. ``self.scribe_seconds`` accumulates
+        billed audio-duration across the run so the wave runner can track
+        credit burn. Returns None on empty/failed transcription so the
+        caller's skip/retry machinery behaves exactly as for Whisper.
+        """
+        from elevenlabs_transcribe import transcribe_with_scribe, ScribeCreditsExhausted
+
+        size_mb = audio_path.stat().st_size / (1024 * 1024)
+        self.log(f"Transcribing audio with ElevenLabs Scribe ({size_mb:.1f} MB)")
+        try:
+            result = transcribe_with_scribe(
+                audio_path, timeout_seconds=max(self.transcribe_timeout, 1200)
+            )
+        except ScribeCreditsExhausted as e:
+            # Prepaid pool drained. Flag it so a batch runner can stop the
+            # Scribe phase and switch transcribers instead of retrying.
+            self.scribe_credits_exhausted = True
+            self.log(f"ElevenLabs credits exhausted: {e}", "ERROR")
+            return None
+        except Exception as e:  # requests.HTTPError, timeouts, etc.
+            self.log(f"Scribe transcription error: {type(e).__name__}: {e}", "ERROR")
+            return None
+
+        if not result or not result.get("text"):
+            self.log("Scribe returned empty/too-short transcript", "ERROR")
+            return None
+
+        text = result["text"]
+        segments = result.get("segments")
+        secs = result.get("audio_duration_secs")
+        if secs is not None:
+            # Tally billed seconds for cost accounting (attr defaulted lazily
+            # so older call sites that never set it still work).
+            self.scribe_seconds = getattr(self, "scribe_seconds", 0.0) + float(secs)
+
+        with open(transcript_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        word_count = len(text.split())
+        mins = (secs or 0) / 60.0
+        self.progress(
+            f"Scribe transcript: {len(text)} chars, ~{word_count} words, "
+            f"{mins:.1f} min audio"
+        )
+        if segments:
+            with open(segments_path, "w", encoding="utf-8") as f:
+                json.dump(segments, f, indent=2)
+            self.progress(f"Saved {len(segments)} segments to {segments_path.name}")
+
+        return {"text": text, "segments": segments}
+
     def transcribe_audio(self, audio_path: Path, transcript_path: Path) -> Optional[Dict[str, Any]]:
         """Transcribe audio using OpenAI Whisper API with timestamps.
 
@@ -351,6 +421,13 @@ class LFUCGPipeline:
                         except Exception:
                             pass
                     return {"text": text, "segments": segments}
+
+        # ElevenLabs Scribe path: single upload (5 GB limit, no chunking),
+        # word timestamps coalesced into Whisper-shaped segments. Writes the
+        # same transcript_path + _segments.json artifacts so process_clip and
+        # all downstream steps stay identical.
+        if self.transcriber == "elevenlabs":
+            return self._transcribe_with_scribe(audio_path, transcript_path, segments_path)
 
         self.log(f"Transcribing audio with {self.transcribe_model}")
 
@@ -1751,6 +1828,12 @@ Guidelines:
                 if transcript_segments:
                     files["transcript_segments"] = segments_filename
 
+                # Record which engine produced this transcript (default above
+                # is "whisper-1"). Scribe transcripts are flagged so the
+                # frontend disclosure + RAG metadata can distinguish them.
+                if self.transcriber == "elevenlabs":
+                    transcript_source = "elevenlabs_scribe"
+
             # Step 6: Download and extract agenda (optional - don't fail if
             # unavailable). Falls back to the separate AgendaSource (WS4) only
             # when the video source has no agenda AND one is configured — never
@@ -1838,7 +1921,8 @@ Guidelines:
                 "transcribe": (
                     transcript_source
                     if transcript_source in (
-                        "granicus_vtt", "civicclerk_minutes", "civicclerk_agenda")
+                        "granicus_vtt", "civicclerk_minutes", "civicclerk_agenda",
+                        "elevenlabs_scribe")
                     else self.transcribe_model
                 ),
             }
@@ -2392,6 +2476,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--transcriber",
+        choices=["whisper", "elevenlabs"],
+        default="whisper",
+        help="Transcription backend: 'whisper' (OpenAI, default) or "
+             "'elevenlabs' (Scribe, requires ELEVENLABS_API_KEY)"
+    )
+
+    parser.add_argument(
         "--transcribe-timeout",
         type=int,
         default=600,
@@ -2500,7 +2592,8 @@ Examples:
             keep_audio=not args.no_audio,
             verbose=not args.quiet,
             force_reprocess=args.force,
-            transcribe_timeout=args.transcribe_timeout
+            transcribe_timeout=args.transcribe_timeout,
+            transcriber=args.transcriber
         )
     except ValueError as e:
         print(f"Error: {e}")

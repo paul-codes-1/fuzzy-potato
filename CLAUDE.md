@@ -136,7 +136,7 @@ Set in `.env` file:
 
 ## System Requirements
 
-- Python 3.10+ (the `mcp` SDK requires 3.10+; production Dockerfile pins 3.11)
+- Python 3.10+ (the `mcp` SDK requires 3.10+; the production Lightsail box runs 3.11. The repo `Dockerfile` is legacy from the App Runner era — kept for reference, not used in production)
 - ffmpeg (system installation required)
 - yt-dlp (installed via uv)
 - tesseract-ocr (for OCR of scanned agenda PDFs)
@@ -259,7 +259,7 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
 
 ### Server-Side Search (`rag/search.py`, `scripts/build_search_db.py`)
 
-Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed on every browser cold-mount). The full-text index now lives server-side in a SQLite FTS5 database (`lfucg_output/search.db`, ~300 MB) and is queried via the App Runner RAG container:
+Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed on every browser cold-mount). The full-text index now lives server-side in a SQLite FTS5 database (`lfucg_output/search.db`, ~300 MB) and is queried by the RAG server on the Lightsail box:
 
 - **`scripts/build_search_db.py`** — destructive rebuilder. One row per clip with title/transcript/agenda/minutes/facts as searchable columns; speakers/body/date as UNINDEXED filter columns. ~30s on the full archive. Auto-rebuilt by `pipeline.generate_search_index()` and at the end of every `--auto`/`--scrape` batch (per-clip skips the FTS rebuild via `build_search_db=False` to avoid 30s × N).
 - **`rag/search.py`** — BM25-ranked search + filters + snippets. Title weighted 10×, facts 5×, speakers 3×, agenda 2×, minutes 1.5×, transcript 1×. Snippets HTML-escaped server-side; sentinel marks (`\x01M\x01`) are reinserted as `<mark>` so the frontend can render via `dangerouslySetInnerHTML` without XSS risk.
@@ -270,7 +270,7 @@ Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed
   - `GET  /api/facets` — populates filter dropdowns (bodies, top-30 speakers by count, date_min/max)
   - `GET  /api/related/{clip_id}` — top-5 similar clips with similarity scores
 
-The `search.db` file is baked into the App Runner Docker image (Dockerfile + `.dockerignore` whitelist). `tests/test_search.py` and `tests/test_server_search.py` cover the builder + endpoint surfaces.
+The `search.db` file lives on the Lightsail box's local disk under `lfucg_output/` (since the 2026-06-11 App Runner→Lightsail migration — no longer baked into a Docker image). The builder writes `search.db.tmp` then `os.replace()` (atomic) so the long-lived server keeps serving the old DB on its cached fd until it reopens; the 6h ingest cron refreshes the live API via token-guarded `POST /admin/reload` (falls back to `systemctl restart lfucg-rag`). `tests/test_search.py` and `tests/test_server_search.py` cover the builder + endpoint surfaces.
 
 ### MCP Server (`rag/mcp_server.py`)
 
@@ -282,7 +282,7 @@ Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing
   - `find_related_clips(clip_id, limit?)` → wraps `rag.related.related`
   - `get_meeting_clip(clip_id)` → reads `clip_metadata` + `summary.txt` from disk + `granicus_clip_url`
   - `list_recent_meetings(limit?, meeting_body?)` → reads `clip_metadata`, sorted by date desc
-- **Mount paths**: `/api/mcp` (CloudFront-routable; only `/api/*` is sent to App Runner) AND `/mcp` (direct App Runner URL). Mirrors the existing `/ask` ↔ `/api/ask` dual-mount pattern. Both routes wrap the same FastMCP instance, so the lifespan-managed session manager singleton serves both.
+- **Mount paths**: `/api/mcp` (CloudFront-routable; only `/api/*` is forwarded to the Lightsail origin) AND `/mcp` (direct origin URL). Mirrors the existing `/ask` ↔ `/api/ask` dual-mount pattern. Both routes wrap the same FastMCP instance, so the lifespan-managed session manager singleton serves both.
 - **Tool implementations are module-level functions** (`*_impl`) registered into FastMCP via `add_tool` inside `build_mcp_server()`. Lets tests call tools directly via `mcp_module.search_meetings_impl(...)` without driving the HTTP transport.
 - **DNS-rebinding protection disabled** (`TransportSecuritySettings(enable_dns_rebinding_protection=False)`). The endpoint is intentionally public; CORS + Cloudflare WAF handle abuse, and the SDK's default Host-header allow-list would otherwise reject CloudFront's forwarded host.
 - **Streamable-HTTP inner path** is set to `/` so the FastAPI mount at `/api/mcp` produces clean URLs (default `/mcp` would mount as `/api/mcp/mcp`).
@@ -303,14 +303,14 @@ React 18 SPA with:
 - **Overview tab** renders structured `extracted_facts.json` directly — votes with pass/fail badges, financial items, agenda items, public comments, appointments, contested items. Timestamps are clickable (jump to video).
 - RAG Q&A interface at `/ask` route with filter dropdowns, source cards, and Granicus video timestamp links
 
-### AWS Lambda (`lambda/`)
+### Scheduled sync — cron on the Lightsail box (`deploy/lightsail/`)
 
-Lambda handler for scheduled meeting sync:
-- Triggered by EventBridge (12pm and 8pm weekdays)
-- Processes new clips (configurable `max_clips`, default 5)
-- Generates updated search index
-- Syncs to S3 for frontend serving
-- Requires `OPENAI_API_KEY`, optional `S3_BUCKET` env vars
+Since the 2026-06-11 App Runner→Lightsail migration, scheduled syncing runs as **cron on the co-located Lightsail box** (not the old EventBridge Lambda). All jobs are `flock`-guarded on `/tmp/lfucg-pipeline.lock` and times are ET:
+- **`ingest_cron.sh`** — lean incremental ingest every 6h on weekdays (02/08/14/20): probe → process new clips → RAG ingest → reload API (`POST /admin/reload`, falls back to `systemctl restart lfucg-rag`) → S3 + CloudFront + feeds.
+- **`summaries_cron.sh`** — daily 00:00: two-pass v2 summary + facts for clips the lean ingest left as VTT placeholders, then re-ingest + reload.
+- **`backfill_weekly.sh`** — Sunday 03:00: archive-wide `--backfill-docs` + `--backfill-tables-of-motions`, then reload + sync.
+
+The `lambda/sync_meetings.py` handler is **legacy** (kept for reference; the EventBridge schedule was removed in the migration). Full runbook + crontab: `deploy/lightsail/SETUP.md` + `deploy/lightsail/crontab.txt`.
 
 ## State Management
 
@@ -401,9 +401,18 @@ frontend/
   package.json
   vite.config.js
 
-lambda/
-  sync_meetings.py                        # Lambda handler
+lambda/                                   # LEGACY (pre-2026-06-11 App Runner era; superseded by deploy/lightsail/ cron)
+  sync_meetings.py                        # old EventBridge Lambda handler
   requirements.txt                        # Lambda dependencies
+
+deploy/lightsail/                         # Co-located Lightsail deploy (current prod)
+  SETUP.md                                # provisioning + migration runbook
+  rag.service.template / lfucg-rag.service # systemd unit (uvicorn rag.server:app)
+  Caddyfile(.template)                    # TLS reverse proxy, 404s /admin/* from public
+  ingest_cron.sh / summaries_cron.sh / backfill_weekly.sh  # cron jobs (replace Lambda)
+  crontab.txt(.template)                  # schedule (6h ingest / daily summaries / weekly sweep)
+  sync_data_s3.sh / deploy-spa.sh         # S3 sync of per-clip data + SPA
+  provision-jurisdiction.sh               # multi-tenant box bootstrap
 ```
 
 ## Metadata JSON Structure
