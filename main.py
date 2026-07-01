@@ -2831,7 +2831,7 @@ Examples:
     # Handle upgrade-summaries mode
     if args.upgrade_summaries:
         try:
-            from summary_v2 import build_timestamped_transcript, generate_summary_v2
+            from summary_v2 import NARRATION_MODEL, build_timestamped_transcript, generate_summary_v2
             from clients import get_anthropic, MissingAPIKey
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
@@ -2953,7 +2953,7 @@ Examples:
                 if summary:
                     (clip_dir / "summary.txt").write_text(summary)
                     metadata["files"]["summary_txt"] = "summary.txt"
-                    metadata.setdefault("models", {})["summary"] = f"{args.summary_model}+claude-sonnet"
+                    metadata.setdefault("models", {})["summary"] = f"{args.summary_model}+{NARRATION_MODEL}"
 
                 # Save updated metadata
                 with open(meta_path, "w") as f:

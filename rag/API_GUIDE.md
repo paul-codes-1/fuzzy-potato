@@ -106,7 +106,7 @@ Validation:
 - Last message must have `role: "user"`.
 - Each message `role` must be `"user"` or `"assistant"`.
 - History is trimmed server-side to the last 10 user/assistant pairs.
-- `model_provider`: `"openai"` → `gpt-4o`, `"anthropic"` → `claude-sonnet-4-6`.
+- `model_provider`: `"openai"` → `gpt-4o`, `"anthropic"` → `claude-sonnet-4-6` (override via `LFUCG_ANTHROPIC_MODEL`).
 
 **Response**
 
@@ -288,7 +288,7 @@ Per-clip metadata. Full schema is defined in the project's `CLAUDE.md` — summa
   "processed_at": "...",
   "processing_time_seconds": 120.5,
   "transcript_words": 6660,
-  "models": {"transcribe": "whisper-1", "summary": "gpt-4o+claude-sonnet", "topics": "gpt-4o-mini"}
+  "models": {"transcribe": "whisper-1", "summary": "gpt-4o+claude-haiku-4-5", "topics": "gpt-4o-mini"}
 }
 ```
 

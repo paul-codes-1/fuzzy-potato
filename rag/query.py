@@ -20,6 +20,10 @@ from rag.prompts import (
 )
 
 DEFAULT_MODEL = "gpt-4o"
+# Claude model for the opt-in model_provider="anthropic" chat path. Low
+# volume (user-selected alternate provider), so quality-tier by default;
+# overridable per deployment without a code change.
+DEFAULT_ANTHROPIC_MODEL = os.getenv("LFUCG_ANTHROPIC_MODEL", "claude-sonnet-4-6")
 MAX_HISTORY_PAIRS = 10
 MAX_REWRITTEN_QUERIES = 3
 
@@ -574,7 +578,7 @@ def build_chat_synthesis_messages(messages: list[dict], chunks: list[dict]) -> l
 
 
 def synthesize_with_anthropic(messages: list[dict], anthropic_client,
-                              model: str = "claude-sonnet-4-6") -> str:
+                              model: str = DEFAULT_ANTHROPIC_MODEL) -> str:
     """Synthesize an answer using the Anthropic API."""
     system_content = messages[0]["content"]
     remaining = messages[1:]
@@ -641,7 +645,7 @@ def chat(messages: list[dict], collection, openai_client,
             "role": "assistant",
             "content": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
             "sources": [],
-            "model_used": DEFAULT_MODEL if model_provider == "openai" else "claude-sonnet",
+            "model_used": DEFAULT_MODEL if model_provider == "openai" else DEFAULT_ANTHROPIC_MODEL,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -653,7 +657,7 @@ def chat(messages: list[dict], collection, openai_client,
             "role": "assistant",
             "content": NO_COVERAGE_ANSWER,
             "sources": [],
-            "model_used": DEFAULT_MODEL if model_provider == "openai" else "claude-sonnet",
+            "model_used": DEFAULT_MODEL if model_provider == "openai" else DEFAULT_ANTHROPIC_MODEL,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -672,7 +676,7 @@ def chat(messages: list[dict], collection, openai_client,
         if anthropic_client is None:
             raise ValueError("anthropic_client is required when model_provider='anthropic'")
         content = synthesize_with_anthropic(synth_messages, anthropic_client)
-        model_used = "claude-sonnet"
+        model_used = DEFAULT_ANTHROPIC_MODEL
     else:
         chat_response = openai_client.chat.completions.create(
             model=DEFAULT_MODEL,

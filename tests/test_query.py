@@ -779,7 +779,7 @@ class TestChat:
         assert mock_openai_client.chat.completions.create.call_count == 2
 
     def test_chat_with_anthropic(self, mock_openai_client, mock_anthropic_client):
-        from rag.query import chat
+        from rag.query import DEFAULT_ANTHROPIC_MODEL, chat
 
         mock_collection = self._make_mock_collection()
         clip_metadata = {6669: {"title": "Test Meeting", "date": "2026-01-08",
@@ -794,7 +794,9 @@ class TestChat:
             model_provider="anthropic",
         )
 
-        assert result["model_used"] == "claude-sonnet"
+        # model_used now reports the actual configured model ID rather than
+        # a hardcoded "claude-sonnet" label.
+        assert result["model_used"] == DEFAULT_ANTHROPIC_MODEL
         mock_anthropic_client.messages.create.assert_called_once()
 
     def test_chat_uses_condensed_question_for_retrieval(self, mock_openai_client):

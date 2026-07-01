@@ -1,7 +1,8 @@
 """Two-pass summary generation: structured extraction + narrative synthesis.
 
 Pass 1 (GPT-4o): Extract structured facts (votes, amounts, names, timestamps) into JSON.
-Pass 2 (Claude Sonnet): Generate section-by-section narrative from extracted facts.
+Pass 2 (Claude, default Haiku 4.5 — LFUCG_NARRATION_MODEL env override): Generate
+section-by-section narrative from extracted facts.
 """
 
 import json
@@ -272,8 +273,14 @@ def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[
 
 
 # ============================================================
-# Pass 2: Section-by-section narrative (Claude Sonnet)
+# Pass 2: Section-by-section narrative (Claude)
 # ============================================================
+
+# Narration writes public prose from Pass-1's already-extracted facts —
+# Haiku-tier work at ~1/3 the token price of Sonnet. Pass 1 (GPT-4o) still
+# does the precision-sensitive extraction from full transcripts. Override
+# via env to trial a bigger model without a code change.
+NARRATION_MODEL = os.getenv("LFUCG_NARRATION_MODEL", "claude-haiku-4-5")
 
 NARRATION_SYSTEM_PROMPT = (
     "You are a government meeting analyst writing a public-facing summary. "
@@ -391,8 +398,8 @@ def _generate_agenda_item_sections(facts: dict) -> list[dict]:
 
 def generate_section(anthropic_client, section_name: str, instruction: str,
                      facts_json: str, meeting_body: str, date: str,
-                     model: str = "claude-sonnet-4-6") -> Optional[str]:
-    """Generate a single summary section using Claude Sonnet.
+                     model: str = NARRATION_MODEL) -> Optional[str]:
+    """Generate a single summary section using Claude.
 
     Returns the section text including the ## header, or None on failure.
     """
@@ -434,7 +441,7 @@ def generate_summary_v2(openai_client, anthropic_client, transcript: str,
                         agenda_text: Optional[str], minutes_text: Optional[str],
                         meeting_body: str = "Unknown", date: str = "Unknown",
                         extraction_model: str = "gpt-4o",
-                        narration_model: str = "claude-sonnet-4-6",
+                        narration_model: str = NARRATION_MODEL,
                         log_fn=None) -> tuple[Optional[str], Optional[dict]]:
     """Two-pass summary generation.
 
