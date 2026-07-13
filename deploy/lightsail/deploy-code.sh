@@ -27,14 +27,20 @@ cd "$REPO"
 git diff --quiet || { echo "dirty tree, aborting"; exit 1; }
 git fetch origin
 git reset --hard origin/main
-uv sync --frozen
+# The RAG server + ingest deps (fastapi/uvicorn/chromadb/mcp/anthropic) live in
+# the `rag` optional-dependencies extra, and the box was provisioned with
+# `dev` too — a bare `uv sync --frozen` would PRUNE uvicorn and crash-loop the
+# unit. Sync the same extras the box runs with.
+uv sync --frozen --extra rag --extra dev
 sudo systemctl restart "$UNIT"
 REMOTE
 
-echo "==> Waiting for service to come up"
-sleep 3
-echo "==> Health check"
-ssh "${_SSH_OPTS[@]}" "$HOST" 'curl -fsS -m 10 http://127.0.0.1:8000/api/health' \
+echo "==> Health check (retries while the unit binds :8000)"
+ssh "${_SSH_OPTS[@]}" "$HOST" 'for i in $(seq 1 10); do
+  out=$(curl -fsS -m 5 http://127.0.0.1:8000/api/health 2>/dev/null) && { echo "$out"; exit 0; }
+  sleep 3
+done
+echo "HEALTH CHECK FAILED"; exit 1' \
   || { echo "HEALTH CHECK FAILED on $HOST"; exit 1; }
 echo
 echo "==> Deployed $HOST ($UNIT)"
