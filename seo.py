@@ -183,6 +183,16 @@ def build_clip_markdown(
             f"contain errors. See [methodology]({site_url}/about/methodology) "
             f"or [report a correction](mailto:{cfg.editor_email})."
         )
+    elif transcript_source == "whisper-large-v3-local":
+        disclosure = (
+            "> ⚠️ **Auto-generated content.** Audio from the official Granicus "
+            "video was auto-transcribed with OpenAI's open-source Whisper "
+            "large-v3-turbo model, run locally by The Lexington Times. "
+            "Structured facts were extracted with GPT-4o; the narrative "
+            "summary was written by Anthropic Claude. Verbatim wording may "
+            f"contain errors. See [methodology]({site_url}/about/methodology) "
+            f"or [report a correction](mailto:{cfg.editor_email})."
+        )
     elif transcript_source in ("civicclerk_minutes", "civicclerk_agenda"):
         # Document-driven record (PR-6: CivicClerk / Paris). No verbatim
         # transcript exists — the page's content IS the official document that

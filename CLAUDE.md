@@ -90,6 +90,22 @@ uv run python scripts/backfill_captions.py --workers 6   # Run with 6 parallel y
 uv run python scripts/backfill_captions.py --clip 6757   # Single clip
 uv run python scripts/backfill_captions.py --force       # Re-fetch + re-parse (after parser fixes)
 
+# Local Whisper backfill (Mac-only) — free transcription for clips with NO transcript
+# Runs on Apple Silicon via `mlx_whisper` (`uv tool install mlx-whisper`), ~60x realtime
+# on an M4 Max. Targets ONLY clips with no files.transcript and no transcript_source
+# (943 as of 2026-07); VTT-placeholder clips are left alone. Stages pipeline-identical
+# artifacts locally, then pushes to the box + runs the standard finalize chain
+# (rag.ingest --clip, --generate-index, /admin/reload, sync_data_s3.sh, CF invalidation).
+# Backfilled clips get transcript_source="whisper-large-v3-local" (seo.py + MeetingDetail.jsx
+# carry the matching disclosure). QA gate rejects Whisper repetition-loops before staging.
+# ⚠️ Pushed clips lacking extracted_facts.json get facts+summary that night via
+# summaries_cron (--upgrade-summaries) at ~$0.10-0.15/clip — size push batches accordingly.
+python3 scripts/local_whisper_backfill.py census         # Build backlog.json from the box
+python3 scripts/local_whisper_backfill.py run --max 10   # Download + transcribe + QA + stage
+python3 scripts/local_whisper_backfill.py push           # rsync staged clips + finalize on box
+python3 scripts/local_whisper_backfill.py status         # Progress + failures
+# State in ~/lt/.whisper-backfill/lfucg/ — fully resumable; --retry-failed to retry failures.
+
 # RAG Q&A system
 uv sync --extra rag --extra dev                          # Install RAG + test dependencies (includes anthropic)
 uv run python -m rag.ingest --all                        # Ingest all clips into vector store
