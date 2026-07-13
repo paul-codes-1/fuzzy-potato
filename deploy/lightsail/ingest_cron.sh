@@ -40,10 +40,20 @@ read_last() {
 
 log() { echo "==> [$(date -Is)] $*"; }
 
+# Disk floor guard: bail BEFORE doing any work if the output filesystem is
+# nearly full. A 100%-full box silently corrupts search.db.tmp / ChromaDB
+# writes; better to skip this run loudly and let the alerting catch the miss.
+OUTPUT_DIR_PATH="${LFUCG_OUTPUT_DIR:-lfucg_output}"
+disk_pcent="$(df --output=pcent "$OUTPUT_DIR_PATH" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$disk_pcent" ] && [ "$disk_pcent" -gt 85 ]; then
+  log "ABORT: disk ${disk_pcent}% full on the $OUTPUT_DIR_PATH filesystem (>85% floor). Refusing to ingest."
+  exit 1
+fi
+
 before="$(read_last)"
 
 log "Probing Granicus for new clip IDs"
-uv run python probe_clips.py
+uv run python probe_clips.py || log "probe_clips failed (non-fatal)"
 
 log "Processing new clips (--auto --rag --no-audio)"
 # --auto: process from last_processed_clip_id + 1

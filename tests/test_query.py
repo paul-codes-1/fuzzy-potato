@@ -1126,3 +1126,72 @@ class TestVerifyCitations:
         answer, out_sources = verify_citations("No coverage found.", sources)
         assert answer == "No coverage found."
         assert all(s["cited"] is False for s in out_sources)
+
+
+# ============================================================
+# Synthesis model: env-configurable at call time + model_used
+# ============================================================
+
+class TestSynthesisModelConfig:
+    """RAG_SYNTHESIS_MODEL is resolved inside ask()/chat() at call time (so a
+    .env value applied after import wins); an explicit model= still beats env;
+    ask() reports the model in model_used."""
+
+    def _collection_one(self, distance=0.2):
+        coll = MagicMock()
+        coll.count.return_value = 1
+        coll.query.return_value = {
+            "ids": [["id1"]],
+            "documents": [["Doc about zoning ordinance"]],
+            "metadatas": [[{"clip_id": 6669, "date": "2026-01-08",
+                            "meeting_body": "Council", "source": "summary"}]],
+            "distances": [[distance]],
+        }
+        return coll
+
+    def test_ask_returns_model_used_default(self, mock_openai_client, monkeypatch):
+        monkeypatch.delenv("RAG_SYNTHESIS_MODEL", raising=False)
+        from rag.query import DEFAULT_MODEL, ask
+
+        result = ask("zoning?", self._collection_one(), mock_openai_client)
+        assert result["model_used"] == DEFAULT_MODEL
+        synth_call = mock_openai_client.chat.completions.create.call_args
+        assert synth_call.kwargs["model"] == DEFAULT_MODEL
+
+    def test_ask_honors_env_model(self, mock_openai_client, monkeypatch):
+        monkeypatch.setenv("RAG_SYNTHESIS_MODEL", "gpt-4o-mini")
+        from rag.query import ask
+
+        result = ask("zoning?", self._collection_one(), mock_openai_client)
+        assert result["model_used"] == "gpt-4o-mini"
+        synth_call = mock_openai_client.chat.completions.create.call_args
+        assert synth_call.kwargs["model"] == "gpt-4o-mini"
+
+    def test_ask_explicit_model_beats_env(self, mock_openai_client, monkeypatch):
+        monkeypatch.setenv("RAG_SYNTHESIS_MODEL", "gpt-4o-mini")
+        from rag.query import ask
+
+        result = ask("zoning?", self._collection_one(), mock_openai_client, model="gpt-4o")
+        assert result["model_used"] == "gpt-4o"
+        synth_call = mock_openai_client.chat.completions.create.call_args
+        assert synth_call.kwargs["model"] == "gpt-4o"
+
+    def test_ask_no_coverage_still_reports_model(self, mock_openai_client, monkeypatch):
+        from rag.query import MAX_DISTANCE, ask
+
+        monkeypatch.setenv("RAG_SYNTHESIS_MODEL", "gpt-4o-mini")
+        # The only chunk is gated out by distance → no-coverage path.
+        result = ask("zoning?", self._collection_one(distance=MAX_DISTANCE + 0.2),
+                     mock_openai_client)
+        assert result["chunks_retrieved"] == 0
+        assert result["model_used"] == "gpt-4o-mini"
+
+    def test_chat_openai_honors_env_model(self, mock_openai_client, monkeypatch):
+        monkeypatch.setenv("RAG_SYNTHESIS_MODEL", "gpt-4o-mini")
+        from rag.query import chat
+
+        result = chat([{"role": "user", "content": "zoning?"}],
+                      self._collection_one(), mock_openai_client)
+        assert result["model_used"] == "gpt-4o-mini"
+        synth_call = mock_openai_client.chat.completions.create.call_args
+        assert synth_call.kwargs["model"] == "gpt-4o-mini"

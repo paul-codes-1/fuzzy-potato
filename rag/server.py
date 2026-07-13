@@ -19,6 +19,7 @@ if not _root.handlers:
 
 import hmac
 import os
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -47,9 +48,32 @@ logging.getLogger("rag.query").setLevel(logging.INFO)
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
 # Per-process caches for things only this server needs (Chroma collection,
-# clip metadata). The OpenAI/Anthropic clients are cached in clients.py.
+# clip metadata, computed facets). The OpenAI/Anthropic clients are cached
+# in clients.py. All three are dropped by POST /admin/reload.
 _collection = None
 _clip_metadata = None
+_facets_cache = None
+
+
+def _compute_git_sha() -> str:
+    """The deployed git SHA, resolved once at startup for /api/health.
+
+    Lets an operator confirm a deploy actually landed (deploy-code.sh does a
+    git reset --hard origin/main + restart; the health SHA is the proof). Best
+    effort — returns 'unknown' outside a git checkout or if git is unavailable.
+    """
+    try:
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root, capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+_GIT_SHA = _compute_git_sha()
 
 
 def _get_collection():
@@ -361,6 +385,7 @@ def ask_endpoint(request: AskRequest):
             result_count=len(sources) if isinstance(sources, list) else None,
             latency_ms=latency_ms,
             status="ok" if sources else "empty",
+            model=result.get("model_used") if isinstance(result, dict) else None,
         )
         return result
     except Exception as e:
@@ -430,6 +455,7 @@ def chat_endpoint(request: ChatRequest):
             result_count=len(sources) if isinstance(sources, list) else None,
             latency_ms=(time.monotonic() - started) * 1000,
             status="ok" if sources else "empty",
+            model=result.get("model_used") if isinstance(result, dict) else None,
         )
         return result
     except Exception as e:
@@ -566,8 +592,17 @@ def _facets_handler():
     if not decision.allowed:
         return _rate_limited_response(decision, endpoint="/api/facets")
 
+    # Facets are derived from the whole search.db (bodies, top-30 speakers,
+    # date range) and only change on a reindex, but every SPA cold-mount hits
+    # this. Cache the computed result in-process; /admin/reload drops it
+    # alongside the Chroma/metadata caches after each ingest.
+    global _facets_cache
+    if _facets_cache is not None:
+        return _facets_cache
     try:
-        return search_facets(OUTPUT_DIR)
+        result = search_facets(OUTPUT_DIR)
+        _facets_cache = result
+        return result
     except Exception as e:
         logger.error("facets failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An error occurred loading facets.")
@@ -631,7 +666,7 @@ def related_endpoint_direct(clip_id: int, limit: int = 5):
 @app.get("/health")
 def health_endpoint():
     """Lightweight health check — no ChromaDB loading."""
-    result = {"status": "ok", "jurisdiction": get_config().slug}
+    result = {"status": "ok", "jurisdiction": get_config().slug, "sha": _GIT_SHA}
     if _collection is not None:
         result["chunks_indexed"] = _collection.count()
     if _clip_metadata is not None:
@@ -644,18 +679,14 @@ def health_endpoint_api():
     return health_endpoint()
 
 
-@app.post("/admin/reload")
-def admin_reload(request: Request):
-    """Drop the in-process caches (Chroma collection, clip metadata, the
-    SQLite search connection) so freshly-ingested data is picked up WITHOUT
-    a full process restart — avoids dropping in-flight /api/ask calls on the
-    6-hourly ingest. The next request rebuilds each lazily.
+def _require_admin_token(request: Request) -> None:
+    """Shared guard for the /admin/* endpoints.
 
-    Token-guarded: requires ``X-Reload-Token`` to match the ``RELOAD_TOKEN``
-    env var. If ``RELOAD_TOKEN`` is unset the endpoint is disabled (404).
-    The ingest cron calls this on 127.0.0.1 directly; Caddy is configured
-    NOT to proxy /admin from the public origin (defense in depth). There is
-    deliberately no /api/admin alias, so it's unreachable via CloudFront.
+    Requires ``X-Reload-Token`` to match the ``RELOAD_TOKEN`` env var. If
+    ``RELOAD_TOKEN`` is unset the endpoint is disabled (404). Caddy is
+    configured NOT to proxy /admin from the public origin (defense in depth),
+    and there is deliberately no /api/admin alias, so /admin/* is unreachable
+    via CloudFront — the cron calls it on 127.0.0.1 directly.
     """
     expected = os.environ.get("RELOAD_TOKEN")
     if not expected:
@@ -664,9 +695,20 @@ def admin_reload(request: Request):
     if not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    global _collection, _clip_metadata
+
+@app.post("/admin/reload")
+def admin_reload(request: Request):
+    """Drop the in-process caches (Chroma collection, clip metadata, computed
+    facets, the SQLite search connection) so freshly-ingested data is picked
+    up WITHOUT a full process restart — avoids dropping in-flight /api/ask
+    calls on the 6-hourly ingest. The next request rebuilds each lazily.
+    """
+    _require_admin_token(request)
+
+    global _collection, _clip_metadata, _facets_cache
     _collection = None
     _clip_metadata = None
+    _facets_cache = None
     # The MCP module keeps its OWN per-process caches (same pattern, separate
     # module). Without clearing them, the MCP surface keeps serving the stale
     # pre-reload index until a full restart — worse, its cached Collection is
@@ -697,6 +739,25 @@ def admin_reload(request: Request):
     except Exception as e:  # pragma: no cover - best-effort
         logger.warning("admin reload: failed to close search connections: %s", e)
     logger.info(
-        "admin reload: dropped HTTP + MCP collection/metadata caches + Chroma system cache + search connections"
+        "admin reload: dropped HTTP + MCP collection/metadata/facets caches + Chroma system cache + search connections"
     )
     return {"reloaded": True}
+
+
+@app.get("/admin/analytics")
+def admin_analytics(request: Request, days: int = 7):
+    """Token-guarded query-analytics summary from the telemetry SQLite sink.
+
+    Same auth + origin-only posture as /admin/reload. Returns top queries,
+    empty-result rate, volume by transport (http vs mcp) + endpoint, p50/p95
+    latency, and the rate-limited count over the trailing ``days`` window.
+    """
+    _require_admin_token(request)
+    days = max(1, min(int(days or 7), 90))
+    try:
+        from rag.telemetry import analytics
+
+        return analytics(window_days=days)
+    except Exception as e:
+        logger.error("admin analytics failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred loading analytics.")

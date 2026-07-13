@@ -229,6 +229,7 @@ def ask_meetings_impl(
         result_count=len(sources) if isinstance(sources, list) else None,
         latency_ms=(time.monotonic() - started) * 1000,
         status="ok" if sources else "empty",
+        model=result.get("model_used") if isinstance(result, dict) else None,
     )
     return {
         "question": question,

@@ -256,6 +256,20 @@ crontab -l
 bash deploy/lightsail/ingest_cron.sh
 ```
 
+The crontab now runs four jobs, each with a **success-only dead-man heartbeat**
+(`&& heartbeat.sh <name>` → CloudWatch `LT/Heartbeat`; a missing metric = a job
+that didn't run): lean ingest (6h weekdays), daily v2 summaries (00:00), weekly
+backfill (Sun 03:00), and a **weekly off-box index backup** (`backup_indexes.sh`,
+Sun 04:30 → `s3://lt-backups-861476138515/fuzzy-potato/<slug>/`, self-heartbeats
+`<slug>-index-backup`). `ingest_cron.sh` also aborts before doing work if the
+`lfucg_output` filesystem is >85% full. The box's aws identity needs
+`cloudwatch:PutMetricData` (for `LT/Heartbeat`) and `s3:PutObject` on the
+backups bucket; both scripts fail loud into their log otherwise.
+
+For a **document-driven (CivicClerk) box like Paris**, install ingest + daily
+summaries + weekly index backup and OMIT the weekly backfill line (render the
+template, drop the `backfill_weekly.sh` line).
+
 ## 8. Decommission the old serving path
 
 Only after the box has served live traffic cleanly for a few cycles:
@@ -270,7 +284,18 @@ Only after the box has served live traffic cleanly for a few cycles:
 
 ## Operations
 
-- **Logs:** `/var/log/lfucg-ingest.log`, `/var/log/lfucg-backfill.log`;
+- **Code deploy:** `deploy/lightsail/deploy-code.sh <ssh-host> <unit>` (from a
+  workstation) — refuses a dirty tree on the box, `git reset --hard origin/main`
+  + `uv sync --frozen` + `systemctl restart`, then health-checks. NEVER touches
+  `lfucg_output/`. e.g. `./deploy-code.sh lfucg-meetings lfucg-rag`. Confirm the
+  landed SHA via `curl -s https://meetings.lexingtonky.news/api/health` — it now
+  reports `sha` alongside `status`/`jurisdiction`.
+- **Query analytics:** `curl -s -H "X-Reload-Token: $RELOAD_TOKEN"
+  http://127.0.0.1:8000/admin/analytics` (origin-only, same guard as
+  `/admin/reload`) — top queries / empty-result rate / volume by transport +
+  endpoint / p50-p95 latency / rate-limited count, from `lfucg_output/telemetry.db`.
+- **Logs:** `/var/log/lfucg-ingest.log`, `/var/log/lfucg-summaries.log`,
+  `/var/log/lfucg-backfill.log`, `/var/log/lfucg-backup.log`;
   `journalctl -u lfucg-rag -f` for the API.
 - **Manual refresh:** `bash deploy/lightsail/ingest_cron.sh`.
 - **Restart API only:** `sudo systemctl restart lfucg-rag`.

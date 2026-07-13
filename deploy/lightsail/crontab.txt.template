@@ -7,19 +7,37 @@
 #           (cron honors the system TZ; ET keeps the schedule aligned to
 #            when the portal posts clips, and DST is handled automatically)
 #
-# Both jobs share one flock so a long catch-up run can never overlap the next
+# All jobs share one flock so a long catch-up run can never overlap the next
 # tick or the weekly backfill (-n = skip this firing if the lock is held).
 # The lock + log paths are per-slug so two boxes never collide if co-located.
+#
+# Each job appends `&& heartbeat.sh __SLUG__-<name>` — a success-only dead-man
+# ping to CloudWatch (LT/Heartbeat). `&&` means a failed run (or a lock-
+# contended skip) sends NO ping. The weekly index backup self-heartbeats from
+# inside the script after the S3 upload, so its cron line has no appended ping.
 #
 # IMPORTANT (cold-start gate, spec §2.6): do NOT install this crontab until
 # the one-time cold-start backfill has finished. Lean + bulk runs fighting
 # over search.db / ChromaDB during the initial archive sweep is the failure
 # mode the flock can't prevent (different scripts, same data dir).
 #
+# Provisioning note: document-driven jurisdictions (CivicClerk, e.g. Paris)
+# install ingest + daily summaries + weekly index backup and OMIT the weekly
+# backfill line (backfill-docs / tables-of-motions are Granicus-packet
+# specific). Granicus jurisdictions install all four.
+#
 # Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
 # probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
-0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/__SLUG__-ingest.log 2>&1
+0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/__SLUG__-ingest.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-ingest
 
-# Heavy archive-wide sweeps — weekly, Sunday 03:00 ET.
-# backfill-docs + upgrade-summaries + tables-of-motions, then reload + sync.
-0 3 * * 0            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/__SLUG__-backfill.log 2>&1
+# Daily v2-summary upgrade — every day at 00:00 ET. Generates the two-pass
+# summary + facts for clips the lean ingest deferred, re-ingests + refreshes.
+0 0 * * *            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/__SLUG__-summaries.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-summaries
+
+# Heavy archive-wide sweeps — weekly, Sunday 03:00 ET. (Granicus only — omit
+# on document-driven boxes.) backfill-docs + tables-of-motions, then reload.
+0 3 * * 0            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/__SLUG__-backfill.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-backfill
+
+# Weekly off-box index backup — Sunday 04:30 ET. tars chroma_db + search.db +
+# rag_state.json (+ state.json) to S3. Self-heartbeats __SLUG__-index-backup.
+30 4 * * 0           /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh  >> /var/log/__SLUG__-backup.log 2>&1

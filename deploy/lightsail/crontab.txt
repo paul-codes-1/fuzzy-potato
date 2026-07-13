@@ -7,15 +7,26 @@
 # All jobs share one flock so a long catch-up run can never overlap another
 # (-n = skip this firing if the lock is held).
 #
+# Each job appends `&& heartbeat.sh <name>` — a success-only dead-man ping to
+# CloudWatch (LT/Heartbeat). `&&` means a failed run (or a lock-contended skip)
+# sends NO ping, so a missing metric = a job that didn't run/succeed. The
+# weekly index backup self-heartbeats from inside the script (after the S3
+# upload), so its cron line has no appended ping.
+#
 # Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
 # probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
-0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/lfucg-ingest.log 2>&1
+0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/lfucg-ingest.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-ingest
 
 # Daily v2-summary upgrade — every day at 00:00 ET. Generates the two-pass
 # summary + facts for clips the lean ingest left as VTT placeholders, re-ingests
 # them into RAG, rebuilds search.db, refreshes API + S3 + CDN. Cheap/idempotent.
-0 0 * * *            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/lfucg-summaries.log 2>&1
+0 0 * * *            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/lfucg-summaries.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-summaries
 
 # Heavy archive-wide sweeps — weekly, Sunday 03:00 ET.
 # backfill-docs + tables-of-motions, then reload + sync. (summary upgrades are daily now)
-0 3 * * 0            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/lfucg-backfill.log 2>&1
+0 3 * * 0            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/lfucg-backfill.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-backfill
+
+# Weekly off-box index backup — Sunday 04:30 ET (after the 03:00 backfill).
+# tars chroma_db + search.db + rag_state.json (+ state.json) to S3. Self-
+# heartbeats lfucg-index-backup from inside the script after the upload.
+30 4 * * 0           /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh  >> /var/log/lfucg-backup.log 2>&1

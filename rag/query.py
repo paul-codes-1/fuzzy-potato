@@ -24,6 +24,19 @@ DEFAULT_MODEL = "gpt-4o"
 # volume (user-selected alternate provider), so quality-tier by default;
 # overridable per deployment without a code change.
 DEFAULT_ANTHROPIC_MODEL = os.getenv("LFUCG_ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+
+def _synthesis_model() -> str:
+    """Resolve the OpenAI synthesis model at CALL time.
+
+    rag.query is imported by rag.server BEFORE that module runs load_dotenv(),
+    so a module-level ``os.getenv("RAG_SYNTHESIS_MODEL")`` would read the env
+    before .env is applied and silently ignore the override. Resolving here —
+    the same call-time pattern as ``granicus_clip_url`` — lets a .env-provided
+    RAG_SYNTHESIS_MODEL take effect. An explicit ``model=`` argument to ask()
+    still wins over this (see ask()).
+    """
+    return os.getenv("RAG_SYNTHESIS_MODEL", DEFAULT_MODEL)
 MAX_HISTORY_PAIRS = 10
 MAX_REWRITTEN_QUERIES = 3
 
@@ -497,14 +510,21 @@ def verify_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]
 
 
 def ask(question: str, collection, openai_client, clip_metadata: dict = None,
-        filters: dict = None, top_k: int = 15, model: str = DEFAULT_MODEL) -> dict:
-    """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize."""
+        filters: dict = None, top_k: int = 15, model: str | None = None) -> dict:
+    """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize.
+
+    ``model`` defaults to None so the synthesis model is resolved from the
+    RAG_SYNTHESIS_MODEL env at call time (see _synthesis_model). An explicitly
+    passed ``model`` (e.g. the CLI's --model) wins over the env.
+    """
+    resolved_model = model or _synthesis_model()
     result = _retrieve_and_prepare(question, collection, openai_client,
                                    clip_metadata, filters, top_k)
     if result is None:
         return {
             "answer": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
             "sources": [],
+            "model_used": resolved_model,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -518,6 +538,7 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
         return {
             "answer": NO_COVERAGE_ANSWER,
             "sources": [],
+            "model_used": resolved_model,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -525,14 +546,14 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
     # Synthesize answer via LLM
     messages = build_synthesis_messages(question, synthesis_chunks)
 
-    logger.info("=== LLM Prompt (%s) ===", model)
+    logger.info("=== LLM Prompt (%s) ===", resolved_model)
     for msg in messages:
         logger.info("[%s] %s", msg["role"], msg["content"][:500])
         if len(msg["content"]) > 500:
             logger.info("  ... (%d chars total)", len(msg["content"]))
 
     chat_response = openai_client.chat.completions.create(
-        model=model,
+        model=resolved_model,
         messages=messages,
         temperature=SYNTHESIS_TEMPERATURE,
         max_tokens=SYNTHESIS_MAX_TOKENS,
@@ -545,6 +566,7 @@ def ask(question: str, collection, openai_client, clip_metadata: dict = None,
     return {
         "answer": answer,
         "sources": sources,
+        "model_used": resolved_model,
         "filters_applied": filters or {},
         "chunks_retrieved": len(sources),
     }
@@ -634,6 +656,11 @@ def chat(messages: list[dict], collection, openai_client,
          filters: dict = None, model_provider: str = "openai",
          top_k: int = 15) -> dict:
     """Multi-turn chat: retrieve context for latest question, synthesize with history."""
+    # Resolve the OpenAI synthesis model at call time (env-configurable). The
+    # anthropic path keeps its own configured model.
+    synthesis_model = _synthesis_model()
+    openai_no_cov = synthesis_model if model_provider == "openai" else DEFAULT_ANTHROPIC_MODEL
+
     # Retrieval works on a standalone version of the latest question so
     # follow-ups ("what about the vote?") still retrieve the right chunks.
     question = condense_question(messages, openai_client)
@@ -645,7 +672,7 @@ def chat(messages: list[dict], collection, openai_client,
             "role": "assistant",
             "content": "I don't have enough information to answer this question. The meeting archive may not have been indexed yet.",
             "sources": [],
-            "model_used": DEFAULT_MODEL if model_provider == "openai" else DEFAULT_ANTHROPIC_MODEL,
+            "model_used": openai_no_cov,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -657,7 +684,7 @@ def chat(messages: list[dict], collection, openai_client,
             "role": "assistant",
             "content": NO_COVERAGE_ANSWER,
             "sources": [],
-            "model_used": DEFAULT_MODEL if model_provider == "openai" else DEFAULT_ANTHROPIC_MODEL,
+            "model_used": openai_no_cov,
             "filters_applied": filters or {},
             "chunks_retrieved": 0,
         }
@@ -679,13 +706,13 @@ def chat(messages: list[dict], collection, openai_client,
         model_used = DEFAULT_ANTHROPIC_MODEL
     else:
         chat_response = openai_client.chat.completions.create(
-            model=DEFAULT_MODEL,
+            model=synthesis_model,
             messages=synth_messages,
             temperature=SYNTHESIS_TEMPERATURE,
             max_tokens=SYNTHESIS_MAX_TOKENS,
         )
         content = chat_response.choices[0].message.content
-        model_used = DEFAULT_MODEL
+        model_used = synthesis_model
 
     logger.info("=== Chat LLM Response (%s, %d chars) ===", model_used, len(content))
 
@@ -731,7 +758,8 @@ def main():
     parser.add_argument("--body", help="Filter by meeting body")
     parser.add_argument("--after", help="Filter by date (YYYY-MM-DD)")
     parser.add_argument("--before", help="Filter by date (YYYY-MM-DD)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="LLM model for synthesis")
+    parser.add_argument("--model", default=None,
+                        help="LLM model for synthesis (overrides RAG_SYNTHESIS_MODEL env)")
     parser.add_argument("--top-k", type=int, default=15, help="Number of chunks to retrieve")
     parser.add_argument("--output-dir", default="./lfucg_output", help="Output directory")
     args = parser.parse_args()

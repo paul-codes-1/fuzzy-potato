@@ -482,3 +482,107 @@ class TestAdminReload:
         mock_close.assert_called_once()
         assert srv._collection is None
         assert srv._clip_metadata is None
+
+
+# ============================================================
+# N+1. GET /admin/analytics tests
+# ============================================================
+
+class TestAdminAnalytics:
+    """Token-guarded (same guard as /admin/reload) analytics summary from the
+    telemetry SQLite sink."""
+
+    def test_analytics_disabled_without_token(self, monkeypatch):
+        monkeypatch.delenv("RELOAD_TOKEN", raising=False)
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        resp = client.get("/admin/analytics")
+        assert resp.status_code == 404
+
+    def test_analytics_rejects_bad_token(self, monkeypatch):
+        monkeypatch.setenv("RELOAD_TOKEN", "secret")
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        resp = client.get("/admin/analytics", headers={"X-Reload-Token": "wrong"})
+        assert resp.status_code == 403
+
+    def test_analytics_returns_summary_with_token(self, monkeypatch):
+        monkeypatch.setenv("RELOAD_TOKEN", "secret")
+        canned = {
+            "window_days": 7, "total": 5, "empty_result_rate": 0.0,
+            "rate_limited_count": 0, "top_queries": [],
+            "by_transport": {"http": 5}, "by_endpoint": [],
+            "latency_ms": {"p50": 1.0, "p95": 2.0},
+        }
+        with patch("rag.telemetry.analytics", return_value=canned) as mock_an:
+            from rag.server import app
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            resp = client.get("/admin/analytics?days=7", headers={"X-Reload-Token": "secret"})
+
+        assert resp.status_code == 200
+        assert resp.json() == canned
+        mock_an.assert_called_once()
+        assert mock_an.call_args.kwargs.get("window_days") == 7
+
+
+# ============================================================
+# N+2. /api/facets in-process cache
+# ============================================================
+
+class TestFacetsCache:
+    """Facets are cached in-process (they only change on a reindex) and dropped
+    by /admin/reload alongside the other caches."""
+
+    def test_facets_cached_second_call(self):
+        import rag.server as srv
+
+        srv._facets_cache = None
+        with patch("rag.server.search_facets", return_value={"bodies": ["Council"]}) as mock_facets:
+            from fastapi.testclient import TestClient
+
+            client = TestClient(srv.app)
+            r1 = client.get("/api/facets")
+            r2 = client.get("/api/facets")
+
+        assert r1.json() == {"bodies": ["Council"]}
+        assert r2.json() == {"bodies": ["Council"]}
+        assert mock_facets.call_count == 1  # second call served from cache
+        srv._facets_cache = None
+
+    def test_facets_cache_invalidated_by_reload(self, monkeypatch):
+        monkeypatch.setenv("RELOAD_TOKEN", "secret")
+        import rag.server as srv
+
+        srv._facets_cache = None
+        with patch("rag.server.search_facets", return_value={"bodies": ["Council"]}) as mock_facets, \
+             patch("chromadb.api.shared_system_client.SharedSystemClient.clear_system_cache"), \
+             patch("rag.search.close_connections"):
+            from fastapi.testclient import TestClient
+
+            client = TestClient(srv.app)
+            client.get("/api/facets")  # populates cache (compute #1)
+            resp = client.post("/admin/reload", headers={"X-Reload-Token": "secret"})
+            assert resp.status_code == 200
+            client.get("/api/facets")  # cache dropped → recompute (#2)
+
+        assert mock_facets.call_count == 2
+        srv._facets_cache = None
+
+
+class TestHealthSha:
+    """/api/health exposes the running git SHA so a deploy can be confirmed."""
+
+    def test_health_reports_git_sha(self):
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        data = client.get("/api/health").json()
+        assert "sha" in data
+        assert isinstance(data["sha"], str) and data["sha"]
