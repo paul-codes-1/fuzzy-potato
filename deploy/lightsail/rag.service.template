@@ -27,13 +27,16 @@ Restart=always
 RestartSec=3
 # Surface OOMs clearly on a 4GB box; let systemd restart on crash.
 OOMPolicy=kill
-# Memory guard rails (4GB box, ChromaDB ~5.1GB mmapped). MemoryHigh is a
+# Memory guard rails. SIZE TO THE BOX AND INDEX: MemoryHigh must exceed the loaded Chroma
+# working set or the kernel reclaim-throttles uvicorn into a wedge that LOOKS alive
+# (2026-07-14 LFUCG outage: 6h of 502s with the service 'active'). 5500M suits an 8GB box
+# with a ~5GB index; small document-driven counties can run lower. MemoryHigh is a
 # SOFT throttle (reclaim pressure under load) — deliberately NOT a hard
 # MemoryMax, which could kill the API mid-/api/ask. Pair with 4GB swap
 # (see SETUP.md) so the pipeline's bursty allocations don't OOM the API.
 # Tune after observing real RSS under load.
 MemoryAccounting=yes
-MemoryHigh=3G
+MemoryHigh=5500M
 
 [Install]
 WantedBy=multi-user.target
