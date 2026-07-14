@@ -42,6 +42,7 @@ retry failures).
 from __future__ import annotations
 
 import argparse
+import fcntl
 import itertools
 import json
 import re
@@ -146,8 +147,16 @@ def save_state(state: dict) -> None:
 
 
 def set_clip_state(state: dict, clip_id: int, status: str, **extra) -> None:
-    state["clips"][str(clip_id)] = {"status": status, "at": now_iso(), **extra}
-    save_state(state)
+    """Per-clip locked read-modify-write so concurrent `run` and `push`
+    processes never clobber each other's state updates. The caller's
+    in-memory copy is updated too (its skip logic reads it)."""
+    entry = {"status": status, "at": now_iso(), **extra}
+    state["clips"][str(clip_id)] = entry
+    with open(WORKROOT / "state.lock", "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        fresh = load_json(WORKROOT / "state.json", {"clips": {}})
+        fresh["clips"][str(clip_id)] = entry
+        save_json(WORKROOT / "state.json", fresh)
 
 
 def ffprobe_duration(path: Path) -> float | None:
