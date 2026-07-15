@@ -46,8 +46,11 @@ import local_whisper_backfill as lwb  # state helpers, finalize template, ssh bi
 
 WORKROOT = Path.home() / "lt" / ".whisper-backfill" / "summaries"
 EXTRACTION_MODEL_STAMP = "qwen3-30b-a3b-instruct-2507-local"
-MAX_COMPLETION_TOKENS = 16000
-LLM_TIMEOUT = 2400
+# Big council meetings extract to >20k tokens locally (Qwen enumerates the
+# full docket where GPT-4o compresses); 16k still truncated 6 of 7 eval
+# monsters, 24k completes them with finish_reason=stop.
+MAX_COMPLETION_TOKENS = 24000
+LLM_TIMEOUT = 3600
 
 CONVENTION_ADDENDUM = """
 
@@ -207,7 +210,12 @@ def process_clip(clip: dict, host: str, llama_url: str, anthropic_client) -> dic
 
 
 def cmd_run(host: str, llama_url: str, max_clips: int, workers: int, retry_failed: bool) -> None:
-    sys.path.insert(0, str(Path.home() / "lt" / "fuzzy-potato"))
+    repo = Path.home() / "lt" / "fuzzy-potato"
+    sys.path.insert(0, str(repo))
+    # Standalone script — main.py's load_dotenv() doesn't run for us, and
+    # clients.get_anthropic reads the environment directly.
+    from dotenv import load_dotenv
+    load_dotenv(repo / ".env")
     from clients import get_anthropic
     anthropic_client = get_anthropic()
 
