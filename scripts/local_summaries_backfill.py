@@ -47,9 +47,10 @@ import local_whisper_backfill as lwb  # state helpers, finalize template, ssh bi
 WORKROOT = Path.home() / "lt" / ".whisper-backfill" / "summaries"
 EXTRACTION_MODEL_STAMP = "qwen3-30b-a3b-instruct-2507-local"
 # Big council meetings extract to >20k tokens locally (Qwen enumerates the
-# full docket where GPT-4o compresses); 16k still truncated 6 of 7 eval
-# monsters, 24k completes them with finish_reason=stop.
-MAX_COMPLETION_TOKENS = 24000
+# full docket where GPT-4o compresses); 16k truncated 6 of 7 eval monsters,
+# and 24k still truncated ~17% of the first 100 batch clips. Slot budget:
+# 163840/2 slots = 81920; worst prompt ~45k + 30k completion fits.
+MAX_COMPLETION_TOKENS = 30000
 LLM_TIMEOUT = 3600
 
 CONVENTION_ADDENDUM = """
@@ -180,7 +181,14 @@ def process_clip(clip: dict, host: str, llama_url: str, anthropic_client) -> dic
         msgs = kw.get("messages", [])
         if msgs and msgs[0].get("role") == "system":
             msgs = [{**msgs[0], "content": msgs[0]["content"] + CONVENTION_ADDENDUM}] + msgs[1:]
-        return _orig(**{**kw, "messages": msgs, "max_tokens": MAX_COMPLETION_TOKENS})
+        r = _orig(**{**kw, "messages": msgs, "max_tokens": MAX_COMPLETION_TOKENS})
+        fr = r.choices[0].finish_reason
+        if fr == "length":
+            # Surface truncation as its own failure class — a truncated JSON
+            # otherwise parses to {} and reports an opaque pass1_no_facts.
+            raise RuntimeError(
+                f"pass1_length_truncated:{r.usage.completion_tokens}tok")
+        return r
     client.chat.completions.create = _create
 
     summary, facts = summary_v2.generate_summary_v2(
