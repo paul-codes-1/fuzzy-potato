@@ -66,7 +66,13 @@ ADDITIONAL EXTRACTION CONVENTIONS (follow exactly):
 - Attendance names: full names as stated, without honorifics (no Mr./Ms./
   Councilmember prefixes).
 - When one roll call covers multiple docket items, record it once per
-  distinctly-voted motion, not per agenda line."""
+  distinctly-voted motion, not per agenda line.
+- BE SELECTIVE, NOT EXHAUSTIVE. agenda_items: at most the 30 most
+  significant items actually DISCUSSED in the transcript; collapse consent-
+  agenda / batch-approved items into ONE entry ("Consent agenda: N items
+  approved"). Do NOT enumerate every line of the agenda packet. Keep every
+  summary field to 1-2 sentences. The complete output must fit within
+  25,000 tokens."""
 
 CENSUS_REMOTE_SCRIPT = r"""
 import json, glob, os
