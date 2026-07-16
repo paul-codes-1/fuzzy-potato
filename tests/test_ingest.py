@@ -447,13 +447,13 @@ class TestChunkDocument:
 
 
 # ============================================================
-# 5. ChromaDB storage tests
+# 5. Vector-store storage tests
 # ============================================================
 
 class TestStoreChunks:
-    """Test storing chunks in ChromaDB with correct metadata."""
+    """Test storing chunks in the vector store with correct metadata."""
 
-    def test_store_chunks_adds_to_collection(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_store_chunks_adds_to_collection(self, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks
 
         chunks = [
@@ -466,10 +466,10 @@ class TestStoreChunks:
                 "section_type": "Meeting Overview",
             }
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
-        assert chroma_collection.count() == 1
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
+        assert vecstore.count() == 1
 
-    def test_store_chunks_preserves_metadata(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_store_chunks_preserves_metadata(self, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks
 
         chunks = [
@@ -483,9 +483,9 @@ class TestStoreChunks:
                 "end_time": 120.0,
             }
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
-        result = chroma_collection.get(include=["metadatas"])
-        meta = result["metadatas"][0]
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
+        hits = vecstore.get_chunks()
+        meta = hits[0]["metadata"]
         assert meta["clip_id"] == 6669
         assert meta["date"] == "2026-01-22"
         assert meta["meeting_body"] == "Council"
@@ -493,7 +493,7 @@ class TestStoreChunks:
         assert meta["start_time"] == 60.0
         assert meta["end_time"] == 120.0
 
-    def test_store_chunks_generates_unique_ids(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_store_chunks_generates_unique_ids(self, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks
 
         chunks = [
@@ -502,17 +502,17 @@ class TestStoreChunks:
             {"text": "Chunk B", "clip_id": 6669, "date": "2026-01-22",
              "meeting_body": "Council", "source": "summary", "section_type": "Votes"},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
-        assert chroma_collection.count() == 2
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
+        assert vecstore.count() == 2
 
-    def test_store_chunks_calls_openai_embeddings(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_store_chunks_calls_openai_embeddings(self, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks
 
         chunks = [
             {"text": "Test embedding call", "clip_id": 6669, "date": "2026-01-22",
              "meeting_body": "Council", "source": "summary", "section_type": "Overview"},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
         mock_openai_batch_embeddings.embeddings.create.assert_called()
 
 
@@ -523,31 +523,31 @@ class TestStoreChunks:
 class TestIngestClip:
     """Test ingesting a single clip from its output directory."""
 
-    def test_ingest_clip_processes_all_sources(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_processes_all_sources(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
 
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
         # Should have chunks from all sources: summary + transcript + agenda + minutes
-        assert chroma_collection.count() > 0
+        assert vecstore.count() > 0
         # Verify summary chunks are now ingested
-        results = chroma_collection.get(where={"source": "summary"}, include=["metadatas"])
-        assert len(results["ids"]) > 0
+        hits = vecstore.get_chunks(filters={"source": "summary"})
+        assert len(hits) > 0
 
-    def test_ingest_clip_stores_transcript_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_stores_transcript_chunks(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
 
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        results = chroma_collection.get(where={"source": "transcript"}, include=["metadatas"])
-        assert len(results["ids"]) >= 1
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        hits = vecstore.get_chunks(filters={"source": "transcript"})
+        assert len(hits) >= 1
 
-    def test_ingest_clip_stores_minutes_chunks(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_stores_minutes_chunks(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
 
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        results = chroma_collection.get(where={"source": "minutes"}, include=["metadatas"])
-        assert len(results["ids"]) >= 1
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        hits = vecstore.get_chunks(filters={"source": "minutes"})
+        assert len(hits) >= 1
 
-    def test_ingest_clip_skips_missing_files_gracefully(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_skips_missing_files_gracefully(self, tmp_path, vecstore, mock_openai_batch_embeddings):
         """If a clip directory has only metadata and minutes, it should still work."""
         from rag.ingest import ingest_clip
 
@@ -563,20 +563,20 @@ class TestIngestClip:
         (clip_dir / "metadata.json").write_text(json.dumps(meta))
         (clip_dir / "minutes.txt").write_text("COMMITTEE MEETING\nJanuary 1, 2026\n\nRoll Call\nMembers present: Smith, Jones.\n")
 
-        ingest_clip(9999, tmp_path, chroma_collection, mock_openai_batch_embeddings)
-        assert chroma_collection.count() >= 1
+        ingest_clip(9999, tmp_path, vecstore, mock_openai_batch_embeddings)
+        assert vecstore.count() >= 1
 
-    def test_ingest_clip_stamps_canonical_url(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_stamps_canonical_url(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         """PR-6 fix #1: the clip's metadata.json["url"] is stamped onto every
         chunk's ChromaDB metadata as canonical_url (so rag.query can cite the
         right URL for non-Granicus clips)."""
         from rag.ingest import ingest_clip
 
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        results = chroma_collection.get(include=["metadatas"])
-        assert results["metadatas"]
-        for meta in results["metadatas"]:
-            assert meta.get("canonical_url") == (
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        hits = vecstore.get_chunks()
+        assert hits
+        for hit in hits:
+            assert hit["metadata"].get("canonical_url") == (
                 "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true")
 
 
@@ -621,14 +621,14 @@ class TestDocumentDrivenIngest:
     that already became its transcript artifact."""
 
     def test_minutes_not_double_indexed_for_civicclerk_minutes(
-            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+            self, tmp_path, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
 
         _civicclerk_clip(tmp_path, 5, "civicclerk_minutes", minutes=True, agenda=True)
-        ingest_clip(5, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+        ingest_clip(5, tmp_path, vecstore, mock_openai_batch_embeddings)
 
-        results = chroma_collection.get(include=["metadatas"])
-        sources = [m["source"] for m in results["metadatas"]]
+        hits = vecstore.get_chunks()
+        sources = [h["metadata"]["source"] for h in hits]
         # The minutes IS the transcript → no separate "minutes" source chunks.
         assert "minutes" not in sources
         # But it IS indexed once, as the transcript.
@@ -637,50 +637,50 @@ class TestDocumentDrivenIngest:
         assert "agenda" in sources
 
     def test_agenda_not_double_indexed_for_civicclerk_agenda(
-            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+            self, tmp_path, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip
 
         # Minutes not yet published → agenda became the transcript content.
         _civicclerk_clip(tmp_path, 6, "civicclerk_agenda", minutes=False, agenda=True)
-        ingest_clip(6, tmp_path, chroma_collection, mock_openai_batch_embeddings)
+        ingest_clip(6, tmp_path, vecstore, mock_openai_batch_embeddings)
 
-        results = chroma_collection.get(include=["metadatas"])
-        sources = [m["source"] for m in results["metadatas"]]
+        hits = vecstore.get_chunks()
+        sources = [h["metadata"]["source"] for h in hits]
         assert "agenda" not in sources       # agenda IS the transcript
         assert "transcript" in sources
 
     def test_minutes_clip_still_indexes_agenda_as_distinct_source(
-            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+            self, tmp_path, vecstore, mock_openai_batch_embeddings):
         """For a minutes-clip, the agenda is a genuinely different document and
         must still be indexed (only the minutes is skipped)."""
         from rag.ingest import ingest_clip
 
         _civicclerk_clip(tmp_path, 7, "civicclerk_minutes", minutes=True, agenda=True)
-        ingest_clip(7, tmp_path, chroma_collection, mock_openai_batch_embeddings)
-        agenda_chunks = chroma_collection.get(where={"source": "agenda"}, include=["metadatas"])
-        assert len(agenda_chunks["ids"]) >= 1
+        ingest_clip(7, tmp_path, vecstore, mock_openai_batch_embeddings)
+        agenda_chunks = vecstore.get_chunks(filters={"source": "agenda"})
+        assert len(agenda_chunks) >= 1
 
     def test_no_duplicate_concept_chunks(
-            self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+            self, tmp_path, vecstore, mock_openai_batch_embeddings):
         """The budget-motion concept text appears exactly ONCE (as transcript),
         not twice (transcript + minutes)."""
         from rag.ingest import ingest_clip
 
         _civicclerk_clip(tmp_path, 8, "civicclerk_minutes", minutes=True, agenda=False)
-        ingest_clip(8, tmp_path, chroma_collection, mock_openai_batch_embeddings)
-        results = chroma_collection.get(include=["documents"])
-        hits = [d for d in results["documents"] if "approve the FY27 budget" in d]
+        ingest_clip(8, tmp_path, vecstore, mock_openai_batch_embeddings)
+        docs = [h["document"] for h in vecstore.get_chunks()]
+        hits = [d for d in docs if "approve the FY27 budget" in d]
         assert len(hits) == 1
 
     def test_granicus_clip_still_indexes_minutes_separately(
-            self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+            self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         """Byte-identity: a normal Granicus clip (no civicclerk transcript
         source) still indexes minutes as its own source."""
         from rag.ingest import ingest_clip
 
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        minutes_chunks = chroma_collection.get(where={"source": "minutes"}, include=["metadatas"])
-        assert len(minutes_chunks["ids"]) >= 1
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        minutes_chunks = vecstore.get_chunks(filters={"source": "minutes"})
+        assert len(minutes_chunks) >= 1
 
 
 # ============================================================
@@ -690,12 +690,12 @@ class TestDocumentDrivenIngest:
 class TestIncrementalIngestion:
     """Test that already-ingested clips are skipped."""
 
-    def test_ingest_new_skips_already_ingested(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_ingest_new_skips_already_ingested(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import ingest_clip, load_rag_state, save_rag_state
 
         # Ingest once
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        count_after_first = chroma_collection.count()
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        count_after_first = vecstore.count()
 
         # Mark as ingested in state
         state = load_rag_state(sample_clip_dir)
@@ -703,9 +703,9 @@ class TestIncrementalIngestion:
         save_rag_state(state, sample_clip_dir)
 
         # Try to ingest again — should skip
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings,
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings,
                     skip_if_ingested=True)
-        assert chroma_collection.count() == count_after_first
+        assert vecstore.count() == count_after_first
 
     def test_load_rag_state_returns_default_when_missing(self, tmp_path):
         from rag.ingest import load_rag_state
@@ -730,7 +730,7 @@ class TestIncrementalIngestion:
 class TestStats:
     """Test the --stats CLI output."""
 
-    def test_get_stats_returns_counts(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_get_stats_returns_counts(self, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks, get_stats
 
         chunks = [
@@ -740,12 +740,12 @@ class TestStats:
              "meeting_body": "Committee", "source": "transcript",
              "start_time": 0.0, "end_time": 60.0},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
-        stats = get_stats(chroma_collection)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
+        stats = get_stats(vecstore)
         assert stats["total_chunks"] == 2
         assert stats["unique_clips"] == 2
 
-    def test_get_stats_with_output_dir_uses_rag_state(self, tmp_path, chroma_collection, mock_openai_batch_embeddings):
+    def test_get_stats_with_output_dir_uses_rag_state(self, tmp_path, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import store_chunks, get_stats, save_rag_state
 
         chunks = [
@@ -753,11 +753,11 @@ class TestStats:
              "meeting_body": "Council", "source": "transcript",
              "start_time": 0.0, "end_time": 60.0},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
 
         # Save rag state with 3 clips (even though collection only has 1)
         save_rag_state({"ingested_clips": [6669, 6670, 6671]}, tmp_path)
-        stats = get_stats(chroma_collection, output_dir=str(tmp_path))
+        stats = get_stats(vecstore, output_dir=str(tmp_path))
         assert stats["total_chunks"] == 1
         assert stats["unique_clips"] == 3  # from rag_state, not collection
 

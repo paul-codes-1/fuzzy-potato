@@ -29,7 +29,7 @@ def test_mcp_endpoint_handles_initialize():
     only be called once per instance — sharing a single TestClient lifespan
     across the assertions sidesteps that.
     """
-    with patch("rag.server.get_chroma_collection"), \
+    with patch("rag.server.get_vecstore"), \
          patch("rag.server.load_clip_metadata", return_value={}), \
          patch("rag.server.get_openai"):
         from rag.server import app

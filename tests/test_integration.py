@@ -31,13 +31,13 @@ class TestProcessClipRagIntegration:
 class TestRebuildRagFlag:
     """Test the --rebuild-rag CLI flag."""
 
-    def test_rebuild_rag_calls_ingest_all(self, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings):
+    def test_rebuild_rag_calls_ingest_all(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         """--rebuild-rag should ingest all clips from scratch."""
         from rag.ingest import ingest_clip, get_stats
 
         # Ingest a clip
-        ingest_clip(6669, sample_clip_dir, chroma_collection, mock_openai_batch_embeddings)
-        stats = get_stats(chroma_collection)
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        stats = get_stats(vecstore)
         assert stats["total_chunks"] > 0
 
     def test_rebuild_rag_clears_and_reingests(self, sample_clip_dir, mock_openai_batch_embeddings):

@@ -6,6 +6,22 @@ from unittest.mock import MagicMock
 import pytest
 
 
+def sqlite_vec_available() -> bool:
+    """True when this Python can load the sqlite-vec extension.
+
+    Some CPython builds (e.g. pyenv defaults) compile sqlite3 without
+    loadable-extension support; sqlite-backend tests skip there rather
+    than fail. Prod (Ubuntu 3.11) and uv-managed builds support it.
+    """
+    try:
+        import sqlite3
+
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    return hasattr(sqlite3.Connection, "enable_load_extension")
+
+
 # --- Sample data matching real LFUCG output formats ---
 
 SAMPLE_SUMMARY = """## Meeting Overview
@@ -318,3 +334,33 @@ def chroma_collection():
     yield collection
     # Cleanup
     client.delete_collection("test_lfucg_meetings")
+
+
+@pytest.fixture
+def vecstore(tmp_path):
+    """Backend-driven VecStore — the whole suite runs against either backend:
+
+        uv run pytest tests/                        # chroma (default)
+        VECTOR_BACKEND=sqlite uv run pytest tests/  # sqlite-vec
+    """
+    backend = os.environ.get("VECTOR_BACKEND", "chroma").strip().lower()
+    if backend == "sqlite":
+        if not sqlite_vec_available():
+            pytest.skip("this Python's sqlite3 can't load extensions (sqlite-vec)")
+        from rag.vecstore import SqliteVecStore
+
+        store = SqliteVecStore(str(tmp_path / "vec_test.db"))
+        yield store
+        store.close()
+    else:
+        import chromadb
+
+        from rag.vecstore import ChromaVecStore
+
+        client = chromadb.Client()  # ephemeral in-memory
+        collection = client.get_or_create_collection(
+            name="test_vecstore_fixture",
+            metadata={"hnsw:space": "cosine"},
+        )
+        yield ChromaVecStore(collection)
+        client.delete_collection("test_vecstore_fixture")

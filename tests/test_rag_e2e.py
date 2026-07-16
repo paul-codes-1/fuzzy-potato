@@ -1,14 +1,15 @@
 """End-to-end tests for the RAG pipeline: ingest -> query -> answer.
 
 These tests verify the full path from clip files on disk through chunking,
-embedding, ChromaDB storage, retrieval, deduplication, and synthesis.
-Uses in-memory ChromaDB and mocked OpenAI/Anthropic clients.
+embedding, vector-store storage, retrieval, deduplication, and synthesis.
+Uses the backend-driven ``vecstore`` fixture (chroma by default;
+``VECTOR_BACKEND=sqlite`` runs the same tests on sqlite-vec) and mocked
+OpenAI/Anthropic clients.
 """
 
 import json
 from unittest.mock import MagicMock
 
-import chromadb
 import pytest
 
 from rag.ingest import (
@@ -22,28 +23,15 @@ from rag.ingest import (
 from rag.query import ask, deduplicate_results, build_synthesis_messages
 
 
-@pytest.fixture
-def e2e_collection():
-    """Fresh in-memory ChromaDB collection for each e2e test."""
-    client = chromadb.Client()
-    collection = client.get_or_create_collection(
-        name="e2e_test",
-        metadata={"hnsw:space": "cosine"},
-    )
-    yield collection
-    client.delete_collection("e2e_test")
-
-
 class TestIngestProducesAllSourceTypes:
     """Verify that ingest_clip produces chunks from all 5 source types."""
 
-    def test_all_five_sources_ingested(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_all_five_sources_ingested(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
         sources = set()
-        results = e2e_collection.get(include=["metadatas"])
-        for meta in results["metadatas"]:
-            sources.add(meta["source"])
+        for hit in vecstore.get_chunks():
+            sources.add(hit["metadata"]["source"])
 
         assert "summary" in sources
         assert "facts" in sources
@@ -51,49 +39,38 @@ class TestIngestProducesAllSourceTypes:
         assert "agenda" in sources
         assert "transcript" in sources
 
-    def test_facts_chunks_contain_vote_data(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_facts_chunks_contain_vote_data(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
-        results = e2e_collection.get(
-            where={"source": "facts"},
-            include=["documents", "metadatas"],
-        )
-        all_text = " ".join(results["documents"])
+        hits = vecstore.get_chunks(filters={"source": "facts"})
+        all_text = " ".join(h["document"] for h in hits)
         assert "Ordinance 0016-26" in all_text
         assert "passed" in all_text
         assert "8" in all_text  # ayes count
 
-    def test_facts_chunks_contain_financial_data(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_facts_chunks_contain_financial_data(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
-        results = e2e_collection.get(
-            where={"$and": [{"source": "facts"}, {"section_type": "financial"}]},
-            include=["documents"],
-        )
-        assert len(results["documents"]) > 0
-        assert "$18,040,000" in results["documents"][0]
+        hits = vecstore.get_chunks(
+            filters={"source": "facts", "section_type": "financial"})
+        assert len(hits) > 0
+        assert "$18,040,000" in hits[0]["document"]
 
-    def test_summary_chunks_have_section_types(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_summary_chunks_have_section_types(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
-        results = e2e_collection.get(
-            where={"source": "summary"},
-            include=["metadatas"],
-        )
-        section_types = [m["section_type"] for m in results["metadatas"]]
+        hits = vecstore.get_chunks(filters={"source": "summary"})
+        section_types = [h["metadata"]["section_type"] for h in hits]
         assert "Meeting Overview" in section_types
         assert "Key Decisions & Votes" in section_types
 
-    def test_transcript_chunks_have_timestamps(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_transcript_chunks_have_timestamps(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
-        results = e2e_collection.get(
-            where={"source": "transcript"},
-            include=["metadatas"],
-        )
-        assert len(results["metadatas"]) > 0
+        hits = vecstore.get_chunks(filters={"source": "transcript"})
+        assert len(hits) > 0
         # Transcript chunks should have start_time and end_time
-        meta = results["metadatas"][0]
+        meta = hits[0]["metadata"]
         assert "start_time" in meta
         assert "end_time" in meta
 
@@ -101,11 +78,11 @@ class TestIngestProducesAllSourceTypes:
 class TestIngestToQueryPipeline:
     """Test the full ingest -> query -> answer path."""
 
-    def test_query_returns_answer_with_sources(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
+    def test_query_returns_answer_with_sources(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         """Full pipeline: ingest a clip, query it, get an answer with sources."""
         # Ingest
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
-        assert e2e_collection.count() > 0
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        assert vecstore.count() > 0
 
         # Query (mock OpenAI for both embedding and chat)
         mock_client = mock_openai_batch_embeddings
@@ -117,7 +94,7 @@ class TestIngestToQueryPipeline:
 
         result = ask(
             question="What zoning changes were approved?",
-            collection=e2e_collection,
+            store=vecstore,
             openai_client=mock_client,
             clip_metadata={6669: {"title": "Urban County Council (1)"}},
         )
@@ -128,8 +105,8 @@ class TestIngestToQueryPipeline:
         assert len(result["sources"]) > 0
         assert result["sources"][0]["clip_id"] == 6669
 
-    def test_query_sources_have_granicus_urls(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_query_sources_have_granicus_urls(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
         mock_client = mock_openai_batch_embeddings
         mock_choice = MagicMock()
@@ -140,7 +117,7 @@ class TestIngestToQueryPipeline:
 
         result = ask(
             question="Tell me about the meeting",
-            collection=e2e_collection,
+            store=vecstore,
             openai_client=mock_client,
         )
 
@@ -148,8 +125,8 @@ class TestIngestToQueryPipeline:
             assert "granicus_url" in source
             assert "lfucg.granicus.com" in source["granicus_url"]
 
-    def test_query_with_meeting_body_filter(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_query_with_meeting_body_filter(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
         mock_client = mock_openai_batch_embeddings
         mock_choice = MagicMock()
@@ -161,7 +138,7 @@ class TestIngestToQueryPipeline:
         # Filter by correct body
         result = ask(
             question="What happened?",
-            collection=e2e_collection,
+            store=vecstore,
             openai_client=mock_client,
             filters={"meeting_body": "Council"},
         )
@@ -171,7 +148,7 @@ class TestIngestToQueryPipeline:
         # empty results which triggers the "not enough info" fallback)
         result_wrong = ask(
             question="What happened?",
-            collection=e2e_collection,
+            store=vecstore,
             openai_client=mock_client,
             filters={"meeting_body": "Nonexistent Body"},
         )
@@ -355,30 +332,30 @@ class TestChunkExtractedFacts:
 class TestRagStateManagement:
     """Test that ingestion properly tracks state for resumability."""
 
-    def test_ingest_clip_saves_state(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
+    def test_ingest_clip_saves_state(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import load_rag_state
 
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
         state = load_rag_state(sample_clip_dir)
         assert 6669 in state["ingested_clips"]
 
-    def test_skip_if_ingested_works(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
+    def test_skip_if_ingested_works(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
         from rag.ingest import load_rag_state
 
         # First ingest
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
-        count_after_first = e2e_collection.count()
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
+        count_after_first = vecstore.count()
 
         # Second ingest with skip — should not add more chunks
         state = load_rag_state(sample_clip_dir)
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings,
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings,
                     skip_if_ingested=True, rag_state=state)
-        assert e2e_collection.count() == count_after_first
+        assert vecstore.count() == count_after_first
 
-    def test_stats_reflect_ingested_clips(self, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings):
-        ingest_clip(6669, sample_clip_dir, e2e_collection, mock_openai_batch_embeddings)
+    def test_stats_reflect_ingested_clips(self, sample_clip_dir, vecstore, mock_openai_batch_embeddings):
+        ingest_clip(6669, sample_clip_dir, vecstore, mock_openai_batch_embeddings)
 
-        stats = get_stats(e2e_collection, str(sample_clip_dir))
+        stats = get_stats(vecstore, str(sample_clip_dir))
         assert stats["total_chunks"] > 0
         assert stats["unique_clips"] == 1

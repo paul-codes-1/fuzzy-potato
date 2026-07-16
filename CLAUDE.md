@@ -150,6 +150,8 @@ Set in `.env` file:
 - `LFUCG_ANTHROPIC_MODEL` - Claude model for the opt-in RAG chat provider (default: `claude-sonnet-4-6`)
 - `FIRST_CLIP_ID` - Starting clip ID for auto-processing (default: 6669)
 - `LFUCG_OUTPUT_DIR` - Output directory for RAG server (default: ./lfucg_output)
+- `VECTOR_BACKEND` - RAG vector store backend: `chroma` (default, in-RAM HNSW under `lfucg_output/chroma_db/`) or `sqlite` (disk-first sqlite-vec at `lfucg_output/vec.db`; see `rag/vecstore.py` + RAG_CAPACITY_PLAN.md). Flip together with `RAG_EMBED_DIMS` to match how vec.db was built.
+- `RAG_EMBED_DIMS` - text-embedding-3-small dimensions for ingest AND query embeds (default 1536; the sqlite capacity-plan rebuild uses 512). Must match the serving store's dims.
 - `LFUCG_SITE_URL` - Public site URL used in seo.py and the MCP server's URL decoration (default: `https://meetings.lexingtonky.news`)
 
 ## System Requirements

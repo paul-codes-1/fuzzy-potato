@@ -140,7 +140,7 @@ class TestFacetsEndpoint:
 class TestRelatedEndpoint:
     def test_related_returns_results(self):
         with patch("rag.server.related_clips") as mock_related, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}):
             mock_related.return_value = [
                 {
@@ -160,7 +160,7 @@ class TestRelatedEndpoint:
 
     def test_related_clamps_limit(self):
         with patch("rag.server.related_clips") as mock_related, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}):
             mock_related.return_value = []
             client = TestClient(app)

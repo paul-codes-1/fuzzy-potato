@@ -17,12 +17,15 @@ from rag import mcp_server as mcp_module
 
 
 @pytest.fixture(autouse=True)
-def _reset_caches():
-    """Each test starts with cold module-level caches."""
-    mcp_module._collection = None
+def _reset_caches(monkeypatch):
+    """Each test starts with cold module-level caches and no inherited
+    RAG_SUSPENDED (the prod box sets it in .env — tests that need it set
+    it explicitly)."""
+    monkeypatch.delenv("RAG_SUSPENDED", raising=False)
+    mcp_module._store = None
     mcp_module._clip_metadata = None
     yield
-    mcp_module._collection = None
+    mcp_module._store = None
     mcp_module._clip_metadata = None
 
 
@@ -77,7 +80,7 @@ class TestAskMeetings:
 
     def test_filters_passed_through(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -98,7 +101,7 @@ class TestAskMeetings:
 
     def test_no_filters_passes_none(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -109,7 +112,7 @@ class TestAskMeetings:
 
     def test_underlying_exception_caught(self):
         with patch.object(mcp_module, "ask", side_effect=RuntimeError("boom")), \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             result = mcp_module.ask_meetings_impl(question="hi")
@@ -119,7 +122,7 @@ class TestAskMeetings:
 
     def test_response_shape(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -208,7 +211,7 @@ class TestSearchMeetings:
 
 class TestFindRelatedClips:
     def test_decorates_with_urls(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips") as mock_related:
             mock_related.return_value = [
@@ -221,14 +224,14 @@ class TestFindRelatedClips:
             assert result["results"][0]["markdown_url"].endswith("/data/clips/7000/clip.md")
 
     def test_limit_clamped_high(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips", return_value=[]) as mock_related:
             mcp_module.find_related_clips_impl(clip_id=6669, limit=999)
             assert mock_related.call_args.kwargs["limit"] == 20
 
     def test_underlying_exception_caught(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips", side_effect=RuntimeError("boom")):
             result = mcp_module.find_related_clips_impl(clip_id=6669)
@@ -358,3 +361,86 @@ class TestUrlHelpers:
     def test_site_url_strips_trailing_slash(self):
         # Module-level — already stripped at import time. Just verify shape.
         assert not mcp_module.SITE_URL.endswith("/")
+
+
+# ============================================================
+# RAG_SUSPENDED guard (570f843) — must short-circuit BEFORE the store
+# ============================================================
+
+
+class TestRagSuspendedGuard:
+    """With RAG_SUSPENDED set, the two vector-backed tools return the
+    maintenance notice WITHOUT constructing the vector store — the whole
+    point of the flag is serving the MCP endpoint while the store is
+    offline for the rebuild."""
+
+    def _forbid_store(self, monkeypatch):
+        def _boom(*args, **kwargs):
+            raise AssertionError("store factory must not be called while suspended")
+
+        monkeypatch.setattr(mcp_module, "get_vecstore", _boom)
+
+    def test_ask_meetings_returns_notice_without_store(self, monkeypatch):
+        monkeypatch.setenv("RAG_SUSPENDED", "1")
+        self._forbid_store(monkeypatch)
+        result = mcp_module.ask_meetings_impl(question="What about zoning?")
+        assert result["error"] == "temporarily_offline"
+        assert "search_meetings" in result["message"]
+
+    def test_find_related_clips_returns_notice_without_store(self, monkeypatch):
+        monkeypatch.setenv("RAG_SUSPENDED", "1")
+        self._forbid_store(monkeypatch)
+        result = mcp_module.find_related_clips_impl(6669)
+        assert result["error"] == "temporarily_offline"
+
+    def test_flag_unset_does_not_suspend(self, monkeypatch):
+        monkeypatch.delenv("RAG_SUSPENDED", raising=False)
+        assert mcp_module._rag_suspended_notice() is None
+
+    def test_flag_zero_does_not_suspend(self, monkeypatch):
+        monkeypatch.setenv("RAG_SUSPENDED", "0")
+        assert mcp_module._rag_suspended_notice() is None
+
+
+# ============================================================
+# Date-filter validation (backends diverge on malformed dates)
+# ============================================================
+
+
+class TestDateFilterValidation:
+    """Non-YYYY-MM-DD date filters must be rejected at the tool boundary —
+    the sqlite backend would silently no-op the filter while chroma would
+    return nothing."""
+
+    def test_ask_meetings_rejects_bad_date_after(self, monkeypatch):
+        monkeypatch.delenv("RAG_SUSPENDED", raising=False)
+        result = mcp_module.ask_meetings_impl(
+            question="zoning?", date_after="July 2025")
+        assert result == {"error": "date_after must be YYYY-MM-DD"}
+
+    def test_ask_meetings_rejects_bad_date_before(self, monkeypatch):
+        monkeypatch.delenv("RAG_SUSPENDED", raising=False)
+        result = mcp_module.ask_meetings_impl(
+            question="zoning?", date_before="01/15/2026")
+        assert result == {"error": "date_before must be YYYY-MM-DD"}
+
+    def test_search_meetings_rejects_bad_dates(self):
+        with patch.object(mcp_module, "search_clips") as mock_search:
+            result = mcp_module.search_meetings_impl(q="zoning", date_after="2025")
+            assert result == {"error": "date_after must be YYYY-MM-DD"}
+            result = mcp_module.search_meetings_impl(q="zoning", date_before="last year")
+            assert result == {"error": "date_before must be YYYY-MM-DD"}
+            mock_search.assert_not_called()
+
+    def test_valid_dates_still_accepted(self, monkeypatch):
+        monkeypatch.delenv("RAG_SUSPENDED", raising=False)
+        with patch.object(mcp_module, "ask") as mock_ask, \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
+             patch.object(mcp_module, "get_openai", return_value=MagicMock()):
+            mock_ask.return_value = {
+                "answer": "ok", "sources": [], "filters_applied": {}, "chunks_retrieved": 0,
+            }
+            result = mcp_module.ask_meetings_impl(
+                question="hi", date_after="2025-01-01", date_before="2025-12-31")
+            assert "error" not in result
