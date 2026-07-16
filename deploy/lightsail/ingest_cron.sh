@@ -124,4 +124,10 @@ if [ -n "${FEEDS_API_TOKEN:-}" ] && [ -n "${FEEDS_WEBHOOK_URL:-}" ]; then
   echo ""
 fi
 
+# Push-based news alerts (Haiku leads + keyword watchlist) for the clips
+# this run just landed. State-driven and idempotent; runs after the S3
+# sync + CF invalidation so the emailed archive links resolve. Non-fatal.
+log "Meeting alerts (leads + watchlist)"
+uv run python -m scripts.meeting_alerts --scan || log "meeting alerts failed (non-fatal)"
+
 log "Done"

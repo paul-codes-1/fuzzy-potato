@@ -19,3 +19,7 @@ frontend/public/skill.md
 
 .env
 .claude/
+
+# meeting_alerts.py newsroom config + state (box-local, never deployed or synced)
+watchlist.txt
+alerts_state.json

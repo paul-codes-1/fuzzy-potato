@@ -1,0 +1,27 @@
+# Newsroom watchlist for scripts/meeting_alerts.py
+#
+# Copy to watchlist.txt (gitignored — survives deploys, never synced to S3)
+# and edit freely. One term per line; case-insensitive whole-word/phrase
+# match. Lines starting with `re:` are raw regular expressions.
+
+CentrePointe
+City Center
+tax increment
+TIF
+Flock
+Fusus
+consent decree
+water quality fee
+stormwater
+urban service boundary
+urban service area
+growth boundary
+greenway
+eviction
+short-term rental
+Red Mile
+pension
+disciplinary
+settlement
+lawsuit
+re:ethics\s+commission
