@@ -3,6 +3,29 @@
 **Filed:** 2026-07-16 · **Priority:** medium (data already repaired; this is prevention)
 **Owner:** unassigned · **Incident docs:** `~/lt/.report-data/centrepointe/fuzzy-potato-date-bug.md`
 
+> **RESOLVED 2026-07-16** (commits `8ddbf2e`, `a931e06`). Implementation notes vs. this spec:
+>
+> - The trusted-neighbor set is built differently than specced: `date_source`
+>   metadata turned out to be useless for trust (the corrupted clips carried
+>   `date_source: null`, same as everything the pipeline dated at ingest), and
+>   raw dated neighbors mutually corroborate inside a corrupted band. Anchors
+>   are instead the **longest non-decreasing-by-date subsequence** of the
+>   ID-sorted archive — a bad date can only survive by out-competing the whole
+>   archive around it. Same 90-day window (`NEIGHBOR_WINDOW_DAYS`) on top.
+> - `--audit` shipped + wired into `ingest_cron.sh` warning-only. Clips with
+>   `date_verified: true` in metadata (hand-checked out-of-order uploads) are
+>   skipped — required, because the audit immediately found 26 *genuine* late
+>   uploads (Board of Adjustment Fridays, the quarterly stormwater series).
+> - Minutes source shipped as specced (incl. bare-hash pdf names, e.g. clip 161).
+> - **The audit found 28 more misdated clips the 7/16 hand-repair missed**:
+>   8 from the same 2026-06-17 band (605 612 618 623 628 654 656 658), 7
+>   year-hallucinations elsewhere (161, 2419, 3210, 3256, 3278, 4835, 4851),
+>   2 stale interpolations (886, 890), plus clip 6791 undated. All repaired on
+>   the box same day (evidence per clip in `date_evidence` metadata; backups in
+>   `/tmp/clipdate-backup-20260716b`); 12 polluted Pass-2 summaries regenerated.
+>   Prod audit now reports **0 violations**.
+> - Tests: `tests/test_backfill_dates.py` (50 tests, hermetic).
+
 ## What happened
 
 On 2026-07-16, verification work for a Lexington Times CentrePointe investigation found **15 clips
@@ -112,9 +135,10 @@ On the `lfucg-meetings` box (`/opt/fuzzy-potato`, run as ubuntu, uv at `~/.local
 
 ## Acceptance criteria
 
-- [ ] Neighbor-window check rejects all 15 fixture bad dates when replayed against pre-fix state.
-- [ ] `--audit` reports zero violations on current prod data and doesn't flag 2048/4020/6720/6734.
-- [ ] Rejected candidates are logged with source, candidate, and neighbor context; never written.
-- [ ] Unit tests beside the script (pytest, `tests/`); hermetic — no live Granicus calls in default run.
-- [ ] (If source 2.5 added) minutes-derived dates tagged "exact" in the log and covered by a
+- [x] Neighbor-window check rejects all 15 fixture bad dates when replayed against pre-fix state.
+- [x] `--audit` reports zero violations on current prod data and doesn't flag 2048/4020/6720/6734.
+      (Zero required repairing 28 more clips + marking 26 verified late uploads — see header note.)
+- [x] Rejected candidates are logged with source, candidate, and neighbor context; never written.
+- [x] Unit tests beside the script (pytest, `tests/`); hermetic — no live Granicus calls in default run.
+- [x] (If source 2.5 added) minutes-derived dates tagged "exact" in the log and covered by a
       fixture test using a saved minutes first-page text.
