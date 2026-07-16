@@ -64,6 +64,14 @@ uv run python main.py --auto --rag --no-audio
 log "Backstop: ingest any new clips that slipped (idempotent)"
 uv run python -m rag.ingest --new
 
+# Warning-only regression guard: flag any clip whose date is wildly out of
+# sequence with its clip-ID neighbors before it can poison recency-sorted
+# queries (see ISSUE-backfill-dates-sanity-check.md — the 2026-06-17
+# hallucinated-date incident). Read-only; never aborts the ingest.
+log "Date sanity audit (warning-only)"
+uv run python backfill_dates.py --audit \
+  || log "WARNING: date audit found out-of-sequence clip dates — triage before they surface in recency queries"
+
 # Stamp per-clip YouTube video_url for jurisdictions whose meetings live on a
 # YouTube channel (e.g. Paris/CivicClerk — the box can LIST the channel even
 # though it can't DOWNLOAD). No-op (sub-second) when no source.youtube
