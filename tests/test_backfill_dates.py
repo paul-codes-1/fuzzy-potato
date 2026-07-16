@@ -226,6 +226,15 @@ class TestMinutesDateParse:
         assert date_from_text("Work Session 10/23/2008 agenda") == "2008-10-23"
 
 
+class TestMinutesFileNames:
+    def test_matches_prefixed_and_bare_hash_names(self):
+        from backfill_dates import MINUTES_FILE_RE
+        prefixed = "/DocumentViewer.php?file=lfucg_a4ef810d3f1bb3cf6c187f4e60ddab3d.pdf&view=1"
+        bare = "/DocumentViewer.php?file=a692c591dac5f47ac68fbdc7172c0709.pdf&view=1"  # clip 161
+        assert MINUTES_FILE_RE.search(prefixed).group(1) == "lfucg_a4ef810d3f1bb3cf6c187f4e60ddab3d.pdf"
+        assert MINUTES_FILE_RE.search(bare).group(1) == "a692c591dac5f47ac68fbdc7172c0709.pdf"
+
+
 class TestParseIsoDate:
     def test_accepts_iso_and_datetime_prefix(self):
         assert parse_iso_date("2008-09-18") == _d("2008-09-18")

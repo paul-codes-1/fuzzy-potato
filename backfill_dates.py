@@ -57,6 +57,9 @@ EDGE_WINDOW_DAYS = 365
 MINUTES_FETCH_DELAY_S = 1.5
 # Fancy UA strings get an HTML viewer shell from DocumentViewer.php, not the PDF.
 MINUTES_UA = "Mozilla/5.0"
+# Most minutes files are lfucg_<hash>.pdf but some old clips (e.g. 161) redirect
+# to a bare <hash>.pdf.
+MINUTES_FILE_RE = re.compile(r"file=([A-Za-z0-9_]+\.pdf)")
 
 MONTH_MAP = {
     'January': 1, 'February': 2, 'March': 3, 'April': 4,
@@ -244,7 +247,7 @@ def resolve_minutes_pdf_name(clip_id: int) -> str | None:
     except Exception:
         return None
     loc = r.headers.get("Location", "")
-    m = re.search(r"file=(lfucg_[0-9a-f]+\.pdf)", loc)
+    m = MINUTES_FILE_RE.search(loc)
     return m.group(1) if m else None
 
 
