@@ -532,10 +532,13 @@ cd __REPO__
 exec 9>/tmp/lfucg-pipeline.lock
 flock -w 7200 9
 set -a; [ -f .env ] && source .env; set +a
+# RAG SUSPENDED 2026-07-16: Chroma ingest deferred — the growing index
+# OOM-froze the box twice mid-backfill. Queue clip ids to a ledger for one
+# bulk ingest after the vector-store re-architecture (rag-capacity plan).
 for id in __IDS__; do
-  echo "==> rag.ingest --clip $id"
-  uv run python -m rag.ingest --clip "$id"
+  echo "$id" >> pending_rag_ingest.txt
 done
+echo "==> queued __IDS__ to pending_rag_ingest.txt (chroma ingest deferred)"
 echo "==> generate-index"
 uv run python main.py --generate-index
 # Full restart, NOT /admin/reload: repeated reloads after big ingest waves
