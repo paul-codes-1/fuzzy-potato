@@ -31,7 +31,7 @@ def test_http_ask_returns_429_when_rate_limited():
         assert d.allowed
 
     with patch("rag.server.ask") as mock_ask, \
-         patch("rag.server.get_chroma_collection"), \
+         patch("rag.server.get_vecstore"), \
          patch("rag.server.load_clip_metadata", return_value={}), \
          patch("rag.server.get_openai"):
         mock_ask.return_value = {"answer": "x", "sources": []}

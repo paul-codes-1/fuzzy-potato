@@ -11,7 +11,14 @@ from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
-from rag.ingest import EMBEDDING_MODEL, get_chroma_collection
+from rag.ingest import EMBEDDING_MODEL
+from rag.vecstore import (  # noqa: F401 — build_chroma_filter/_date_in_range re-exported for back-compat
+    _date_in_range,
+    as_vecstore,
+    build_chroma_filter,
+    embedding_dims,
+    get_vecstore,
+)
 from rag.prompts import (
     SYNTHESIS_SYSTEM_PROMPT,
     CHAT_SYSTEM_PROMPT,
@@ -46,10 +53,13 @@ MAX_REWRITTEN_QUERIES = 3
 SYNTHESIS_TEMPERATURE = 0.1
 SYNTHESIS_MAX_TOKENS = 2048
 
-# Chunks with cosine distance above this never reach the LLM. The collection
-# uses hnsw:space=cosine with text-embedding-3-small; relevant chunks land
-# well under this, blatant nearest-neighbor junk lands above it. Tunable per
-# deployment without a code change.
+# Chunks with cosine distance above this never reach the LLM. Both vector
+# backends (Chroma hnsw:space=cosine, sqlite-vec distance_metric=cosine)
+# return 1 − cosine similarity for text-embedding-3-small vectors; relevant
+# chunks land well under this, blatant nearest-neighbor junk lands above it.
+# Calibrated 2026-06-11 on Chroma cosine distances at 1536 dims — re-validate
+# after any RAG_EMBED_DIMS change (see rag/vecstore.py docstring). Tunable
+# per deployment without a code change.
 MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", "0.75"))
 
 NO_COVERAGE_ANSWER = (
@@ -143,44 +153,6 @@ def extract_temporal_signals(question: str) -> dict:
         signals["prefer_recent"] = True
 
     return signals
-
-
-def build_chroma_filter(filters: dict | None) -> dict | None:
-    """Build a ChromaDB where clause from filter parameters.
-
-    Note: date_after/date_before are NOT passed to ChromaDB (this version rejects
-    string comparisons on $gte/$lte). They're applied post-retrieval in Python instead.
-    """
-    if not filters:
-        return None
-
-    conditions = []
-
-    if "meeting_body" in filters:
-        conditions.append({"meeting_body": filters["meeting_body"]})
-
-    if not conditions:
-        return None
-
-    if len(conditions) == 1:
-        return conditions[0]
-
-    return {"$and": conditions}
-
-
-def _date_in_range(date_str: str, date_after: str | None, date_before: str | None) -> bool:
-    """Check if an ISO date string falls within an optional [date_after, date_before] range.
-
-    Empty/missing dates are EXCLUDED when any range is set. String comparison is
-    safe because dates are stored in ISO format (YYYY-MM-DD).
-    """
-    if not date_str:
-        return date_after is None and date_before is None
-    if date_after and date_str < date_after:
-        return False
-    if date_before and date_str > date_before:
-        return False
-    return True
 
 
 def deduplicate_results(results: dict, max_per_clip: int = 4,
@@ -293,16 +265,18 @@ def build_synthesis_messages(question: str, chunks: list[dict]) -> list[dict]:
     ]
 
 
-def _retrieve_and_prepare(question: str, collection, openai_client,
+def _retrieve_and_prepare(question: str, store, openai_client,
                           clip_metadata: dict = None, filters: dict = None,
                           top_k: int = 15) -> tuple[list[dict], list[dict]] | None:
-    """Rewrite query, embed, retrieve from ChromaDB, deduplicate, build chunks and sources.
+    """Rewrite query, embed, retrieve from the vector store, deduplicate,
+    build chunks and sources.
 
-    Returns (synthesis_chunks, sources) or None if collection is empty.
+    Returns (synthesis_chunks, sources) or None if the store is empty.
     """
     clip_metadata = clip_metadata or {}
+    store = as_vecstore(store)
 
-    total_chunks = collection.count()
+    total_chunks = store.count()
     if total_chunks == 0:
         return None
 
@@ -317,6 +291,7 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     q_response = openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=search_queries,
+        dimensions=embedding_dims(),
     )
     embeddings = [item.embedding for item in q_response.data]
 
@@ -326,14 +301,14 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     merged_filters = {**temporal, **(filters or {})}  # explicit filters win on conflicts
     if temporal:
         logger.info("Temporal signals from question: %r (prefer_recent=%s)", temporal, prefer_recent)
-    where_clause = build_chroma_filter(merged_filters)
-    # Dates are filtered in Python (this ChromaDB version rejects $gte/$lte on strings).
+    # Date filters are applied by the store (the chroma backend post-filters
+    # in Python, so a date-filtered query can return fewer than k hits).
     date_after = merged_filters.get("date_after")
     date_before = merged_filters.get("date_before")
-    # Over-fetch so post-filter still leaves a useful set
+    # Over-fetch so the store's post-filter still leaves a useful set
     fetch_multiplier = 4 if (date_after or date_before) else 1
 
-    # 4. Query ChromaDB for each rewritten query and merge results
+    # 4. Query the store for each rewritten query and merge results
     all_ids = []
     all_documents = []
     all_metadatas = []
@@ -343,41 +318,31 @@ def _retrieve_and_prepare(question: str, collection, openai_client,
     per_query_k = max(top_k, 10) * fetch_multiplier
 
     for i, embedding in enumerate(embeddings):
-        query_kwargs = {
-            "query_embeddings": [embedding],
-            "n_results": min(per_query_k, total_chunks),
-            "include": ["documents", "metadatas", "distances"],
-        }
-        if where_clause:
-            query_kwargs["where"] = where_clause
+        hits = store.query(
+            embedding,
+            k=min(per_query_k, total_chunks),
+            filters=merged_filters or None,
+        )
 
-        results = collection.query(**query_kwargs)
+        for hit in hits:
+            id_ = hit["id"]
+            if id_ in seen_ids:
+                continue
+            dist = hit["distance"]
+            # Relevance gate: nearest-neighbor search always returns
+            # *something*; far-away chunks must not reach the LLM, where
+            # they read as plausible meeting excerpts and invite fusion.
+            if dist is not None and dist > MAX_DISTANCE:
+                continue
+            seen_ids.add(id_)
+            all_ids.append(id_)
+            all_documents.append(hit["document"])
+            all_metadatas.append(hit["metadata"])
+            all_distances.append(dist)
 
-        if results["ids"] and results["ids"][0]:
-            for id_, doc, meta, dist in zip(
-                results["ids"][0], results["documents"][0],
-                results["metadatas"][0], results["distances"][0]
-            ):
-                if id_ in seen_ids:
-                    continue
-                # Relevance gate: nearest-neighbor search always returns
-                # *something*; far-away chunks must not reach the LLM, where
-                # they read as plausible meeting excerpts and invite fusion.
-                if dist is not None and dist > MAX_DISTANCE:
-                    continue
-                if (date_after or date_before) and not _date_in_range(
-                    meta.get("date", ""), date_after, date_before
-                ):
-                    continue
-                seen_ids.add(id_)
-                all_ids.append(id_)
-                all_documents.append(doc)
-                all_metadatas.append(meta)
-                all_distances.append(dist)
-
-            logger.info("  Query %d/%d %r: %d results",
-                        i + 1, len(embeddings), search_queries[i][:60],
-                        len(results["ids"][0]))
+        logger.info("  Query %d/%d %r: %d results",
+                    i + 1, len(embeddings), search_queries[i][:60],
+                    len(hits))
 
     merged = {
         "ids": [all_ids],
@@ -509,16 +474,19 @@ def verify_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]
     return answer, sources
 
 
-def ask(question: str, collection, openai_client, clip_metadata: dict = None,
+def ask(question: str, store, openai_client, clip_metadata: dict = None,
         filters: dict = None, top_k: int = 15, model: str | None = None) -> dict:
     """Full RAG Q&A: embed question, retrieve, deduplicate, synthesize.
+
+    ``store`` is a :class:`rag.vecstore.VecStore` (a bare ChromaDB collection
+    is coerced for back-compat).
 
     ``model`` defaults to None so the synthesis model is resolved from the
     RAG_SYNTHESIS_MODEL env at call time (see _synthesis_model). An explicitly
     passed ``model`` (e.g. the CLI's --model) wins over the env.
     """
     resolved_model = model or _synthesis_model()
-    result = _retrieve_and_prepare(question, collection, openai_client,
+    result = _retrieve_and_prepare(question, store, openai_client,
                                    clip_metadata, filters, top_k)
     if result is None:
         return {
@@ -651,7 +619,7 @@ def condense_question(messages: list[dict], openai_client) -> str:
     return question
 
 
-def chat(messages: list[dict], collection, openai_client,
+def chat(messages: list[dict], store, openai_client,
          clip_metadata: dict = None, anthropic_client=None,
          filters: dict = None, model_provider: str = "openai",
          top_k: int = 15) -> dict:
@@ -665,7 +633,7 @@ def chat(messages: list[dict], collection, openai_client,
     # follow-ups ("what about the vote?") still retrieve the right chunks.
     question = condense_question(messages, openai_client)
 
-    result = _retrieve_and_prepare(question, collection, openai_client,
+    result = _retrieve_and_prepare(question, store, openai_client,
                                    clip_metadata, filters, top_k)
     if result is None:
         return {
@@ -769,7 +737,7 @@ def main():
     from clients import get_openai
     openai_client = get_openai()
 
-    collection = get_chroma_collection(args.output_dir)
+    store = get_vecstore(args.output_dir)
     clip_metadata = load_clip_metadata(args.output_dir)
 
     filters = {}
@@ -782,7 +750,7 @@ def main():
 
     result = ask(
         question=args.question,
-        collection=collection,
+        store=store,
         openai_client=openai_client,
         clip_metadata=clip_metadata,
         filters=filters if filters else None,

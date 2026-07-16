@@ -1,4 +1,9 @@
-"""Ingestion pipeline: chunk existing clip outputs and store in ChromaDB."""
+"""Ingestion pipeline: chunk existing clip outputs and store in the vector store.
+
+Storage goes through the :mod:`rag.vecstore` abstraction (ChromaDB or
+sqlite-vec, selected by the ``VECTOR_BACKEND`` env var — see that module's
+docstring for the distance-semantics and dims notes).
+"""
 
 import argparse
 import json
@@ -14,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_config
+from rag.vecstore import as_vecstore, embedding_dims, get_vecstore
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMS = 1536
 # Per-jurisdiction collection name (defaults to "lfucg_meetings").
 COLLECTION_NAME = get_config().chroma_collection
 RAG_STATE_FILE = "rag_state.json"
@@ -485,6 +490,7 @@ def _embed_single(text: str, openai_client) -> list[float]:
             resp = openai_client.embeddings.create(
                 model=EMBEDDING_MODEL,
                 input=[truncated],
+                dimensions=embedding_dims(),
             )
             return resp.data[0].embedding
         except Exception as e:
@@ -496,6 +502,7 @@ def _embed_single(text: str, openai_client) -> list[float]:
     resp = openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=[text[:2000]],
+        dimensions=embedding_dims(),
     )
     return resp.data[0].embedding
 
@@ -506,6 +513,7 @@ def _embed_batch(texts: list[str], openai_client) -> list[list[float]]:
         response = openai_client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=texts,
+            dimensions=embedding_dims(),
         )
         return [item.embedding for item in response.data]
     except Exception as e:
@@ -516,10 +524,16 @@ def _embed_batch(texts: list[str], openai_client) -> list[list[float]]:
             raise
 
 
-def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int = 100):
-    """Embed chunks via OpenAI and store in ChromaDB collection."""
+def store_chunks(chunks: list[dict], store, openai_client, batch_size: int = 100):
+    """Embed chunks via OpenAI and store in the vector store.
+
+    ``store`` is a :class:`rag.vecstore.VecStore` (a bare ChromaDB
+    collection is coerced for back-compat).
+    """
     if not chunks:
         return
+
+    store = as_vecstore(store)
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
@@ -563,13 +577,13 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
             # key and fall back to granicus_clip_url() — citations unchanged.
             if chunk.get("canonical_url"):
                 meta["canonical_url"] = chunk["canonical_url"]
-            # ChromaDB metadata is scalar-only — join speaker list.
+            # Vector-store metadata is scalar-only — join speaker list.
             if chunk.get("speakers"):
                 meta["speakers"] = ", ".join(chunk["speakers"])
 
             metadatas.append(meta)
 
-        collection.upsert(
+        store.upsert_chunks(
             ids=ids,
             embeddings=embeddings,
             documents=documents,
@@ -581,32 +595,20 @@ def store_chunks(chunks: list[dict], collection, openai_client, batch_size: int 
 # Clip ingestion
 # ============================================================
 
-def ingest_clip(clip_id: int, output_dir, collection, openai_client,
-                skip_if_ingested: bool = False, rag_state: dict = None,
-                verbose: bool = False):
-    """Ingest a single clip: read its files, chunk, embed, store, and update state.
+def build_clip_chunks(clip_id: int, output_dir) -> Optional[list[dict]]:
+    """Read a clip's on-disk artifacts and produce its full chunk set.
 
-    Args:
-        rag_state: Pre-loaded RAG state dict. If provided, avoids re-reading
-                   rag_state.json on every call. State is updated in-place and
-                   saved to disk after successful ingestion.
+    Returns None when the clip has no metadata.json (never processed);
+    otherwise the (possibly empty) list of chunks. Shared by ingest_clip
+    and scripts/rebuild_vec_db.py so a rebuild re-chunks identically to
+    the incremental path.
     """
     output_dir = Path(output_dir)
-
-    if skip_if_ingested:
-        state = rag_state if rag_state is not None else load_rag_state(output_dir)
-        if clip_id in state["ingested_clips"]:
-            if verbose:
-                print(f"  Skipping clip {clip_id} (already ingested)")
-            return
-
     clip_dir = output_dir / "clips" / str(clip_id)
     metadata_path = clip_dir / "metadata.json"
 
     if not metadata_path.exists():
-        if verbose:
-            print(f"  Skipping clip {clip_id} (no metadata.json)")
-        return
+        return None
 
     with open(metadata_path) as f:
         metadata = json.load(f)
@@ -677,15 +679,46 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
                     c["transcript_source"] = transcript_source
             all_chunks.extend(transcript_chunks)
 
-    # Stamp the canonical permalink onto every chunk so it lands in ChromaDB
-    # metadata (read back by rag.query when building citation links).
+    # Stamp the canonical permalink onto every chunk so it lands in the
+    # store's metadata (read back by rag.query when building citation links).
     if canonical_url:
         for c in all_chunks:
             c["canonical_url"] = canonical_url
 
+    return all_chunks
+
+
+def ingest_clip(clip_id: int, output_dir, store, openai_client,
+                skip_if_ingested: bool = False, rag_state: dict = None,
+                verbose: bool = False):
+    """Ingest a single clip: read its files, chunk, embed, store, and update state.
+
+    Args:
+        store: A :class:`rag.vecstore.VecStore` (a bare ChromaDB collection
+               is coerced for back-compat).
+        rag_state: Pre-loaded RAG state dict. If provided, avoids re-reading
+                   rag_state.json on every call. State is updated in-place and
+                   saved to disk after successful ingestion.
+    """
+    output_dir = Path(output_dir)
+    store = as_vecstore(store)
+
+    if skip_if_ingested:
+        state = rag_state if rag_state is not None else load_rag_state(output_dir)
+        if clip_id in state["ingested_clips"]:
+            if verbose:
+                print(f"  Skipping clip {clip_id} (already ingested)")
+            return
+
+    all_chunks = build_clip_chunks(clip_id, output_dir)
+    if all_chunks is None:
+        if verbose:
+            print(f"  Skipping clip {clip_id} (no metadata.json)")
+        return
+
     if all_chunks:
         try:
-            collection.delete(where={"clip_id": clip_id})
+            store.delete_clip(clip_id)
         except Exception:
             # A failed delete means stale old-chunker chunks would sit next
             # to the fresh upsert (e.g. pre-Table-of-Motions Whisper votes
@@ -694,7 +727,7 @@ def ingest_clip(clip_id: int, output_dir, collection, openai_client,
             logger.exception("Failed to delete existing chunks for clip %s; "
                              "skipping re-ingest to avoid duplicates", clip_id)
             return
-        store_chunks(all_chunks, collection, openai_client)
+        store_chunks(all_chunks, store, openai_client)
         if verbose:
             print(f"  Ingested clip {clip_id}: {len(all_chunks)} chunks")
 
@@ -729,32 +762,18 @@ def save_rag_state(state: dict, output_dir):
 # Stats
 # ============================================================
 
-def get_stats(collection, output_dir: str = None) -> dict:
-    """Get statistics about the ChromaDB collection."""
-    total_chunks = collection.count()
+def get_stats(store, output_dir: str = None) -> dict:
+    """Get statistics about the vector store."""
+    store = as_vecstore(store)
+    total_chunks = store.count()
 
-    # Get unique clip count from rag_state (avoids fetching all metadatas)
+    # Get unique clip count from rag_state (avoids scanning the store)
     unique_clips = 0
     if output_dir:
         state = load_rag_state(output_dir)
         unique_clips = len(state.get("ingested_clips", []))
     elif total_chunks > 0:
-        # Fallback: paginate through collection
-        unique_clip_ids = set()
-        batch_size = 5000
-        offset = 0
-        while offset < total_chunks:
-            results = collection.get(
-                include=["metadatas"],
-                limit=batch_size,
-                offset=offset,
-            )
-            for meta in results["metadatas"]:
-                unique_clip_ids.add(meta.get("clip_id"))
-            if len(results["metadatas"]) < batch_size:
-                break
-            offset += batch_size
-        unique_clips = len(unique_clip_ids)
+        unique_clips = store.stats().get("unique_clips", 0)
 
     return {
         "total_chunks": total_chunks,
@@ -790,8 +809,8 @@ def main():
     output_dir = args.output_dir
 
     if args.stats:
-        collection = get_chroma_collection(output_dir)
-        stats = get_stats(collection, output_dir)
+        store = get_vecstore(output_dir)
+        stats = get_stats(store, output_dir)
         print(f"Total chunks: {stats['total_chunks']}")
         print(f"Unique clips: {stats['unique_clips']}")
         return
@@ -801,10 +820,10 @@ def main():
     from clients import get_openai
     openai_client = get_openai()
 
-    collection = get_chroma_collection(output_dir)
+    store = get_vecstore(output_dir)
 
     if args.clip:
-        ingest_clip(args.clip, output_dir, collection, openai_client, verbose=True)
+        ingest_clip(args.clip, output_dir, store, openai_client, verbose=True)
         print("Done.")
         return
 
@@ -833,7 +852,7 @@ def main():
     for i, clip_id in enumerate(clip_ids):
         print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
         try:
-            ingest_clip(clip_id, output_dir, collection, openai_client,
+            ingest_clip(clip_id, output_dir, store, openai_client,
                         skip_if_ingested=args.new, rag_state=state, verbose=True)
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -842,7 +861,7 @@ def main():
     print(f"Done. {len(clip_ids) - len(failed)} clips ingested.")
     if failed:
         print(f"Failed: {len(failed)} clips: {failed}")
-    stats = get_stats(collection, output_dir)
+    stats = get_stats(store, output_dir)
     print(f"Total chunks: {stats['total_chunks']}, Unique clips: {stats['unique_clips']}")
 
 

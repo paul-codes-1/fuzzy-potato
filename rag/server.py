@@ -32,9 +32,9 @@ from pydantic import BaseModel, field_validator
 
 from clients import get_anthropic, get_openai
 from config import get_config
-from rag.ingest import get_chroma_collection
 from rag.mcp_server import mcp_server
 from rag.query import ask, chat, load_clip_metadata
+from rag.vecstore import get_vecstore
 from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import facets as search_facets, search as search_clips, suggest as search_suggest
@@ -47,10 +47,10 @@ logging.getLogger("rag.query").setLevel(logging.INFO)
 
 OUTPUT_DIR = os.environ.get("LFUCG_OUTPUT_DIR", "./lfucg_output")
 
-# Per-process caches for things only this server needs (Chroma collection,
+# Per-process caches for things only this server needs (vector store,
 # clip metadata, computed facets). The OpenAI/Anthropic clients are cached
 # in clients.py. All three are dropped by POST /admin/reload.
-_collection = None
+_store = None
 _clip_metadata = None
 _facets_cache = None
 
@@ -76,11 +76,11 @@ def _compute_git_sha() -> str:
 _GIT_SHA = _compute_git_sha()
 
 
-def _get_collection():
-    global _collection
-    if _collection is None:
-        _collection = get_chroma_collection(OUTPUT_DIR)
-    return _collection
+def _get_store():
+    global _store
+    if _store is None:
+        _store = get_vecstore(OUTPUT_DIR)
+    return _store
 
 
 def _get_clip_metadata():
@@ -103,12 +103,12 @@ def _get_anthropic_client():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup — ChromaDB loads lazily on first request.
+    """Startup — the vector store loads lazily on first request.
 
     Also runs the MCP server's session manager for the lifetime of the
     process. The streamable-HTTP transport mounted at /mcp depends on it.
     """
-    logger.info("RAG API starting (ChromaDB will load on first request)")
+    logger.info("RAG API starting (vector store will load on first request)")
     async with mcp_server.session_manager.run():
         logger.info("MCP server mounted at /mcp")
         yield
@@ -363,13 +363,13 @@ def ask_endpoint(request: AskRequest):
 
     started = time.monotonic()
     try:
-        collection = _get_collection()
+        store = _get_store()
         openai_client = _get_openai_client()
         clip_metadata = _get_clip_metadata()
 
         result = ask(
             question=request.question,
-            collection=collection,
+            store=store,
             openai_client=openai_client,
             clip_metadata=clip_metadata,
             filters=filters if filters else None,
@@ -425,7 +425,7 @@ def chat_endpoint(request: ChatRequest):
 
     started = time.monotonic()
     try:
-        collection = _get_collection()
+        store = _get_store()
         openai_client = _get_openai_client()
         clip_metadata = _get_clip_metadata()
 
@@ -437,7 +437,7 @@ def chat_endpoint(request: ChatRequest):
 
         result = chat(
             messages=messages,
-            collection=collection,
+            store=store,
             openai_client=openai_client,
             clip_metadata=clip_metadata,
             anthropic_client=anthropic_client,
@@ -628,9 +628,9 @@ def _related_handler(clip_id: int, limit: int):
     started = time.monotonic()
     try:
         limit = max(1, min(int(limit or 5), 20))
-        collection = _get_collection()
+        store = _get_store()
         clip_metadata = _get_clip_metadata()
-        results = related_clips(clip_id, collection, clip_metadata, limit=limit)
+        results = related_clips(clip_id, store, clip_metadata, limit=limit)
         log_query_event(
             surface="http",
             endpoint="/api/related",
@@ -665,10 +665,10 @@ def related_endpoint_direct(clip_id: int, limit: int = 5):
 
 @app.get("/health")
 def health_endpoint():
-    """Lightweight health check — no ChromaDB loading."""
+    """Lightweight health check — no vector-store loading."""
     result = {"status": "ok", "jurisdiction": get_config().slug, "sha": _GIT_SHA}
-    if _collection is not None:
-        result["chunks_indexed"] = _collection.count()
+    if _store is not None:
+        result["chunks_indexed"] = _store.count()
     if _clip_metadata is not None:
         result["clips_indexed"] = len(_clip_metadata)
     return result
@@ -698,34 +698,48 @@ def _require_admin_token(request: Request) -> None:
 
 @app.post("/admin/reload")
 def admin_reload(request: Request):
-    """Drop the in-process caches (Chroma collection, clip metadata, computed
+    """Drop the in-process caches (vector store, clip metadata, computed
     facets, the SQLite search connection) so freshly-ingested data is picked
     up WITHOUT a full process restart — avoids dropping in-flight /api/ask
     calls on the 6-hourly ingest. The next request rebuilds each lazily.
     """
     _require_admin_token(request)
 
-    global _collection, _clip_metadata, _facets_cache
-    _collection = None
+    global _store, _clip_metadata, _facets_cache
+    # Close the sqlite-backend store's fd so a rebuilt/os.replace()'d vec.db
+    # is reopened by the next request (same pattern as search.db below).
+    # Best-effort: chroma stores no-op close(), mocks may lack it entirely.
+    try:
+        if _store is not None:
+            _store.close()
+    except Exception as e:
+        logger.warning("admin reload: failed to close vector store: %s", e)
+    _store = None
     _clip_metadata = None
     _facets_cache = None
     # The MCP module keeps its OWN per-process caches (same pattern, separate
     # module). Without clearing them, the MCP surface keeps serving the stale
-    # pre-reload index until a full restart — worse, its cached Collection is
+    # pre-reload index until a full restart — worse, its cached store is
     # bound to the orphaned Chroma system whose cache we clear below.
     import rag.mcp_server as _mcp_mod
 
-    _mcp_mod._collection = None
+    try:
+        if _mcp_mod._store is not None:
+            _mcp_mod._store.close()
+    except Exception as e:
+        logger.warning("admin reload: failed to close MCP vector store: %s", e)
+    _mcp_mod._store = None
     _mcp_mod._clip_metadata = None
-    # Dropping the _collection reference is NOT enough: ChromaDB keeps a
-    # process-wide SharedSystemClient (keyed by path) whose in-memory segment
-    # cache holds the HNSW index loaded at first use. A clip re-ingested by a
-    # SEPARATE process (rag.ingest in the cron) writes to disk, but this
-    # server's cached system never re-reads it — so a fresh PersistentClient
-    # here would still serve the STALE in-memory index (observed: Paris
-    # citations fell back to the Granicus URL because the re-ingested
-    # canonical_url chunks weren't visible until a full restart). Clearing the
-    # system cache forces the next _get_collection() to rebuild from disk.
+    # Dropping the _store reference is NOT enough for the chroma backend:
+    # ChromaDB keeps a process-wide SharedSystemClient (keyed by path) whose
+    # in-memory segment cache holds the HNSW index loaded at first use. A clip
+    # re-ingested by a SEPARATE process (rag.ingest in the cron) writes to
+    # disk, but this server's cached system never re-reads it — so a fresh
+    # PersistentClient here would still serve the STALE in-memory index
+    # (observed: Paris citations fell back to the Granicus URL because the
+    # re-ingested canonical_url chunks weren't visible until a full restart).
+    # Clearing the system cache forces the next _get_store() to rebuild from
+    # disk. Harmless no-op under the sqlite backend.
     try:
         from chromadb.api.shared_system_client import SharedSystemClient
 
@@ -739,7 +753,7 @@ def admin_reload(request: Request):
     except Exception as e:  # pragma: no cover - best-effort
         logger.warning("admin reload: failed to close search connections: %s", e)
     logger.info(
-        "admin reload: dropped HTTP + MCP collection/metadata/facets caches + Chroma system cache + search connections"
+        "admin reload: dropped HTTP + MCP store/metadata/facets caches + Chroma system cache + search connections"
     )
     return {"reloaded": True}
 

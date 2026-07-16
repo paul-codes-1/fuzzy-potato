@@ -320,7 +320,7 @@ class TestBuildSynthesisPrompt:
 class TestAsk:
     """Test the full ask() function with mocked dependencies."""
 
-    def test_ask_returns_answer_and_sources(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_ask_returns_answer_and_sources(self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -330,7 +330,7 @@ class TestAsk:
              "clip_id": 6669, "date": "2026-01-22", "meeting_body": "Council",
              "source": "summary", "section_type": "Key Decisions"},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
 
         # Mock the chat completion for synthesis
         mock_choice = MagicMock()
@@ -342,7 +342,7 @@ class TestAsk:
         # We also need clip metadata for title lookup
         result = ask(
             question="What about zoning?",
-            collection=chroma_collection,
+            store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={6669: {"title": "Urban County Council (1)", "date": "2026-01-22",
                                    "meeting_body": "Council"}},
@@ -352,7 +352,7 @@ class TestAsk:
         assert "sources" in result
         assert isinstance(result["sources"], list)
 
-    def test_ask_response_has_correct_structure(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_ask_response_has_correct_structure(self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -361,7 +361,7 @@ class TestAsk:
              "clip_id": 6670, "date": "2026-01-23", "meeting_body": "Committee",
              "source": "transcript", "start_time": 120.0, "end_time": 180.0},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
 
         mock_choice = MagicMock()
         mock_choice.message.content = "Parks budget was discussed."
@@ -371,7 +371,7 @@ class TestAsk:
 
         result = ask(
             question="What about parks?",
-            collection=chroma_collection,
+            store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={6670: {"title": "Committee Meeting", "date": "2026-01-23",
                                    "meeting_body": "Committee"}},
@@ -387,13 +387,9 @@ class TestAsk:
             assert "date" in source
             assert "granicus_url" in source
 
-    def test_ask_with_no_results_returns_clear_message(self, mock_openai_batch_embeddings):
-        """When collection is empty, should return a 'not enough info' answer."""
-        import chromadb
+    def test_ask_with_no_results_returns_clear_message(self, vecstore, mock_openai_batch_embeddings):
+        """When the store is empty, should return a 'not enough info' answer."""
         from rag.query import ask
-
-        client = chromadb.Client()
-        empty_collection = client.get_or_create_collection("empty_test")
 
         mock_choice = MagicMock()
         mock_choice.message.content = "Not enough information."
@@ -403,15 +399,14 @@ class TestAsk:
 
         result = ask(
             question="random query",
-            collection=empty_collection,
+            store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={},
         )
 
         assert "answer" in result
-        client.delete_collection("empty_test")
 
-    def test_ask_passes_filters_to_chromadb(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_ask_passes_filters_to_chromadb(self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -420,7 +415,7 @@ class TestAsk:
              "clip_id": 6669, "date": "2026-01-22", "meeting_body": "Council",
              "source": "summary", "section_type": "Overview"},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
 
         mock_choice = MagicMock()
         mock_choice.message.content = "Answer."
@@ -430,7 +425,7 @@ class TestAsk:
 
         result = ask(
             question="zoning",
-            collection=chroma_collection,
+            store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             filters={"meeting_body": "Council"},
             clip_metadata={6669: {"title": "Council", "date": "2026-01-22",
@@ -439,7 +434,7 @@ class TestAsk:
 
         assert "filters_applied" in result
 
-    def test_ask_calls_openai_chat_with_wellformed_messages(self, chroma_collection, mock_openai_batch_embeddings):
+    def test_ask_calls_openai_chat_with_wellformed_messages(self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -448,7 +443,7 @@ class TestAsk:
              "clip_id": 6669, "date": "2026-01-22", "meeting_body": "Council",
              "source": "summary", "section_type": "Overview"},
         ]
-        store_chunks(chunks, chroma_collection, mock_openai_batch_embeddings)
+        store_chunks(chunks, vecstore, mock_openai_batch_embeddings)
 
         mock_choice = MagicMock()
         mock_choice.message.content = "Answer."
@@ -458,7 +453,7 @@ class TestAsk:
 
         ask(
             question="test",
-            collection=chroma_collection,
+            store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={6669: {"title": "Council", "date": "2026-01-22",
                                    "meeting_body": "Council"}},
@@ -746,7 +741,7 @@ class TestChat:
 
         result = chat(
             messages=[{"role": "user", "content": "What about zoning?"}],
-            collection=mock_collection,
+            store=mock_collection,
             openai_client=mock_openai_client,
             clip_metadata=clip_metadata,
         )
@@ -768,7 +763,7 @@ class TestChat:
 
         result = chat(
             messages=[{"role": "user", "content": "test"}],
-            collection=mock_collection,
+            store=mock_collection,
             openai_client=mock_openai_client,
             clip_metadata=clip_metadata,
             model_provider="openai",
@@ -787,7 +782,7 @@ class TestChat:
 
         result = chat(
             messages=[{"role": "user", "content": "test"}],
-            collection=mock_collection,
+            store=mock_collection,
             openai_client=mock_openai_client,
             clip_metadata=clip_metadata,
             anthropic_client=mock_anthropic_client,
@@ -818,7 +813,7 @@ class TestChat:
                    return_value="What about the zoning vote?") as mock_condense:
             chat(
                 messages=messages,
-                collection=mock_collection,
+                store=mock_collection,
                 openai_client=mock_openai_client,
                 clip_metadata=clip_metadata,
             )
@@ -978,7 +973,7 @@ class TestAskCitesCorrectUrl:
         mock_client.chat.completions.create.return_value = resp
 
     def test_granicus_clip_cites_granicus_url(
-            self, chroma_collection, mock_openai_batch_embeddings):
+            self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -988,11 +983,11 @@ class TestAskCitesCorrectUrl:
              "clip_id": 6669, "date": "2026-01-22", "meeting_body": "Council",
              "source": "summary", "section_type": "Key Decisions",
              "canonical_url": "https://lfucg.granicus.com/player/clip/6669?view_id=14&redirect=true"},
-        ], chroma_collection, mock_openai_batch_embeddings)
+        ], vecstore, mock_openai_batch_embeddings)
         self._synth(mock_openai_batch_embeddings)
 
         result = ask(
-            question="zoning?", collection=chroma_collection,
+            question="zoning?", store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={6669: {"title": "Council", "date": "2026-01-22"}},
         )
@@ -1001,7 +996,7 @@ class TestAskCitesCorrectUrl:
         assert "entrytime=" in url  # the deep-link form, not the bare permalink
 
     def test_civicclerk_clip_cites_civicclerk_url(
-            self, chroma_collection, mock_openai_batch_embeddings):
+            self, vecstore, mock_openai_batch_embeddings):
         from rag.query import ask
         from rag.ingest import store_chunks
 
@@ -1011,11 +1006,11 @@ class TestAskCitesCorrectUrl:
              "source": "transcript", "start_time": 0.0, "end_time": 0.0,
              "transcript_source": "civicclerk_minutes",
              "canonical_url": "https://parisky.portal.civicclerk.com/event/322"},
-        ], chroma_collection, mock_openai_batch_embeddings)
+        ], vecstore, mock_openai_batch_embeddings)
         self._synth(mock_openai_batch_embeddings)
 
         result = ask(
-            question="budget?", collection=chroma_collection,
+            question="budget?", store=vecstore,
             openai_client=mock_openai_batch_embeddings,
             clip_metadata={5: {"title": "City Commission Meeting", "date": "2026-05-12"}},
         )

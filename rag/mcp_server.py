@@ -38,12 +38,12 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from clients import get_openai
 from config import get_config
-from rag.ingest import get_chroma_collection
 from rag.query import ask, clip_citation_url, load_clip_metadata
 from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import search as search_clips
 from rag.telemetry import log_query_event
+from rag.vecstore import get_vecstore
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +105,15 @@ SERVER_INSTRUCTIONS = (
 # Per-process caches — same pattern as rag/server.py. Reused across MCP requests
 # for the lifetime of the process; the App Runner container will warm them on
 # the first call, identical to the HTTP API.
-_collection = None
+_store = None
 _clip_metadata = None
 
 
-def _get_collection():
-    global _collection
-    if _collection is None:
-        _collection = get_chroma_collection(OUTPUT_DIR)
-    return _collection
+def _get_store():
+    global _store
+    if _store is None:
+        _store = get_vecstore(OUTPUT_DIR)
+    return _store
 
 
 def _get_clip_metadata():
@@ -224,7 +224,7 @@ def ask_meetings_impl(
     try:
         result = ask(
             question=question,
-            collection=_get_collection(),
+            store=_get_store(),
             openai_client=get_openai(),
             clip_metadata=_get_clip_metadata(),
             filters=filters or None,
@@ -381,7 +381,7 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
     try:
         results = related_clips(
             int(clip_id),
-            _get_collection(),
+            _get_store(),
             _get_clip_metadata(),
             limit=limit,
         )

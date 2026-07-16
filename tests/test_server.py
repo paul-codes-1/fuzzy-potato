@@ -16,7 +16,7 @@ class TestAskEndpoint:
 
     def test_ask_returns_200_with_valid_question(self):
         with patch("rag.server.ask") as mock_ask, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_ask.return_value = {
@@ -36,7 +36,7 @@ class TestAskEndpoint:
             assert "answer" in data
 
     def test_ask_returns_422_with_missing_question(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -48,7 +48,7 @@ class TestAskEndpoint:
 
     def test_ask_response_matches_schema(self):
         with patch("rag.server.ask") as mock_ask, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_ask.return_value = {
@@ -84,7 +84,7 @@ class TestAskEndpoint:
 
     def test_ask_passes_filters_from_request(self):
         with patch("rag.server.ask") as mock_ask, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_ask.return_value = {
@@ -120,7 +120,7 @@ class TestHealthEndpoint:
     """Test the GET /api/health endpoint."""
 
     def test_health_returns_200(self):
-        with patch("rag.server.get_chroma_collection") as mock_coll, \
+        with patch("rag.server.get_vecstore") as mock_coll, \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_collection = MagicMock()
@@ -137,7 +137,7 @@ class TestHealthEndpoint:
     def test_health_returns_chunk_and_clip_counts(self):
         import rag.server as server_module
 
-        with patch("rag.server.get_chroma_collection") as mock_coll, \
+        with patch("rag.server.get_vecstore") as mock_coll, \
              patch("rag.server.load_clip_metadata") as mock_meta, \
              patch("rag.server.get_openai"):
             mock_collection = MagicMock()
@@ -146,9 +146,9 @@ class TestHealthEndpoint:
             mock_meta.return_value = {6669: {}, 6670: {}, 6671: {}}
 
             # Directly set the cached globals so health endpoint sees them
-            old_coll = server_module._collection
+            old_coll = server_module._store
             old_meta = server_module._clip_metadata
-            server_module._collection = mock_collection
+            server_module._store = mock_collection
             server_module._clip_metadata = {6669: {}, 6670: {}, 6671: {}}
             try:
                 from fastapi.testclient import TestClient
@@ -159,7 +159,7 @@ class TestHealthEndpoint:
                 assert data["chunks_indexed"] == 5000
                 assert data["clips_indexed"] == 3
             finally:
-                server_module._collection = old_coll
+                server_module._store = old_coll
                 server_module._clip_metadata = old_meta
 
 
@@ -172,7 +172,7 @@ class TestDirectRoutes:
 
     def test_direct_ask_route_returns_200(self):
         with patch("rag.server.ask") as mock_ask, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_ask.return_value = {
@@ -191,7 +191,7 @@ class TestDirectRoutes:
             assert response.json()["answer"] == "Direct route answer"
 
     def test_direct_health_route_returns_200(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -204,7 +204,7 @@ class TestDirectRoutes:
 
     def test_direct_chat_route_returns_200(self):
         with patch("rag.server.chat") as mock_chat, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_chat.return_value = {
@@ -231,13 +231,13 @@ class TestDirectRoutes:
         """Health check before any request loads the collection should still return ok."""
         import rag.server as server_module
 
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             # Reset the cached globals to simulate pre-load state
-            old_coll = server_module._collection
+            old_coll = server_module._store
             old_meta = server_module._clip_metadata
-            server_module._collection = None
+            server_module._store = None
             server_module._clip_metadata = None
             try:
                 from fastapi.testclient import TestClient
@@ -248,7 +248,7 @@ class TestDirectRoutes:
                 # Should NOT have chunks_indexed since collection not loaded
                 assert "chunks_indexed" not in data
             finally:
-                server_module._collection = old_coll
+                server_module._store = old_coll
                 server_module._clip_metadata = old_meta
 
 
@@ -261,7 +261,7 @@ class TestChatEndpoint:
 
     def test_chat_returns_200_with_valid_messages(self):
         with patch("rag.server.chat") as mock_chat, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_chat.return_value = {
@@ -286,7 +286,7 @@ class TestChatEndpoint:
             assert data["content"] == "Test answer"
 
     def test_chat_returns_422_with_empty_messages(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -299,7 +299,7 @@ class TestChatEndpoint:
             assert response.status_code == 422
 
     def test_chat_returns_422_with_missing_messages(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -310,7 +310,7 @@ class TestChatEndpoint:
             assert response.status_code == 422
 
     def test_chat_returns_422_with_invalid_model_provider(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -324,7 +324,7 @@ class TestChatEndpoint:
             assert response.status_code == 422
 
     def test_chat_returns_422_with_invalid_role(self):
-        with patch("rag.server.get_chroma_collection"), \
+        with patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             from rag.server import app
@@ -338,7 +338,7 @@ class TestChatEndpoint:
 
     def test_chat_response_matches_schema(self):
         with patch("rag.server.chat") as mock_chat, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_chat.return_value = {
@@ -377,7 +377,7 @@ class TestChatEndpoint:
 
     def test_chat_with_filters(self):
         with patch("rag.server.chat") as mock_chat, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_chat.return_value = {
@@ -408,7 +408,7 @@ class TestChatEndpoint:
 
     def test_direct_chat_route(self):
         with patch("rag.server.chat") as mock_chat, \
-             patch("rag.server.get_chroma_collection"), \
+             patch("rag.server.get_vecstore"), \
              patch("rag.server.load_clip_metadata", return_value={}), \
              patch("rag.server.get_openai"):
             mock_chat.return_value = {
@@ -463,7 +463,7 @@ class TestAdminReload:
         import rag.server as srv
 
         # Prime the in-process caches so we can prove they get dropped.
-        srv._collection = object()
+        srv._store = object()
         srv._clip_metadata = {"x": 1}
 
         with patch(
@@ -480,7 +480,7 @@ class TestAdminReload:
         # PersistentClient re-reads re-ingested chunks from disk.
         mock_clear.assert_called_once()
         mock_close.assert_called_once()
-        assert srv._collection is None
+        assert srv._store is None
         assert srv._clip_metadata is None
 
 

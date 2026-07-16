@@ -1535,7 +1535,7 @@ Guidelines:
         """Re-embed a set of clips into the RAG vector store (best-effort)."""
         try:
             from rag.ingest import (ingest_clip as rag_ingest_clip,
-                                    get_chroma_collection, load_rag_state,
+                                    get_vecstore, load_rag_state,
                                     save_rag_state)
             from clients import get_openai
         except ImportError:
@@ -1543,13 +1543,13 @@ Guidelines:
                      "(run: uv sync --extra rag)", "WARNING")
             return
         try:
-            collection = get_chroma_collection(str(self.output_dir))
+            store = get_vecstore(str(self.output_dir))
             openai_client = get_openai()
             state = load_rag_state(self.output_dir)
             # ingest_clip deletes the clip's existing chunks before storing
             # (skip_if_ingested defaults False), so this re-embeds cleanly.
             for clip_id in clip_ids:
-                rag_ingest_clip(clip_id, self.output_dir, collection,
+                rag_ingest_clip(clip_id, self.output_dir, store,
                                 openai_client, rag_state=state,
                                 verbose=self.verbose)
             save_rag_state(state, self.output_dir)
@@ -1967,10 +1967,10 @@ Guidelines:
             # RAG ingestion (if enabled)
             if getattr(self, 'rag_enabled', False):
                 try:
-                    from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection
+                    from rag.ingest import ingest_clip as rag_ingest_clip, get_vecstore
                     from clients import get_openai
-                    collection = get_chroma_collection(str(self.output_dir))
-                    rag_ingest_clip(clip_id, self.output_dir, collection, get_openai(), verbose=self.verbose)
+                    store = get_vecstore(str(self.output_dir))
+                    rag_ingest_clip(clip_id, self.output_dir, store, get_openai(), verbose=self.verbose)
                     self.log(f"RAG: Ingested clip {clip_id}")
                 except ImportError:
                     self.log("RAG dependencies not installed, skipping ingestion", "WARNING")
@@ -2605,11 +2605,11 @@ Examples:
     # Handle rebuild-rag mode
     if args.rebuild_rag:
         try:
-            from rag.ingest import ingest_clip as rag_ingest_clip, get_chroma_collection, save_rag_state
+            from rag.ingest import ingest_clip as rag_ingest_clip, get_vecstore, save_rag_state
             from clients import get_openai
 
             openai_client = get_openai()
-            collection = get_chroma_collection(str(pipeline.output_dir))
+            store = get_vecstore(str(pipeline.output_dir))
 
             # Clear existing state
             state = {"ingested_clips": []}
@@ -2629,11 +2629,11 @@ Examples:
             print(f"Rebuilding RAG index for {len(clip_ids)} clips...")
             for i, clip_id in enumerate(clip_ids):
                 print(f"[{i + 1}/{len(clip_ids)}] Clip {clip_id}")
-                rag_ingest_clip(clip_id, pipeline.output_dir, collection, openai_client,
+                rag_ingest_clip(clip_id, pipeline.output_dir, store, openai_client,
                                 rag_state=state, verbose=True)
 
             from rag.ingest import get_stats
-            stats = get_stats(collection)
+            stats = get_stats(store)
             print(f"\nRAG rebuild complete: {stats['total_chunks']} chunks from {stats['unique_clips']} clips")
         except ImportError:
             print("Error: RAG dependencies not installed. Run: uv sync --extra rag")

@@ -19,10 +19,10 @@ from rag import mcp_server as mcp_module
 @pytest.fixture(autouse=True)
 def _reset_caches():
     """Each test starts with cold module-level caches."""
-    mcp_module._collection = None
+    mcp_module._store = None
     mcp_module._clip_metadata = None
     yield
-    mcp_module._collection = None
+    mcp_module._store = None
     mcp_module._clip_metadata = None
 
 
@@ -77,7 +77,7 @@ class TestAskMeetings:
 
     def test_filters_passed_through(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -98,7 +98,7 @@ class TestAskMeetings:
 
     def test_no_filters_passes_none(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -109,7 +109,7 @@ class TestAskMeetings:
 
     def test_underlying_exception_caught(self):
         with patch.object(mcp_module, "ask", side_effect=RuntimeError("boom")), \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             result = mcp_module.ask_meetings_impl(question="hi")
@@ -119,7 +119,7 @@ class TestAskMeetings:
 
     def test_response_shape(self):
         with patch.object(mcp_module, "ask") as mock_ask, \
-             patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+             patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "get_openai", return_value=MagicMock()):
             mock_ask.return_value = {
@@ -208,7 +208,7 @@ class TestSearchMeetings:
 
 class TestFindRelatedClips:
     def test_decorates_with_urls(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips") as mock_related:
             mock_related.return_value = [
@@ -221,14 +221,14 @@ class TestFindRelatedClips:
             assert result["results"][0]["markdown_url"].endswith("/data/clips/7000/clip.md")
 
     def test_limit_clamped_high(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips", return_value=[]) as mock_related:
             mcp_module.find_related_clips_impl(clip_id=6669, limit=999)
             assert mock_related.call_args.kwargs["limit"] == 20
 
     def test_underlying_exception_caught(self):
-        with patch.object(mcp_module, "_get_collection", return_value=MagicMock()), \
+        with patch.object(mcp_module, "_get_store", return_value=MagicMock()), \
              patch.object(mcp_module, "_get_clip_metadata", return_value={}), \
              patch.object(mcp_module, "related_clips", side_effect=RuntimeError("boom")):
             result = mcp_module.find_related_clips_impl(clip_id=6669)
