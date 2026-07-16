@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "name": "Paris Meeting Archive",
+  "summary": "Searchable archive of City of Paris, Kentucky government meetings \u2014 official agendas, minutes, AI summaries, and structured facts. All public surfaces are CORS-open with no auth or signup.",
+  "agent_guide": "https://paris.civicmemory.news/skill.md",
+  "trustworthy": true,
+  "operator": {
+    "name": "Paul Oliva",
+    "role": "Founder & operator",
+    "kind": "independent individual; civic-tech project",
+    "is_not": [
+      "government agency",
+      "corporate newsroom"
+    ],
+    "contact": "editor@civicmemory.news"
+  },
+  "content_provenance": {
+    "sources": "Public primary sources only: the jurisdiction's official agenda and minutes documents, published through its CivicClerk portal.",
+    "every_item_links_to_its_source": true
+  },
+  "ai_disclosure": {
+    "disclosed_on_every_surface": true,
+    "meeting_records": "Document-driven: GPT-4o extracts structured facts and Anthropic Claude Sonnet writes the narrative summary from the official minutes/agenda. No verbatim transcript."
+  },
+  "verification": {
+    "meetings": "Each answer cites a clip_id; open https://paris.civicmemory.news/meeting/{clip_id} for the official agenda & minutes (and meeting-video link where available).",
+    "guidance": "We are a secondary source. For legal or official use, cite the underlying primary source we link, not us."
+  },
+  "sites": [
+    {
+      "domain": "paris.civicmemory.news",
+      "role": "City of Paris, Kentucky meeting archive + RAG",
+      "llms_txt": "https://paris.civicmemory.news/llms.txt"
+    }
+  ],
+  "mcp_servers": [
+    {
+      "name": "Paris Meeting Archive",
+      "url": "https://paris.civicmemory.news/api/mcp",
+      "transport": "streamable-http",
+      "auth": "none",
+      "tools": [
+        "ask_meetings",
+        "search_meetings",
+        "find_related_clips",
+        "get_meeting_clip",
+        "list_recent_meetings"
+      ]
+    }
+  ],
+  "umbrella": {
+    "name": "Civic Memory",
+    "site": "https://civicmemory.news"
+  },
+  "license": "Built from public primary sources. Attribution to Paris Meeting Archive is appreciated; verify against the linked originals for high-stakes use.",
+  "corrections": "editor@civicmemory.news",
+  "contact": "editor@civicmemory.news"
+}
