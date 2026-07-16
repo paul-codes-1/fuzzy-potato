@@ -155,6 +155,24 @@ def _rate_limited(tool: str, *, query: Optional[str] = None,
     }
 
 
+# When set (RAG_SUSPENDED=1 in the box .env), the two Chroma-backed tools
+# return a maintenance notice instead of loading the vector store — lets the
+# MCP connector register and the SQLite-backed tools (search_meetings,
+# get_meeting_clip, list_recent_meetings) keep working while the vector
+# store is offline (see RAG_CAPACITY_PLAN.md).
+def _rag_suspended_notice() -> Optional[dict]:
+    if os.environ.get("RAG_SUSPENDED", "").strip() in ("1", "true", "yes"):
+        return {
+            "error": "temporarily_offline",
+            "message": (
+                "Semantic Q&A is temporarily offline for a vector-store "
+                "rebuild. Use search_meetings (keyword search) instead — "
+                "it covers the full archive."
+            ),
+        }
+    return None
+
+
 # ---------- tool implementations ----------
 
 
@@ -180,6 +198,10 @@ def ask_meetings_impl(
         date_after: Optional inclusive YYYY-MM-DD lower bound.
         date_before: Optional inclusive YYYY-MM-DD upper bound.
     """
+    suspended = _rag_suspended_notice()
+    if suspended is not None:
+        return suspended
+
     question = (question or "").strip()
     if not question:
         return {"error": "question must not be empty"}
@@ -344,6 +366,10 @@ def find_related_clips_impl(clip_id: int, limit: int = 5) -> dict:
         clip_id: The Granicus clip ID to find neighbors for.
         limit: Max results, 1-20, default 5.
     """
+    suspended = _rag_suspended_notice()
+    if suspended is not None:
+        return suspended
+
     limit = max(1, min(int(limit or 5), 20))
     filters = {"clip_id": int(clip_id), "limit": limit}
 
