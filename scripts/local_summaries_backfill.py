@@ -133,7 +133,12 @@ def fetch_inputs(host: str, clip: dict) -> Path:
     cid = clip["clip_id"]
     workdir = WORKROOT / "work" / str(cid)
     workdir.mkdir(parents=True, exist_ok=True)
-    inc = ["--include=/metadata.json"]
+    # Also fetch facts/summary if they exist so the box_already_done skip
+    # actually works (e.g. clips rescued via GPT-4o on the box after failing
+    # locally — without these two includes the skip check never fires and we
+    # burn GPU re-extracting them).
+    inc = ["--include=/metadata.json", "--include=/extracted_facts.json",
+           "--include=/summary.txt"]
     for k in ("transcript", "transcript_segments", "agenda_txt", "minutes_txt"):
         if clip["files"].get(k):
             inc.append(f"--include=/{clip['files'][k]}")

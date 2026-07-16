@@ -255,25 +255,72 @@ def download_audio(clip: dict, workdir: Path) -> Path | None:
     return out
 
 
-def transcribe(audio: Path, workdir: Path) -> dict:
-    result_path = workdir / f"{audio.stem}.json"
-    if result_path.exists() and result_path.stat().st_size > 0:
-        # Retry after a QA failure: reuse the existing Whisper output and
-        # let the silence-hallucination repair re-run on it.
-        return json.loads(result_path.read_text())
+# Whisper very long recordings in pieces: a single ~6h file balloons MLX's
+# unified-memory allocation enough to take down the whole process group
+# (observed twice on clip 2293, 348 min). mp3 splits cleanly on frame
+# boundaries with -c copy; segments are offset-merged by measured chunk
+# duration. With condition-on-previous-text off, each 30s window is
+# independent anyway, so a hard cut costs at most a word at each seam.
+CHUNK_SECONDS = 7200
+
+
+def _run_mlx_whisper(audio: Path, out_dir: Path) -> dict:
     res = subprocess.run(
         ["mlx_whisper", str(audio),
          "--model", MLX_MODEL, "--language", "en",
          "--condition-on-previous-text", "False",
          "--hallucination-silence-threshold", "2",
-         "--output-dir", str(workdir), "--output-format", "json",
+         "--output-dir", str(out_dir), "--output-format", "json",
          "--verbose", "False"],
         capture_output=True, text=True, timeout=WHISPER_TIMEOUT,
     )
+    result_path = out_dir / f"{audio.stem}.json"
     if res.returncode != 0 or not result_path.exists():
         tail = (res.stderr or res.stdout).strip().splitlines()[-3:]
         raise RuntimeError("whisper_failed: " + " | ".join(tail))
     return json.loads(result_path.read_text())
+
+
+def _transcribe_chunked(audio: Path, workdir: Path, result_path: Path) -> dict:
+    chunk_dir = workdir / "chunks"
+    chunk_dir.mkdir(exist_ok=True)
+    res = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-y", "-i", str(audio),
+         "-f", "segment", "-segment_time", str(CHUNK_SECONDS), "-c", "copy",
+         str(chunk_dir / "chunk_%03d.mp3")],
+        capture_output=True, text=True, timeout=1800,
+    )
+    chunks = sorted(chunk_dir.glob("chunk_*.mp3"))
+    if res.returncode != 0 or not chunks:
+        raise RuntimeError("chunk_split_failed: " + (res.stderr or "").strip()[-200:])
+    segments: list[dict] = []
+    texts: list[str] = []
+    offset = 0.0
+    for ch in chunks:
+        j = _run_mlx_whisper(ch, chunk_dir)
+        texts.append((j.get("text") or "").strip())
+        for s in j.get("segments", []):
+            segments.append({
+                "start": s["start"] + offset, "end": s["end"] + offset,
+                "text": s.get("text", ""),
+                "no_speech_prob": s.get("no_speech_prob", 0.0),
+            })
+        offset += ffprobe_duration(ch) or CHUNK_SECONDS
+    result = {"text": " ".join(t for t in texts if t), "segments": segments}
+    result_path.write_text(json.dumps(result))
+    shutil.rmtree(chunk_dir, ignore_errors=True)
+    return result
+
+
+def transcribe(audio: Path, workdir: Path, duration: float | None) -> dict:
+    result_path = workdir / f"{audio.stem}.json"
+    if result_path.exists() and result_path.stat().st_size > 0:
+        # Retry after a QA failure: reuse the existing Whisper output and
+        # let the silence-hallucination repair re-run on it.
+        return json.loads(result_path.read_text())
+    if duration and duration > CHUNK_SECONDS * 1.25:
+        return _transcribe_chunked(audio, workdir, result_path)
+    return _run_mlx_whisper(audio, workdir)
 
 
 def region_mean_volume(audio: Path, start: float, end: float) -> float | None:
@@ -414,8 +461,9 @@ def cmd_run(host: str, max_clips: int, keep_audio: bool, retry_failed: bool,
                 audio, workdir, staged = prep["audio"], prep["workdir"], prep["staged"]
                 duration, t0 = prep["duration"], prep["t0"]
 
-                log(f"[{i}/{len(todo)}] whisper {label} ({(duration or 0)/60:.0f} min audio)")
-                result = transcribe(audio, workdir)
+                log(f"[{i}/{len(todo)}] whisper {label} ({(duration or 0)/60:.0f} min audio)"
+                    + (" [chunked]" if duration and duration > CHUNK_SECONDS * 1.25 else ""))
+                result = transcribe(audio, workdir, duration)
                 raw_segments, repair_notes = repair_silence_hallucinations(
                     result.get("segments", []), audio, duration)
                 segments = [
@@ -490,13 +538,12 @@ for id in __IDS__; do
 done
 echo "==> generate-index"
 uv run python main.py --generate-index
-if [ -n "${RELOAD_TOKEN:-}" ] && curl -fsS -m 10 -X POST \
-     -H "X-Reload-Token: $RELOAD_TOKEN" http://127.0.0.1:8000/admin/reload >/dev/null; then
-  echo "==> RAG API caches reloaded"
-else
-  echo "==> reload hook unavailable — restarting ${RAG_SERVICE:-lfucg-rag}"
-  sudo systemctl restart "${RAG_SERVICE:-lfucg-rag}"
-fi
+# Full restart, NOT /admin/reload: repeated reloads after big ingest waves
+# leak the old Chroma allocation (glibc arenas never return to the OS) —
+# uvicorn crept to 12.7GB and globally OOM-froze the box on 2026-07-16.
+# A restart is sub-second on the co-located box and resets RSS.
+echo "==> restarting ${RAG_SERVICE:-lfucg-rag} (fresh RSS)"
+sudo systemctl restart "${RAG_SERVICE:-lfucg-rag}"
 echo "==> syncing per-clip data to S3"
 bash deploy/lightsail/sync_data_s3.sh
 if [ -n "${CLOUDFRONT_DISTRIBUTION_ID:-}" ]; then
