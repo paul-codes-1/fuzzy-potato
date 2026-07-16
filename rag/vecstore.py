@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import struct
 import threading
 from typing import Optional, Sequence
@@ -70,6 +71,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMBED_DIMS = 1536
 VEC_DB_FILENAME = "vec.db"
+
+# Canonical shape for date_after/date_before filter values. Malformed dates
+# DIVERGE between backends (chroma's string post-filter drops everything;
+# sqlite's _date_to_int coerces to 0 and would silently no-op the bound), so
+# the request surfaces (rag/server.py models, rag/mcp_server.py tool impls)
+# reject anything that doesn't match BEFORE a filter reaches a store.
+ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Metadata keys with their own filterable columns in the sqlite backend.
 # Everything else lives only in the metadata JSON blob.
@@ -304,6 +312,10 @@ class SqliteVecStore(VecStore):
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
         conn.execute("PRAGMA journal_mode=WAL")
+        # Cross-process writers exist (ledger drain / cron ingest against the
+        # live vec.db while the server reads) — wait out short lock windows
+        # instead of surfacing an immediate SQLITE_BUSY.
+        conn.execute("PRAGMA busy_timeout=5000")
         self._conn = conn
 
         requested_dims = int(dims) if dims else embedding_dims()
@@ -549,10 +561,16 @@ class SqliteVecStore(VecStore):
         }
 
     def close(self) -> None:
-        try:
-            self._conn.close()
-        except Exception:  # pragma: no cover - already closed
-            pass
+        # Take the store lock so /admin/reload (every ~6h from cron) can't
+        # close the connection under an in-flight query from another thread
+        # (FastAPI threadpool / MCP anyio workers) — close waits for the
+        # current statement to finish, and later calls on the stale store
+        # fail cleanly instead of racing a teardown.
+        with self._lock:
+            try:
+                self._conn.close()
+            except Exception:  # pragma: no cover - already closed
+                pass
 
 
 def vec_db_path(output_dir: str) -> str:

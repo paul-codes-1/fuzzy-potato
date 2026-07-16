@@ -50,6 +50,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 
+from config import get_config  # noqa: E402
 from rag.ingest import build_clip_chunks, store_chunks  # noqa: E402
 from rag.vecstore import SqliteVecStore, embedding_dims, vec_db_path  # noqa: E402
 
@@ -58,6 +59,41 @@ EMBED_COST_PER_MTOK = 0.02
 
 STATE_FILENAME = "vec.db.rebuild_state.json"
 LEDGER_FILENAME = "pending_rag_ingest.txt"
+
+# How long a ledger drain waits for the box's shared pipeline flock before
+# giving up (an ingest cron catch-up run can hold it for a while).
+LOCK_WAIT_SECONDS = 600
+
+
+def pipeline_lock_path() -> str:
+    """The same per-jurisdiction flock the box crons take
+    (deploy/lightsail/crontab.txt: /usr/bin/flock -n /tmp/<slug>-pipeline.lock ...)."""
+    return f"/tmp/{get_config().slug}-pipeline.lock"
+
+
+def acquire_pipeline_lock(lock_path: str, timeout: int = LOCK_WAIT_SECONDS):
+    """flock-with-wait on the crons' shared lock file.
+
+    The ledger drain writes into the LIVE vec.db, so it must not overlap
+    an ingest cron (which also writes vec.db and calls /admin/reload).
+    Returns the open file handle — hold it for the life of the run.
+    """
+    import fcntl
+
+    fh = open(lock_path, "w")
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except OSError:
+            if time.monotonic() >= deadline:
+                fh.close()
+                raise SystemExit(
+                    f"Could not acquire {lock_path} within {timeout}s — "
+                    "an ingest cron is likely running; retry later."
+                )
+            time.sleep(5)
 
 # Per-clip text artifacts that feed the chunkers (metadata.json "files" keys).
 _TEXT_FILE_KEYS = ("summary_txt", "extracted_facts", "minutes_txt",
@@ -144,7 +180,13 @@ def ingest_into(store: SqliteVecStore, output_dir: Path, clip_ids: list[int],
             if chunks is None:
                 print(f"[{i + 1}/{len(clip_ids)}] Clip {cid}: no metadata.json, skipping")
             elif not chunks:
-                print(f"[{i + 1}/{len(clip_ids)}] Clip {cid}: 0 chunks")
+                # A clip whose artifacts regressed to nothing chunkable must
+                # not keep serving its OLD chunks (matters on the ledger
+                # path, which writes into the live vec.db; a no-op on the
+                # fresh-rebuild path).
+                store.delete_clip(cid)
+                print(f"[{i + 1}/{len(clip_ids)}] Clip {cid}: 0 chunks "
+                      "(cleared any existing)")
             else:
                 # Delete-before-reingest: resume-safety if a prior run died
                 # mid-clip (same invariant as rag.ingest.ingest_clip).
@@ -296,7 +338,14 @@ def main() -> int:
 
     if args.from_ledger is not None:
         ledger_path = Path(args.from_ledger) if args.from_ledger else output_dir / LEDGER_FILENAME
-        return run_ledger_drain(output_dir, ledger_path, dims, openai_client)
+        # The drain writes into the LIVE vec.db — take the same flock the
+        # box crons use so it can't overlap an ingest run. (The full
+        # rebuild path writes only vec.db.tmp, so it doesn't need this.)
+        lock_fh = acquire_pipeline_lock(pipeline_lock_path())
+        try:
+            return run_ledger_drain(output_dir, ledger_path, dims, openai_client)
+        finally:
+            lock_fh.close()
 
     return run_rebuild(output_dir, dims, args.max, openai_client)
 

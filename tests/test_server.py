@@ -586,3 +586,84 @@ class TestHealthSha:
         data = client.get("/api/health").json()
         assert "sha" in data
         assert isinstance(data["sha"], str) and data["sha"]
+
+
+# ============================================================
+# N+3. Date-filter validation (backends diverge on malformed dates)
+# ============================================================
+
+
+class TestDateFilterValidation:
+    """Non-YYYY-MM-DD date filters 422 at the model boundary — the sqlite
+    vector backend would silently no-op a malformed bound while chroma's
+    string post-filter would drop everything."""
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+
+        from rag.server import app
+
+        return TestClient(app)
+
+    def test_ask_rejects_malformed_dates(self):
+        client = self._client()
+        for bad in ("July 2025", "2025", "01/15/2026", "2025-1-5"):
+            resp = client.post("/api/ask", json={
+                "question": "zoning?", "date_after": bad,
+            })
+            assert resp.status_code == 422, bad
+        resp = client.post("/api/ask", json={
+            "question": "zoning?", "date_before": "last year",
+        })
+        assert resp.status_code == 422
+
+    def test_chat_rejects_malformed_dates(self):
+        client = self._client()
+        resp = client.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "zoning?"}],
+            "date_after": "2025/01/01",
+        })
+        assert resp.status_code == 422
+
+    def test_search_rejects_malformed_dates(self):
+        client = self._client()
+        resp = client.post("/api/search", json={
+            "q": "zoning", "date_before": "notadate",
+        })
+        assert resp.status_code == 422
+
+    def test_valid_dates_pass_validation(self):
+        with patch("rag.server.ask") as mock_ask, \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.get_openai"):
+            mock_ask.return_value = {
+                "answer": "ok", "sources": [], "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+            client = self._client()
+            resp = client.post("/api/ask", json={
+                "question": "zoning?",
+                "date_after": "2025-01-01",
+                "date_before": "2025-12-31",
+            })
+            assert resp.status_code == 200
+            assert mock_ask.call_args.kwargs["filters"] == {
+                "date_after": "2025-01-01", "date_before": "2025-12-31",
+            }
+
+    def test_empty_date_strings_normalize_to_no_filter(self):
+        with patch("rag.server.ask") as mock_ask, \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.get_openai"):
+            mock_ask.return_value = {
+                "answer": "ok", "sources": [], "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+            client = self._client()
+            resp = client.post("/api/ask", json={
+                "question": "zoning?", "date_after": "  ", "date_before": "",
+            })
+            assert resp.status_code == 200
+            assert mock_ask.call_args.kwargs["filters"] is None

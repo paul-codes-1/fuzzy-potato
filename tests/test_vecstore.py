@@ -406,3 +406,72 @@ class TestRebuildScript:
             assert store.get_chunks(filters={"clip_id": 6669})
         finally:
             store.close()
+
+
+# ============================================================
+# Concurrency: /admin/reload closing under in-flight queries
+# ============================================================
+
+
+@needs_sqlite_vec
+class TestCloseUnderLoad:
+    def test_close_waits_for_inflight_query(self, tmp_path):
+        """close() takes the store lock, so an /admin/reload can't tear the
+        connection down mid-statement under a FastAPI/MCP worker thread."""
+        import threading
+
+        s = SqliteVecStore(str(tmp_path / "vec.db"), dims=DIMS)
+        _seed(s)
+
+        # Simulate an in-flight query holding the store lock.
+        assert s._lock.acquire(timeout=1)
+        closer = threading.Thread(target=s.close)
+        closer.start()
+        closer.join(timeout=0.3)
+        try:
+            assert closer.is_alive(), "close() must block behind the query lock"
+        finally:
+            s._lock.release()
+        closer.join(timeout=5)
+        assert not closer.is_alive()
+
+    def test_query_after_close_fails_cleanly(self, tmp_path):
+        import sqlite3
+
+        s = SqliteVecStore(str(tmp_path / "vec.db"), dims=DIMS)
+        _seed(s)
+        s.close()
+        with pytest.raises(sqlite3.ProgrammingError):
+            s.query(QUERY, k=1)
+
+
+# ============================================================
+# scripts/rebuild_vec_db.py — pipeline flock for the ledger drain
+# ============================================================
+
+
+class TestPipelineLock:
+    def test_second_acquire_times_out(self, tmp_path):
+        from scripts.rebuild_vec_db import acquire_pipeline_lock
+
+        lock_path = str(tmp_path / "pipeline.lock")
+        holder = acquire_pipeline_lock(lock_path, timeout=5)
+        try:
+            with pytest.raises(SystemExit, match="Could not acquire"):
+                acquire_pipeline_lock(lock_path, timeout=0)
+        finally:
+            holder.close()
+
+    def test_reacquire_after_release(self, tmp_path):
+        from scripts.rebuild_vec_db import acquire_pipeline_lock
+
+        lock_path = str(tmp_path / "pipeline.lock")
+        holder = acquire_pipeline_lock(lock_path, timeout=5)
+        holder.close()  # releases the flock
+        second = acquire_pipeline_lock(lock_path, timeout=0)
+        second.close()
+
+    def test_lock_path_is_per_jurisdiction(self):
+        from scripts.rebuild_vec_db import pipeline_lock_path
+
+        assert pipeline_lock_path() == "/tmp/lfucg-pipeline.lock"

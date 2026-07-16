@@ -43,7 +43,7 @@ from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import search as search_clips
 from rag.telemetry import log_query_event
-from rag.vecstore import get_vecstore
+from rag.vecstore import ISO_DATE_RE, get_vecstore
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +173,16 @@ def _rag_suspended_notice() -> Optional[dict]:
     return None
 
 
+def _bad_date(date_after: Optional[str], date_before: Optional[str]) -> Optional[dict]:
+    """Reject non-YYYY-MM-DD date filters — malformed dates behave
+    differently per vector backend (see rag.vecstore.ISO_DATE_RE), so they
+    fail loudly here like the HTTP models' 422 does."""
+    for label, value in (("date_after", date_after), ("date_before", date_before)):
+        if value and not ISO_DATE_RE.match(value.strip()):
+            return {"error": f"{label} must be YYYY-MM-DD"}
+    return None
+
+
 # ---------- tool implementations ----------
 
 
@@ -207,6 +217,9 @@ def ask_meetings_impl(
         return {"error": "question must not be empty"}
     if len(question) > 2000:
         return {"error": "question must be under 2000 characters"}
+    bad = _bad_date(date_after, date_before)
+    if bad is not None:
+        return bad
 
     filters = {}
     if meeting_body:
@@ -292,6 +305,9 @@ def search_meetings_impl(
         return {"error": "q must not be empty"}
     if len(q) > 200:
         return {"error": "q must be under 200 characters"}
+    bad = _bad_date(date_after, date_before)
+    if bad is not None:
+        return bad
     limit = max(1, min(int(limit or 25), 100))
 
     filters = {

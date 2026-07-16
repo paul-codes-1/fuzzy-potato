@@ -34,7 +34,7 @@ from clients import get_anthropic, get_openai
 from config import get_config
 from rag.mcp_server import mcp_server
 from rag.query import ask, chat, load_clip_metadata
-from rag.vecstore import get_vecstore
+from rag.vecstore import ISO_DATE_RE, get_vecstore
 from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
 from rag.search import facets as search_facets, search as search_clips, suggest as search_suggest
@@ -239,6 +239,24 @@ app.add_middleware(
 )
 
 
+def _validate_iso_date(v: Optional[str]) -> Optional[str]:
+    """Shared date_after/date_before validator for the request models.
+
+    Malformed dates behave DIFFERENTLY per vector backend (chroma's string
+    post-filter drops everything; sqlite's integer coercion no-ops the
+    bound), so reject anything that isn't YYYY-MM-DD with a 422 before a
+    filter reaches a store. Empty strings normalize to None (no filter).
+    """
+    if v is None:
+        return v
+    v = v.strip()
+    if not v:
+        return None
+    if not ISO_DATE_RE.match(v):
+        raise ValueError("dates must be YYYY-MM-DD")
+    return v
+
+
 class AskRequest(BaseModel):
     question: str
     meeting_body: Optional[str] = None
@@ -254,6 +272,11 @@ class AskRequest(BaseModel):
         if len(v) > 2000:
             raise ValueError("question must be under 2000 characters")
         return v
+
+    @field_validator("date_after", "date_before")
+    @classmethod
+    def dates_must_be_iso(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_iso_date(v)
 
 
 MAX_CHAT_MESSAGE_CHARS = 4000
@@ -313,6 +336,11 @@ class SearchRequest(BaseModel):
             return MAX_SEARCH_LIMIT
         return v
 
+    @field_validator("date_after", "date_before")
+    @classmethod
+    def dates_must_be_iso(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_iso_date(v)
+
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
@@ -338,6 +366,11 @@ class ChatRequest(BaseModel):
         if v not in ("openai", "anthropic"):
             raise ValueError("model_provider must be 'openai' or 'anthropic'")
         return v
+
+    @field_validator("date_after", "date_before")
+    @classmethod
+    def dates_must_be_iso(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_iso_date(v)
 
 
 @app.post("/ask")  # Direct endpoint for App Runner
