@@ -40,6 +40,17 @@ uv run python main.py "${BACKFILL_ARGS[@]}"
 log "Applying official Tables of Motions from agenda packets"
 uv run python main.py --backfill-tables-of-motions
 
+# Second-chance retry of clips the inline --auto retry gave up on. That
+# budget (3 attempts) burns out across ~12h of 6-hourly crons, but
+# Granicus sometimes posts a meeting's video days later — clips 6804 /
+# 6816 / 6832 (June-July 2026) were real meetings silently lost that
+# way. This sweep re-attempts still-available unprocessed failures for
+# 60 days after first failure. Non-fatal: a bad clip must not abort the
+# weekly sweep.
+log "Second-chance retry of dropped failed clips (late-posted videos)"
+uv run python main.py --retry-failed-sweep --rag --no-audio \
+  || log "retry sweep failed (non-fatal)"
+
 log "Refreshing RAG API + syncing S3 + invalidating CloudFront"
 if [ -n "${RELOAD_TOKEN:-}" ] && curl -fsS -m 10 -X POST \
      -H "X-Reload-Token: $RELOAD_TOKEN" http://127.0.0.1:8000/admin/reload >/dev/null; then

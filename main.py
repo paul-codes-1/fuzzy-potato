@@ -1771,7 +1771,7 @@ Guidelines:
                         "reason": "no_documents",
                         "timestamp": datetime.now().isoformat()
                     })
-                    self.state["last_processed_clip_id"] = clip_id
+                    self._advance_cursor(clip_id)
                     self.save_state()
                     self.log(
                         f"Clip {clip_id}: no minutes or agenda from CivicClerk "
@@ -1799,7 +1799,7 @@ Guidelines:
                         "reason": "download_failed",
                         "timestamp": datetime.now().isoformat()
                     })
-                    self.state["last_processed_clip_id"] = clip_id
+                    self._advance_cursor(clip_id)
                     self.save_state()
                     return False
                 files["audio"] = audio_filename
@@ -1818,7 +1818,7 @@ Guidelines:
                         "reason": "transcription_failed",
                         "timestamp": datetime.now().isoformat()
                     })
-                    self.state["last_processed_clip_id"] = clip_id
+                    self._advance_cursor(clip_id)
                     self.save_state()
                     return False
 
@@ -1957,7 +1957,7 @@ Guidelines:
                 json.dump(metadata, f, indent=2)
 
             # Update state
-            self.state["last_processed_clip_id"] = clip_id
+            self._advance_cursor(clip_id)
             if clip_id not in self.state["processed_clips"]:
                 self.state["processed_clips"].append(clip_id)
             self.save_state()
@@ -1993,7 +1993,7 @@ Guidelines:
                 "timestamp": datetime.now().isoformat()
             })
             # Update last_processed_clip_id even on failure so auto mode moves forward
-            self.state["last_processed_clip_id"] = clip_id
+            self._advance_cursor(clip_id)
             self.save_state()
             return False
 
@@ -2070,6 +2070,16 @@ Guidelines:
             self.log(f"Could not refresh available clips from source: {e}", "WARNING")
             return
 
+    def _advance_cursor(self, clip_id: int) -> None:
+        """Advance last_processed_clip_id, never regressing it.
+
+        Explicit reprocessing of an old clip (single-clip CLI runs, the
+        weekly --retry-failed-sweep) must not rewind the --auto cursor —
+        that would make the next cron re-walk every clip after it.
+        """
+        current = self.state.get("last_processed_clip_id") or 0
+        self.state["last_processed_clip_id"] = max(current, clip_id)
+
     MAX_AUTO_RETRIES = 3
     RETRY_RECENCY_DAYS = 7
 
@@ -2113,6 +2123,78 @@ Guidelines:
         if available_set is not None:
             eligible = [c for c in eligible if c in available_set]
         return sorted(eligible)
+
+    # The weekly second-chance sweep (--retry-failed-sweep) exists because
+    # the inline --auto retry above burns its whole MAX_AUTO_RETRIES budget
+    # across ~3 consecutive 6-hourly crons (~12h), while Granicus sometimes
+    # posts a meeting's video days after the clip page appears. Clips that
+    # exhausted the inline budget were silently dropped for good — 6804 /
+    # 6816 / 6832 (June–July 2026) were real meetings lost this way. The
+    # sweep re-attempts any still-available unprocessed failure for
+    # SWEEP_WINDOW_DAYS after its FIRST failure (weekly cadence ≈ 8 spaced
+    # attempts); keying on first-failure means re-failing inside the sweep
+    # can't keep a dead clip eligible forever.
+    SWEEP_WINDOW_DAYS = 60
+
+    def _sweep_candidates(self, processed_set: set, available_set: set = None,
+                          now: datetime = None) -> list:
+        """Failed, unprocessed, still-available clips whose FIRST failure is
+        within SWEEP_WINDOW_DAYS. No attempt cap — the weekly cadence plus
+        the first-failure window bounds total attempts (~8)."""
+        from datetime import timedelta
+
+        now = now or datetime.now()
+        cutoff = now - timedelta(days=self.SWEEP_WINDOW_DAYS)
+        first_ts = {}
+        for entry in self.state.get("failed_clips", []):
+            if not isinstance(entry, dict):
+                continue
+            cid = entry.get("clip_id")
+            ts_str = entry.get("timestamp")
+            if cid is None or not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str)
+            except ValueError:
+                continue
+            if cid not in first_ts or ts < first_ts[cid]:
+                first_ts[cid] = ts
+
+        eligible = [
+            cid for cid, ts in first_ts.items()
+            if cid not in processed_set and ts >= cutoff
+        ]
+        if available_set is not None:
+            eligible = [c for c in eligible if c in available_set]
+        return sorted(eligible)
+
+    def retry_failed_sweep(self, max_clips: int = 10) -> dict:
+        """Weekly second-chance pass over dropped failed clips.
+
+        See the SWEEP_WINDOW_DAYS comment above for why this exists.
+        """
+        available_clips = self.load_available_clips()
+        processed_set = set(self.state.get("processed_clips", []))
+        candidates = self._sweep_candidates(
+            processed_set,
+            set(available_clips) if available_clips else None,
+        )[:max_clips]
+
+        if not candidates:
+            self.log("Retry sweep: no eligible failed clips")
+            return {"processed": [], "failed": [], "skipped": []}
+
+        self.log(f"Retry sweep: re-attempting {len(candidates)} dropped clip(s): {candidates}")
+        results = {"processed": [], "failed": [], "skipped": []}
+        for idx, clip_id in enumerate(candidates, 1):
+            self.log(f"\n{'=' * 70}")
+            self.log(f"Retry sweep clip {clip_id} - [{idx}/{len(candidates)}]")
+            self.log(f"{'=' * 70}")
+            if self.process_clip(clip_id):
+                results["processed"].append(clip_id)
+            else:
+                results["failed"].append(clip_id)
+        return results
 
     def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None,
                      retry_failed: bool = True) -> dict:
@@ -2443,6 +2525,16 @@ Examples:
         "--no-retry-failed",
         action="store_true",
         help="In --auto mode, skip retrying clips in failed_clips (default: retry up to 3 times)"
+    )
+
+    parser.add_argument(
+        "--retry-failed-sweep",
+        action="store_true",
+        help="Second-chance pass: re-attempt failed clips that are still listed "
+             "by the source and unprocessed, for 60 days after their first "
+             "failure. Complements the inline --auto retry (3 attempts), which "
+             "burns out across ~12h of cron runs — too fast for videos Granicus "
+             "posts late. Meant for the weekly backfill cron. --max caps it (default 10)."
     )
 
     parser.add_argument(
@@ -3106,6 +3198,10 @@ Examples:
             start=args.start,
             retry_failed=not args.no_retry_failed,
         )
+
+    elif args.retry_failed_sweep:
+        # Weekly second-chance pass over dropped failed clips
+        results = pipeline.retry_failed_sweep(max_clips=args.max)
 
     elif len(args.clip_ids) == 1:
         # Single clip
