@@ -36,6 +36,18 @@ from granicus_captions import download_vtt
 
 from .base import MeetingRef
 
+# Stall watchdog tuning for the yt-dlp subprocess (see download_audio).
+# During the download phase yt-dlp streams progress lines, so a short quiet
+# window means a genuinely stalled HLS connection. Its ffmpeg post-processing
+# phases ([ExtractAudio] / [Fixup*] / [Merger]) are SILENT for minutes on
+# GB-scale clips — killing on the download timeout there is what permanently
+# failed clips 6804/6816/6832 (June-July 2026) even after their videos
+# appeared. Once a post-processor line is seen, allow a much longer quiet
+# window. Module-level so tests can shrink them.
+DOWNLOAD_STALL_TIMEOUT = 30
+POSTPROCESS_STALL_TIMEOUT = 1800
+POSTPROCESS_MARKERS = ("[ExtractAudio]", "[Fixup", "[Merger]")
+
 
 class GranicusSource:
     """Granicus portal adapter implementing the ``VideoSource`` protocol."""
@@ -343,9 +355,6 @@ class GranicusSource:
                 cmd += ["--concurrent-fragments", "5"]
             cmd += ["-o", str(output_path), url]
 
-            # Run with real-time output and 30s stall timeout
-            DOWNLOAD_STALL_TIMEOUT = 30
-
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -355,6 +364,7 @@ class GranicusSource:
 
             # Read lines in a thread so the main thread can check for stalls
             last_output_time = [time.time()]
+            postprocessing = [False]
             eof_reached = threading.Event()
 
             def read_output():
@@ -366,6 +376,8 @@ class GranicusSource:
                     line = raw_line.decode('utf-8', errors='replace').strip()
                     if not line:
                         continue
+                    if line.startswith(POSTPROCESS_MARKERS):
+                        postprocessing[0] = True
                     # Percentage progress: overwrite in place
                     if '%' in line and ('[download]' in line or 'ETA' in line):
                         clean_line = line.replace('[download]', '').strip()
@@ -379,12 +391,13 @@ class GranicusSource:
             reader = threading.Thread(target=read_output, daemon=True)
             reader.start()
 
-            # Poll for stall: if no output for 30s, kill
+            # Poll for stall; the allowed quiet window depends on phase
             timed_out = False
             while not eof_reached.is_set():
                 eof_reached.wait(timeout=5)
-                if not eof_reached.is_set() and time.time() - last_output_time[0] > DOWNLOAD_STALL_TIMEOUT:
-                    self.log(f"Download stalled (no output for {DOWNLOAD_STALL_TIMEOUT}s) - skipping clip", "WARNING")
+                stall_limit = POSTPROCESS_STALL_TIMEOUT if postprocessing[0] else DOWNLOAD_STALL_TIMEOUT
+                if not eof_reached.is_set() and time.time() - last_output_time[0] > stall_limit:
+                    self.log(f"Download stalled (no output for {stall_limit}s) - skipping clip", "WARNING")
                     process.kill()
                     timed_out = True
                     break

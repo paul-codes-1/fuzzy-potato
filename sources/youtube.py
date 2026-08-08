@@ -54,6 +54,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .base import MeetingRef
+from .granicus import (
+    DOWNLOAD_STALL_TIMEOUT,
+    POSTPROCESS_MARKERS,
+    POSTPROCESS_STALL_TIMEOUT,
+)
 
 
 class YouTubeSource:
@@ -469,8 +474,6 @@ class YouTubeSource:
                 url,
             ]
 
-            DOWNLOAD_STALL_TIMEOUT = 30
-
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -479,6 +482,7 @@ class YouTubeSource:
             )
 
             last_output_time = [time.time()]
+            postprocessing = [False]
             eof_reached = threading.Event()
 
             def read_output():
@@ -490,6 +494,8 @@ class YouTubeSource:
                     line = raw_line.decode('utf-8', errors='replace').strip()
                     if not line:
                         continue
+                    if line.startswith(POSTPROCESS_MARKERS):
+                        postprocessing[0] = True
                     if '%' in line and ('[download]' in line or 'ETA' in line):
                         clean_line = line.replace('[download]', '').strip()
                         print(f"\r  {clean_line:<80}", end='', flush=True)
@@ -503,8 +509,9 @@ class YouTubeSource:
             timed_out = False
             while not eof_reached.is_set():
                 eof_reached.wait(timeout=5)
-                if not eof_reached.is_set() and time.time() - last_output_time[0] > DOWNLOAD_STALL_TIMEOUT:
-                    self.log(f"Download stalled (no output for {DOWNLOAD_STALL_TIMEOUT}s) - skipping clip", "WARNING")
+                stall_limit = POSTPROCESS_STALL_TIMEOUT if postprocessing[0] else DOWNLOAD_STALL_TIMEOUT
+                if not eof_reached.is_set() and time.time() - last_output_time[0] > stall_limit:
+                    self.log(f"Download stalled (no output for {stall_limit}s) - skipping clip", "WARNING")
                     process.kill()
                     timed_out = True
                     break
