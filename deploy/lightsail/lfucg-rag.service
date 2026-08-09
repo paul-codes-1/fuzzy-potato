@@ -4,10 +4,11 @@
 #
 # Binds to localhost only — Caddy terminates TLS on :443 and reverse-
 # proxies to 127.0.0.1:8000 (see Caddyfile). The ingest cron does
-# `sudo systemctl restart lfucg-rag` after new data lands; the in-process
-# ChromaDB collection + sqlite connection + clip_metadata are rebuilt
-# lazily on the next request, so a restart is the cheap way to surface
-# fresh data (no Docker/ECR/App Runner involved).
+# `sudo systemctl restart lfucg-rag` after new data lands (or the graceful
+# POST /admin/reload); the in-process vector store (sqlite-vec vec.db, or
+# ChromaDB on unmigrated boxes) + search.db connection + clip_metadata are
+# rebuilt lazily on the next request, so a restart is the cheap way to
+# surface fresh data (no Docker/ECR/App Runner involved).
 [Unit]
 Description=LFUCG Meeting RAG API + MCP (FastAPI/uvicorn)
 After=network-online.target
@@ -19,19 +20,29 @@ User=ubuntu
 WorkingDirectory=/opt/fuzzy-potato
 EnvironmentFile=/opt/fuzzy-potato/.env
 Environment=LFUCG_OUTPUT_DIR=/opt/fuzzy-potato/lfucg_output
+# SINGLE uvicorn worker on purpose — NO `--workers`. The app assumes exactly
+# one process: per-process in-memory caches (the vector-store collection,
+# clip_metadata, _facets_cache), the in-memory rate limiter, and the
+# POST /admin/reload cache-drop are all process-local. A second worker would
+# hold a stale index the reload can't reach and would let clients bypass the
+# rate limit by landing on the other worker. Scale with more RAM/CPU, not workers.
 ExecStart=/home/ubuntu/.local/bin/uv run uvicorn rag.server:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=3
-# Surface OOMs clearly on a 4GB box; let systemd restart on crash.
+# Surface OOMs clearly; let systemd restart on crash.
 OOMPolicy=kill
-# Memory guard rails (8GB box since 2026-06-20; ChromaDB ~5GB+ mmapped, growing with the
-# Whisper backfill). SIZE TO THE BOX: MemoryHigh must exceed the loaded Chroma working set
-# or the kernel reclaim-throttles uvicorn into a wedge that LOOKS alive (2026-07-14 outage:
-# 6h of 502s, service 'active', health checks dead). MemoryHigh is a
-# SOFT throttle (reclaim pressure under load) — deliberately NOT a hard
-# MemoryMax, which could kill the API mid-/api/ask. Pair with 4GB swap
-# (see SETUP.md) so the pipeline's bursty allocations don't OOM the API.
-# Tune after observing real RSS under load.
+# Memory guard rails (16GB box). The store is disk-first sqlite now — search.db
+# (FTS5) and the sqlite-vec vec.db are mmap'd and mostly serve from the OS page
+# cache, so steady-state RSS is well under this cap; MemoryHigh mainly bounds a
+# runaway (e.g. a huge synthesis context or a concurrent pipeline burst).
+# MemoryHigh is a SOFT throttle (reclaim pressure under load) — deliberately NOT
+# a hard MemoryMax, which could kill the API mid-/api/ask. Sized well below the
+# 16GB box with headroom for a concurrent ingest run. Pair with swap (see
+# SETUP.md) so the pipeline's bursty allocations don't OOM the API. Historical
+# note: the 2026-07-14 outage was a too-LOW MemoryHigh on the old ChromaDB
+# (in-RAM HNSW) serving path reclaim-throttling uvicorn into a live-looking
+# wedge (6h of 502s, service 'active', health checks dead) — the disk-first
+# store makes that far less likely, but keep the cap generous. Tune on real RSS.
 MemoryAccounting=yes
 MemoryHigh=5500M
 

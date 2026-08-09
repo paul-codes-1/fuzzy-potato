@@ -42,11 +42,17 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --cache-control "public, max-age=86400, stale-while-revalidate=604800"
 
 # Top-level data (index.json, llms.txt, available_clips.json): mutates every
-# run -> no-cache. Exclude the big local-only artifacts: chroma_db/ and
-# search.db are served by the LOCAL RAG API now, NOT from S3, so there's no
-# reason to ship them (search.db = 300MB, chroma_db = 5.1GB). Also exclude
-# raw media + per-clip files (handled above) and internal pipeline state
-# (state.json / rag_state.json have no business on the public bucket).
+# run -> no-cache. Exclude the big local-only artifacts: chroma_db/, search.db,
+# and vec.db (the sqlite-vec store) are served by the LOCAL RAG API now, NOT
+# from S3, so there's no reason to ship them (search.db = 300MB, vec.db =
+# 300MB+, chroma_db = 5.1GB). Also exclude raw media + per-clip files (handled
+# above) and internal pipeline state (state.json / rag_state.json have no
+# business on the public bucket).
+#
+# SECURITY: telemetry.db (hashed IPs + query text), vec.db (the live vector
+# store), and any *.bak backup files must NEVER land on the public CloudFront
+# /data/* path. The trailing `*` on the db globs also catches the sqlite WAL
+# sidecars (-wal / -shm / -journal).
 aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --cache-control "no-cache" \
   --exclude "clips/*" \
@@ -54,4 +60,7 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --exclude "search.db" \
   --exclude "state.json" \
   --exclude "rag_state.json" \
+  --exclude "telemetry.db*" \
+  --exclude "vec.db*" \
+  --exclude "*.bak" \
   --exclude "*.mp3" --exclude "*.mp4" --exclude "*.part" --exclude "*.ytdl"

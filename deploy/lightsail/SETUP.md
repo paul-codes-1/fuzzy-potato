@@ -201,9 +201,8 @@ done
 > the Mac. Most accurate (captures any local-only state ahead of the last
 > deploy) but pushes 11 GB over home upload. The ECR+S3 path above is
 > consistent as long as the image and the S3 `rag_state.json`/`state.json`
-> come from the **same** last deploy — which they do under the current
-> `ingest_all.sh` flow. After seeding, the first cron run just catches up on
-> anything newer (idempotent).
+> come from the **same** last deploy. After seeding, the first cron run just
+> catches up on anything newer (idempotent).
 
 Docker is only needed for this one-time seed; it can be removed afterward.
 
@@ -249,26 +248,47 @@ Also confirm the **downstream consumers** still work: paulBot `!ask`
 
 ## 7. Install cron
 
+The cron jobs log to `/var/log/fuzzy-potato/` — a dir **owned by `ubuntu`**.
+Do NOT point them at `/var/log/*.log` directly: `/var/log` is `root:syslog`, so
+the `ubuntu` cron user cannot create a new file there and the `>>` redirect
+fails to open BEFORE `flock` runs — the job then silently never executes.
+
 ```bash
+# 7a. Create the ubuntu-owned log dir + install log rotation (do this FIRST,
+#     before installing the crontab).
+sudo mkdir -p /var/log/fuzzy-potato && sudo chown ubuntu:ubuntu /var/log/fuzzy-potato
+sudo cp deploy/lightsail/logrotate-fuzzy-potato /etc/logrotate.d/fuzzy-potato
+sudo chown root:root /etc/logrotate.d/fuzzy-potato && sudo chmod 0644 /etc/logrotate.d/fuzzy-potato
+sudo logrotate --debug /etc/logrotate.d/fuzzy-potato   # dry-run; must NOT print "bad file mode"
+
+# 7b. Install the crontab (as ubuntu).
 crontab deploy/lightsail/crontab.txt
 crontab -l
 # dry-run the lean path once by hand and watch the log:
 bash deploy/lightsail/ingest_cron.sh
 ```
 
-The crontab now runs four jobs, each with a **success-only dead-man heartbeat**
-(`&& heartbeat.sh <name>` → CloudWatch `LT/Heartbeat`; a missing metric = a job
-that didn't run): lean ingest (6h weekdays), daily v2 summaries (00:00), weekly
-backfill (Sun 03:00), and a **weekly off-box index backup** (`backup_indexes.sh`,
-Sun 04:30 → `s3://lt-backups-861476138515/fuzzy-potato/<slug>/`, self-heartbeats
-`<slug>-index-backup`). `ingest_cron.sh` also aborts before doing work if the
+The crontab runs five jobs. The four pipeline jobs use a **tri-state dead-man
+heartbeat** (CloudWatch `LT/Heartbeat`): each captures `flock`'s exit code and
+pings the `<slug>-<job>` **success** metric only on exit 0, pings a distinct
+`<slug>-<job>-fail` metric on a **real failure** (main.py now exits non-zero when
+the search.db build / RAG ingest / index generation fail — so a broken run can't
+masquerade as healthy), and pings **nothing** on a `flock -n -E 99` lock-contended
+skip. The jobs: lean ingest (6h **every day** — was weekdays-only, which delayed
+weekend clips up to ~54h), daily v2 summaries (00:00), weekly backfill (Sun
+03:00), and a **weekly off-box index backup** (`backup_indexes.sh`, Sun 04:30 →
+`s3://lt-backups-861476138515/fuzzy-potato/<slug>/`, self-heartbeats
+`<slug>-index-backup`). The fifth job is a **weekly telemetry prune** (Sun 05:00
+— deletes `rag_events` older than 90d from `telemetry.db`). `ingest_cron.sh` also
+sweeps stranded video intermediates and aborts before doing work if the
 `lfucg_output` filesystem is >85% full. The box's aws identity needs
 `cloudwatch:PutMetricData` (for `LT/Heartbeat`) and `s3:PutObject` on the
-backups bucket; both scripts fail loud into their log otherwise.
+backups bucket; both scripts fail loud into their log otherwise. Consider alarms
+on `lt-heartbeat-<slug>-<job>-fail` (>0) for immediate failure paging.
 
 For a **document-driven (CivicClerk) box like Paris**, install ingest + daily
-summaries + weekly index backup and OMIT the weekly backfill line (render the
-template, drop the `backfill_weekly.sh` line).
+summaries + weekly index backup + weekly telemetry prune and OMIT the weekly
+backfill line (render the template, drop the `backfill_weekly.sh` line).
 
 ## 8. Decommission the old serving path
 
@@ -277,8 +297,9 @@ Only after the box has served live traffic cleanly for a few cycles:
 - App Runner: `aws apprunner delete-service --service-arn <lfucg-rag-api ARN>`
 - ECR: optionally keep `lfucg-rag-api:latest` as a cold backup of chroma_db +
   search.db, or `aws ecr delete-repository --repository-name lfucg-rag-api --force`.
-- Repo: `ingest_all.sh`'s Docker/ECR/App Runner steps (7) and the dead
-  `lambda/` dir can be retired in a follow-up cleanup PR.
+- Repo: **done** — the App-Runner-era dead code (`ingest_all.sh`, `Dockerfile`,
+  `entrypoint.sh`, `.github/workflows/ingest.yml`, the `lambda/` dir, and
+  `tests/test_docker.py`) was deleted in the ops-hygiene cleanup.
 
 ---
 
@@ -294,9 +315,12 @@ Only after the box has served live traffic cleanly for a few cycles:
   http://127.0.0.1:8000/admin/analytics` (origin-only, same guard as
   `/admin/reload`) — top queries / empty-result rate / volume by transport +
   endpoint / p50-p95 latency / rate-limited count, from `lfucg_output/telemetry.db`.
-- **Logs:** `/var/log/lfucg-ingest.log`, `/var/log/lfucg-summaries.log`,
-  `/var/log/lfucg-backfill.log`, `/var/log/lfucg-backup.log`;
-  `journalctl -u lfucg-rag -f` for the API.
+- **Logs:** `/var/log/fuzzy-potato/lfucg-ingest.log`,
+  `/var/log/fuzzy-potato/lfucg-summaries.log`,
+  `/var/log/fuzzy-potato/lfucg-backfill.log`,
+  `/var/log/fuzzy-potato/lfucg-backup.log`,
+  `/var/log/fuzzy-potato/lfucg-telemetry-prune.log` (rotated by
+  `/etc/logrotate.d/fuzzy-potato`); `journalctl -u lfucg-rag -f` for the API.
 - **Manual refresh:** `bash deploy/lightsail/ingest_cron.sh`.
 - **Restart API only:** `sudo systemctl restart lfucg-rag`.
 - **Backups:** `clips/` is the only irreplaceable artifact (the source of

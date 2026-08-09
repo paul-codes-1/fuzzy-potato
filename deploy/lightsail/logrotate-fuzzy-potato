@@ -1,0 +1,23 @@
+# Logrotate config for the fuzzy-potato meeting-pipeline cron logs.
+#
+# Install:  sudo cp deploy/lightsail/logrotate-fuzzy-potato /etc/logrotate.d/fuzzy-potato
+#           (must end up root:root mode 0644 — logrotate SKIPS a config that is
+#            group- or world-writable, so don't chmod it looser.)
+#
+# Covers every cron log under /var/log/fuzzy-potato/ (ingest, summaries,
+# backfill, backup, telemetry-prune). The 6-hourly ingest log is the one that
+# grows without bound (27MB+ observed) — `weekly` + `maxsize` keeps it small.
+/var/log/fuzzy-potato/*.log {
+    weekly
+    rotate 8
+    maxsize 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    # Recreate the rotated-away log owned by ubuntu so the next cron `>>` append
+    # can OPEN it. This is the whole point of the /var/log/fuzzy-potato move:
+    # ubuntu owns these logs, unlike the root:syslog /var/log parent where the
+    # cron user could not create files (jobs silently never ran).
+    create 0644 ubuntu ubuntu
+}
