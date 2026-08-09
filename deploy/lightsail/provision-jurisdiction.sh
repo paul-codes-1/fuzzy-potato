@@ -799,6 +799,29 @@ else
   log "sudoers line installed + validated (visudo -c)"
 fi
 
+# ── Phase 13b: cron log dir (ubuntu-owned) + logrotate [idem] ─────────────────
+# The cron jobs redirect to /var/log/fuzzy-potato/*.log. /var/log itself is
+# root:syslog, so $BOX_USER cannot CREATE a file there — the `>>` redirect then
+# fails to OPEN before flock runs and the job silently never executes. Create an
+# $BOX_USER-owned dir + install the logrotate config so the crontab staged in
+# Phase 14 works the moment it's enabled. Mirrors SETUP.md §7.
+phase "13b — cron log dir /var/log/fuzzy-potato + logrotate [idem]"
+LOGROTATE_SRC="$SCRIPT_DIR/logrotate-fuzzy-potato"
+[ -f "$LOGROTATE_SRC" ] || die "missing $LOGROTATE_SRC"
+if [ "$DRY_RUN" = "1" ]; then
+  echo "DRY-RUN would: sudo mkdir -p /var/log/fuzzy-potato && sudo chown $BOX_USER:$BOX_USER /var/log/fuzzy-potato"
+  echo "DRY-RUN would install /etc/logrotate.d/fuzzy-potato (root:root 0644) from $LOGROTATE_SRC:"; cat "$LOGROTATE_SRC"
+else
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+    "sudo mkdir -p /var/log/fuzzy-potato && sudo chown $BOX_USER:$BOX_USER /var/log/fuzzy-potato"
+  log "/var/log/fuzzy-potato created + owned by $BOX_USER"
+  # logrotate SKIPS a config that is group/world-writable, so force root:root 0644.
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+    "sudo tee /etc/logrotate.d/fuzzy-potato >/dev/null && sudo chown root:root /etc/logrotate.d/fuzzy-potato && sudo chmod 0644 /etc/logrotate.d/fuzzy-potato && sudo logrotate --debug /etc/logrotate.d/fuzzy-potato >/dev/null" \
+    < "$LOGROTATE_SRC"
+  log "logrotate config installed + parse-checked (logrotate --debug)"
+fi
+
 # ── Phase 14: render + install crontab (NOT enabled until cold-start) [idem] ──
 phase "14 — render crontab (flock-guarded) [idem]"
 CRON_TEMPLATE="$SCRIPT_DIR/crontab.txt.template"
