@@ -4,29 +4,54 @@
 #           (cron honors the system TZ; ET keeps the schedule aligned to
 #            when LFUCG posts clips, and DST is handled automatically)
 #
-# All jobs share one flock so a long catch-up run can never overlap another
-# (-n = skip this firing if the lock is held).
+# LOGS -> /var/log/fuzzy-potato/ (a dir OWNED BY ubuntu). The old
+# /var/log/<slug>-*.log paths lived in /var/log, which is root:syslog — the
+# `ubuntu` user cannot CREATE a new file there, so cron's `>>` redirect failed
+# to OPEN before flock ran and the job silently never executed. Provision once:
+#   sudo mkdir -p /var/log/fuzzy-potato && sudo chown ubuntu:ubuntu /var/log/fuzzy-potato
+# Rotation/compression: install deploy/lightsail/logrotate-fuzzy-potato into
+# /etc/logrotate.d/ (bounds the otherwise-unbounded lfucg-ingest.log).
 #
-# Each job appends `&& heartbeat.sh <name>` — a success-only dead-man ping to
-# CloudWatch (LT/Heartbeat). `&&` means a failed run (or a lock-contended skip)
-# sends NO ping, so a missing metric = a job that didn't run/succeed. The
-# weekly index backup self-heartbeats from inside the script (after the S3
+# All jobs share one flock so a long catch-up run can never overlap another.
+# `-n` skips this firing if the lock is held; `-E 99` makes flock return a
+# DISTINCT exit code (99) on that lock-contended skip so we can tell "skipped"
+# apart from "the job ran and FAILED". Each line captures flock's exit code and:
+#   rc == 0   -> SUCCESS -> ping the success heartbeat (CloudWatch LT/Heartbeat)
+#   rc == 99  -> SKIPPED -> ping nothing (a rare skip is covered by the next
+#                          run; a whole missed window still trips the dead-man
+#                          alarm, so a skip never falsely reports healthy)
+#   otherwise -> FAILED  -> ping a DISTINCT <job>-fail metric, NEVER the success
+#                          one. main.py now exits non-zero when the search.db
+#                          build / RAG ingest / index generation fail, so a
+#                          broken run can no longer masquerade as healthy by
+#                          pinging the success heartbeat. (Wire an alarm on
+#                          lt-heartbeat-<job>-fail >0 for immediate failure paging.)
+# The weekly index backup self-heartbeats from inside the script (after the S3
 # upload), so its cron line has no appended ping.
 #
-# Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
+# Lean incremental ingest — every 6h, EVERY day at 02:00/08:00/14:00/20:00 ET.
+# (Was weekdays-only [1-5]; a no-new-clip run exits in seconds, and skipping
+# weekends left Fri-evening/weekend clips unsearchable for up to ~54h.)
 # probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
-0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/lfucg-ingest.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-ingest
+0 2,8,14,20 * * *  /usr/bin/flock -n -E 99 /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh >> /var/log/fuzzy-potato/lfucg-ingest.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-ingest; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-ingest-fail; fi
 
 # Daily v2-summary upgrade — every day at 00:00 ET. Generates the two-pass
 # summary + facts for clips the lean ingest left as VTT placeholders, re-ingests
 # them into RAG, rebuilds search.db, refreshes API + S3 + CDN. Cheap/idempotent.
-0 0 * * *            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/lfucg-summaries.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-summaries
+0 0 * * *  /usr/bin/flock -n -E 99 /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh >> /var/log/fuzzy-potato/lfucg-summaries.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-summaries; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-summaries-fail; fi
 
 # Heavy archive-wide sweeps — weekly, Sunday 03:00 ET.
 # backfill-docs + tables-of-motions, then reload + sync. (summary upgrades are daily now)
-0 3 * * 0            /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/lfucg-backfill.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-backfill
+0 3 * * 0  /usr/bin/flock -n -E 99 /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/fuzzy-potato/lfucg-backfill.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-backfill; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh lfucg-backfill-fail; fi
 
 # Weekly off-box index backup — Sunday 04:30 ET (after the 03:00 backfill).
-# tars chroma_db + search.db + rag_state.json (+ state.json) to S3. Self-
-# heartbeats lfucg-index-backup from inside the script after the upload.
-30 4 * * 0           /usr/bin/flock -n /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh  >> /var/log/lfucg-backup.log 2>&1
+# tars vec.db + search.db + rag_state.json (+ chroma_db + state.json where they
+# exist) to S3. Self-heartbeats lfucg-index-backup from inside the script.
+30 4 * * 0  /usr/bin/flock -n -E 99 /tmp/lfucg-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh >> /var/log/fuzzy-potato/lfucg-backup.log 2>&1
+
+# Weekly telemetry retention prune — Sunday 05:00 ET. Deletes rag_events older
+# than 90 days from lfucg_output/telemetry.db, then wal_checkpoint(TRUNCATE).
+# Best-effort (never raises). No pipeline flock — telemetry.db is a separate WAL
+# sqlite from search.db/vec.db and prune_old_events is concurrency-safe. Depends
+# on rag.telemetry.prune_old_events (lands with the RAG-serving change).
+0 5 * * 0  cd /opt/fuzzy-potato && set -a && . ./.env && set +a && /home/ubuntu/.local/bin/uv run python -c "from rag.telemetry import prune_old_events; print('telemetry rows pruned:', prune_old_events(90))" >> /var/log/fuzzy-potato/lfucg-telemetry-prune.log 2>&1

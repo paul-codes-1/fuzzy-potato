@@ -77,8 +77,23 @@ def get_request_id() -> Optional[str]:
     return _request_id_var.get()
 
 
+_DEFAULT_SALT = "lt-rag-default"
+_salt_default_warned = False
+
+
 def _daily_salt() -> str:
-    base = os.environ.get("RAG_TELEMETRY_SALT", "lt-rag-default")
+    global _salt_default_warned
+    base = os.environ.get("RAG_TELEMETRY_SALT")
+    if not base:
+        if not _salt_default_warned:
+            _salt_default_warned = True
+            logger.warning(
+                "RAG_TELEMETRY_SALT is unset; falling back to the built-in "
+                "default salt %r — IP hashes are then guessable across boxes. "
+                "Set a per-box salt out-of-band.",
+                _DEFAULT_SALT,
+            )
+        base = _DEFAULT_SALT
     day = time.strftime("%Y-%m-%d", time.gmtime())
     return f"{base}:{day}"
 
@@ -164,6 +179,10 @@ def _get_db() -> Optional[sqlite3.Connection]:
             os.makedirs(parent, exist_ok=True)
         conn = sqlite3.connect(path, check_same_thread=False, timeout=5.0)
         conn.execute("PRAGMA journal_mode=WAL")
+        # NORMAL is durable enough for best-effort telemetry under WAL (a crash
+        # can lose only the last few uncheckpointed events) and drops the
+        # per-INSERT fsync we'd otherwise pay under the global _db_lock.
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
@@ -282,14 +301,13 @@ def log_query_event(
             "user_agent": _user_agent_var.get(),
             "request_id": _request_id_var.get(),
         }
-        logger.info("rag.query", extra={"telemetry": payload})
-        # Also emit a stable, grep-friendly second line that survives any
-        # formatter that doesn't render `extra`. journalctl / CloudWatch Logs
-        # Insights parse the JSON tail of the message automatically.
-        logger.info(
-            "rag.query %s",
-            _compact_json(payload),
-        )
+        # One compact, grep-friendly JSON line. journalctl / CloudWatch Logs
+        # Insights parse the JSON tail of the message automatically. (We used
+        # to ALSO emit a `logger.info("rag.query", extra={...})` line with the
+        # same payload — dropped: it doubled every telemetry line in the
+        # journal for no added signal, since the formatter doesn't render
+        # `extra`.)
+        logger.info("rag.query %s", _compact_json(payload))
         # Persist to the SQLite sink (best-effort — its own never-raises guard).
         _write_event_row(
             transport=surface,
@@ -398,3 +416,29 @@ def analytics(window_days: int = 7, *, top_queries_limit: int = 20) -> dict:
         "by_endpoint": [{"endpoint": r[0], "count": r[1]} for r in endpoint_rows],
         "latency_ms": {"p50": _percentile(lats, 0.5), "p95": _percentile(lats, 0.95)},
     }
+
+
+def prune_old_events(days: int = 90) -> int:
+    """Delete telemetry rows older than ``days`` and truncate the WAL.
+
+    Called by a periodic cron (not scheduled here) so the sink doesn't grow
+    unbounded — the analytics endpoint only ever looks back a short window.
+    Best-effort: returns the number of rows deleted (0 on any failure or a
+    disabled sink), never raises.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with _db_lock:
+        conn = _get_db()
+        if conn is None:
+            return 0
+        try:
+            cur = conn.execute("DELETE FROM rag_events WHERE ts < ?", (cutoff,))
+            deleted = cur.rowcount or 0
+            conn.commit()
+            # Fold the freed pages back into the main DB so the file actually
+            # shrinks instead of leaving a fat WAL behind.
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            return deleted
+        except Exception:
+            logger.warning("telemetry: prune_old_events failed", exc_info=True)
+            return 0

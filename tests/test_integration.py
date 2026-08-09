@@ -116,3 +116,55 @@ class TestFilterUpgradeCandidates:
             clips_dir, [1, 2, 3], max_clips=1, explicit=True, force=False)
         assert clip_ids == [1, 2, 3]
         assert skipped == 0
+
+
+class TestPass1AttemptParking:
+    """A clip that has a transcript but keeps FAILING GPT-4o Pass-1 extraction
+    must be parked after MAX_PASS1_ATTEMPTS so the nightly summaries cron stops
+    re-billing it forever (#9)."""
+
+    @staticmethod
+    def _mk_clip(clips_dir, cid, pass1_attempts=None):
+        import json as _json
+        d = clips_dir / str(cid)
+        d.mkdir(parents=True)
+        meta = {"clip_id": cid, "files": {"transcript": "t.txt"}}
+        if pass1_attempts is not None:
+            meta["pass1_attempts"] = pass1_attempts
+        (d / "metadata.json").write_text(_json.dumps(meta))
+        return d
+
+    def test_exhausted_clip_is_parked(self, tmp_path):
+        from main import filter_upgrade_candidates, MAX_PASS1_ATTEMPTS
+
+        clips_dir = tmp_path / "clips"
+        self._mk_clip(clips_dir, 1, pass1_attempts=MAX_PASS1_ATTEMPTS)  # parked
+        self._mk_clip(clips_dir, 2, pass1_attempts=1)                   # still eligible
+        self._mk_clip(clips_dir, 3)                                     # fresh
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1, 2, 3], max_clips=10, explicit=False, force=False)
+        assert clip_ids == [2, 3]
+        assert skipped == 1
+
+    def test_force_reprocesses_parked_clip(self, tmp_path):
+        from main import filter_upgrade_candidates, MAX_PASS1_ATTEMPTS
+
+        clips_dir = tmp_path / "clips"
+        self._mk_clip(clips_dir, 1, pass1_attempts=MAX_PASS1_ATTEMPTS + 5)
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1], max_clips=10, explicit=False, force=True)
+        assert clip_ids == [1]
+        assert skipped == 0
+
+    def test_explicit_reprocesses_parked_clip(self, tmp_path):
+        from main import filter_upgrade_candidates, MAX_PASS1_ATTEMPTS
+
+        clips_dir = tmp_path / "clips"
+        self._mk_clip(clips_dir, 1, pass1_attempts=MAX_PASS1_ATTEMPTS + 5)
+
+        clip_ids, skipped = filter_upgrade_candidates(
+            clips_dir, [1], max_clips=10, explicit=True, force=False)
+        assert clip_ids == [1]
+        assert skipped == 0

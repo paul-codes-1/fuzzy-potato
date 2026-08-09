@@ -20,7 +20,7 @@ import { useState, useEffect, useRef } from 'react'
  * @param {{meeting_body?: string|null, speaker?: string|null, date_after?: string|null, date_before?: string|null, limit?: number}} options
  */
 export function useServerSearch(query, options = {}) {
-  const { meeting_body, speaker, date_after, date_before, limit = 100 } = options
+  const { meeting_body, speaker, date_after, date_before, limit = 25 } = options
 
   const [results, setResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)

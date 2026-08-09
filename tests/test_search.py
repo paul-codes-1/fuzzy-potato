@@ -133,6 +133,30 @@ def search_db(tmp_path: Path) -> Path:
     return db_path
 
 
+@pytest.fixture
+def punct_search_db(tmp_path: Path) -> Path:
+    """A search.db whose one clip carries the punctuated terms the sanitizer
+    used to choke on (commas, apostrophes, ``$``, ``&``)."""
+    output_dir = tmp_path
+    _write_clip(
+        output_dir,
+        200,
+        title="Council Parks and Budget Work Session",
+        date="2025-04-10",
+        body="Council",
+        transcript=(
+            "Mayor Linda Gorton opened the session. The council's budget "
+            "included a $5,000 grant for parks & rec improvements downtown."
+        ),
+        agenda="Budget review: parks and recreation $5,000 allocation.",
+        speakers=["Mayor Gorton"],
+        transcript_source="whisper-1+vtt-speakers",
+    )
+    db_path = output_dir / "search.db"
+    build(output_dir, db_path, verbose=False)
+    return db_path
+
+
 @pytest.fixture(autouse=True)
 def reset_search_connections():
     """Drop cached connections between tests so each test sees its own DB."""
@@ -262,6 +286,25 @@ def test_search_returns_empty_when_db_missing(tmp_path: Path) -> None:
     assert search.search("anything", str(tmp_path)) == []
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Gorton, Linda",
+        "$5,000",
+        "council's budget",
+        "parks & rec",
+    ],
+)
+def test_punctuated_queries_return_results(punct_search_db: Path, query: str) -> None:
+    """Punctuation ( , ' $ & ) must be treated as a token boundary, not raise
+    an FTS5 syntax error that silently degrades to zero results (the old
+    denylist-sanitizer bug — now an allowlist)."""
+    out_dir = str(punct_search_db.parent)
+    results = search.search(query, out_dir)
+    assert len(results) >= 1, f"{query!r} unexpectedly returned no results"
+    assert results[0]["clip_id"] == 200
+
+
 # --- suggest ------------------------------------------------------------
 
 def test_suggest_prefix_match(search_db: Path) -> None:
@@ -283,6 +326,31 @@ def test_suggest_orders_by_weight(search_db: Path) -> None:
 def test_suggest_empty_prefix_returns_empty(search_db: Path) -> None:
     out_dir = str(search_db.parent)
     assert search.suggest("", out_dir) == []
+
+
+def test_suggest_escapes_like_wildcards(tmp_path: Path) -> None:
+    """A typed ``%`` / ``_`` must match the literal character, not act as a
+    LIKE wildcard that returns every suggest term."""
+    _write_clip(
+        tmp_path,
+        300,
+        title="50% Budget Cut Hearing",
+        date="2025-02-01",
+        body="Council",
+        transcript="A hearing on the proposed fifty percent budget cut.",
+    )
+    db_path = tmp_path / "search.db"
+    build(tmp_path, db_path, verbose=False)
+    out_dir = str(tmp_path)
+
+    # Bare "%" matched EVERY term under the old un-escaped LIKE. Now it only
+    # matches terms that literally start with "%" — none here.
+    bare = search.suggest("%", out_dir)
+    assert bare == []
+
+    # A literal "50%" prefix still matches the "50% Budget Cut Hearing" title.
+    got = search.suggest("50%", out_dir)
+    assert any(t["term"].startswith("50%") for t in got)
 
 
 # --- facets -------------------------------------------------------------

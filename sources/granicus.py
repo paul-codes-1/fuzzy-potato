@@ -86,6 +86,20 @@ class GranicusSource:
         # the pipeline flips it on for the ElevenLabs Scribe backfill wave.
         self.prefer_small_audio_format = False
 
+        # Parallel HLS fragment count for downloads. Granicus throttles a
+        # single HLS connection to ~1 MB/s, so pulling fragments in parallel
+        # is a ~5x throughput win on every clip. This is INDEPENDENT of
+        # prefer_small_audio_format (which only picks the rendition) — it used
+        # to be gated behind that flag, so only the retired ElevenLabs path
+        # ever got the speedup. 0/None disables it.
+        self.hls_concurrent_fragments = 5
+
+        # Process-lifetime cache of ViewPublisher listing pages, keyed by
+        # view_id (str). fetch_date_from_listing is called once per clip in a
+        # batch and each call otherwise refetched the same 1-3 large listing
+        # pages, so a 20-clip batch hit Granicus 20-40x for identical HTML.
+        self._listing_cache: Dict[str, Optional[str]] = {}
+
     # ------------------------------------------------------------------
     # Filename helper (used by the download_* methods). Identical to the
     # pipeline's sanitize_filename so produced filenames are byte-stable.
@@ -214,6 +228,28 @@ class GranicusSource:
         """Enumerate available meetings as MeetingRefs (clip ids only)."""
         return [MeetingRef(clip_id=str(cid)) for cid in self.scrape_available_clips()]
 
+    def _get_listing_html(self, view_id) -> Optional[str]:
+        """Fetch a ViewPublisher listing page, memoized for the process lifetime.
+
+        The listing HTML for a given view is stable across a batch, so we cache
+        it (including a ``None`` for a failed fetch, to avoid hammering a broken
+        view repeatedly). fetch_date_from_listing is called once per clip, so
+        without this a 20-clip batch refetched the same 1-3 pages 20-40x.
+        """
+        key = str(view_id)
+        if key in self._listing_cache:
+            return self._listing_cache[key]
+        url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={key}"
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            html = response.text
+        except Exception as e:
+            self.log(f"fetch_date_from_listing view_id={key} failed: {e}", "WARNING")
+            html = None
+        self._listing_cache[key] = html
+        return html
+
     def fetch_date_from_listing(self, clip_id: int) -> Optional[str]:
         """Fetch Granicus ViewPublisher listings and extract the authoritative meeting date for clip_id.
 
@@ -240,15 +276,11 @@ class GranicusSource:
                 views_to_try.append(str(v))
 
         for view_id in views_to_try:
-            url = f"https://{self.granicus_host}/ViewPublisher.php?view_id={view_id}"
-            try:
-                response = requests.get(url, timeout=30)
-                response.raise_for_status()
-            except Exception as e:
-                self.log(f"fetch_date_from_listing view_id={view_id} failed: {e}", "WARNING")
+            listing_html = self._get_listing_html(view_id)
+            if listing_html is None:
                 continue
 
-            for row in response.text.split("</tr>"):
+            for row in listing_html.split("</tr>"):
                 if f"clip_id={clip_id}" not in row:
                     continue
                 # Preferred: hidden unix-timestamp span.
@@ -346,13 +378,12 @@ class GranicusSource:
                 # the lowest-bitrate muxed rendition — avoids pulling a full
                 # HD video just to extract 48kbps audio.
                 cmd += ["-f", "bestaudio/worst"]
-                # Granicus throttles a single HLS connection to ~1 MB/s, and
-                # full meeting videos are large (muxed AV, no audio-only
-                # track). Pulling fragments in parallel multiplies throughput
-                # several-fold — essential for the backfill wave's hundreds of
-                # clips. Gated to the Scribe path so the Whisper/Lambda
-                # downloader is unchanged.
-                cmd += ["--concurrent-fragments", "5"]
+            # Parallel HLS fragments — a ~5x throughput win on Granicus's
+            # single-connection ~1 MB/s throttle. Applied UNCONDITIONALLY (not
+            # gated behind prefer_small_audio_format) so every clip benefits,
+            # not just the retired Scribe path.
+            if self.hls_concurrent_fragments:
+                cmd += ["--concurrent-fragments", str(self.hls_concurrent_fragments)]
             cmd += ["-o", str(output_path), url]
 
             process = subprocess.Popen(

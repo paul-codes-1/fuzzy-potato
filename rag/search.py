@@ -25,11 +25,14 @@ the search module has zero ChromaDB / OpenAI dependency.
 from __future__ import annotations
 
 import html
+import logging
 import os
 import re
 import sqlite3
 import threading
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # BM25 column weights — title matches outrank everything, then facts
 # (votes/$/IDs) since those are precision signals, then speakers, then
@@ -48,11 +51,14 @@ _SNIPPET_COLS = ("snip_facts", "snip_transcript", "snip_agenda", "snip_minutes",
 _MARK_OPEN = "\x01M\x01"
 _MARK_CLOSE = "\x01/M\x01"
 
-# Characters with FTS5 special meaning in non-phrase queries. Hyphen
-# is the operator for NOT, so "short-term" parses as "short NOT term"
-# (silently dropping rows matching "term") — strip it so users can
-# type natural compound words.
-_FTS_SPECIAL = re.compile(r'["()*\-:^]')
+# FTS5 bareword allowlist. A denylist of "known-bad" characters keeps
+# leaking new ones ( , . ' ! ? & / $ … ) into the query, each of which can
+# raise an FTS5 syntax error that used to silently degrade to zero results.
+# Instead, collapse everything that isn't a word char or whitespace to a
+# space, leaving only barewords for the implicit-AND bag-of-words query.
+# The quoted-phrase branch (below) runs BEFORE this, so intentional phrase
+# queries keep their FTS5 native quoting.
+_FTS_NON_BAREWORD = re.compile(r"[^\w\s]", re.UNICODE)
 
 _conn_lock = threading.Lock()
 _connections: dict[str, sqlite3.Connection] = {}
@@ -109,8 +115,10 @@ def _sanitize_query(q: str) -> str:
     if len(q) > 2 and q.startswith('"') and q.endswith('"'):
         inner = q[1:-1].replace('"', "")
         return f'"{inner}"'
-    # Otherwise strip syntax chars and treat as bag-of-words AND.
-    cleaned = _FTS_SPECIAL.sub(" ", q)
+    # Otherwise keep ONLY barewords (word chars + whitespace) and treat as
+    # bag-of-words AND. Punctuation that FTS5 would choke on ( , . ' & $ … )
+    # becomes a token boundary instead of a syntax error.
+    cleaned = _FTS_NON_BAREWORD.sub(" ", q)
     tokens = [t for t in cleaned.split() if t]
     return " ".join(tokens)
 
@@ -173,6 +181,15 @@ def search(
         return []
 
     weights = ", ".join(str(w) for w in BM25_WEIGHTS)
+    # NOTE on snippet() perf: FTS5 does NOT compute the five snippet() windows
+    # for every matching row. With `ORDER BY bm25(...) LIMIT N`, SQLite's sorter
+    # keeps only the ranking key + rowid and evaluates the auxiliary snippet()
+    # columns lazily for just the top-N returned rows (measured on the uv-bundled
+    # SQLite this serves under: ~9 ms for LIMIT 25 vs ~516 ms to snippet all
+    # ~4k matches — a 57x gap that proves the deferral). An earlier "rank in a
+    # subquery, snippet only the survivors" rewrite measured ~54% SLOWER here
+    # because it adds a second MATCH scan + a rowid-IN materialization for no
+    # gain — so this single-pass shape is deliberately kept.
     sql = f"""
         SELECT
             clip_id,
@@ -215,10 +232,14 @@ def search(
 
     try:
         rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
-        # Malformed query made it past sanitization — give up rather
-        # than 500'ing the endpoint.
-        return []
+    except sqlite3.OperationalError as e:
+        # A malformed query made it past sanitization. Don't stay silent —
+        # a zero-result return here is indistinguishable from a real
+        # coverage gap in telemetry. Log it and re-raise so the caller
+        # records status="error" (server + MCP tool both catch and tag it).
+        logger.error("FTS query failed after sanitization: %r -> %r: %s",
+                     query, fts_query, e)
+        raise
 
     return [
         {
@@ -247,15 +268,19 @@ def suggest(prefix: str, output_dir: str, *, limit: int = 10) -> list[dict]:
     if conn is None or not prefix.strip():
         return []
     p = prefix.strip()
+    # Escape LIKE wildcards in the user prefix so a typed "%" / "_" matches
+    # those literal characters instead of "anything". Backslash first so we
+    # don't double-escape our own escape char.
+    escaped = p.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = conn.execute(
-        """
+        r"""
         SELECT term, kind, weight
         FROM suggest_terms
-        WHERE term LIKE ? COLLATE NOCASE
+        WHERE term LIKE ? ESCAPE '\' COLLATE NOCASE
         ORDER BY weight DESC, term COLLATE NOCASE
         LIMIT ?
         """,
-        (f"{p}%", int(limit)),
+        (f"{escaped}%", int(limit)),
     ).fetchall()
     return [{"term": r["term"], "kind": r["kind"], "weight": int(r["weight"])} for r in rows]
 

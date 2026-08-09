@@ -40,6 +40,30 @@ read_last() {
 
 log() { echo "==> [$(date -Is)] $*"; }
 
+# Orphaned video-intermediate sweep. A download that dies mid-flight strands
+# GB-scale yt-dlp/ffmpeg temp files under clips/<id>/ (21GiB observed): the
+# partial containers (*.part / *.ytdl), the mux temp (*.temp.mp4), and the
+# intermediate video track (*_audio*.mp4 — the .mp4 sibling of the kept .mp3).
+# Runs BEFORE the disk-floor guard so reclaimed space can bring the box back
+# under the 85% floor. Globs are scoped TIGHTLY — to clips/*/ (find depth 2)
+# and to exactly these extensions — so they can NEVER match a durable artifact
+# (.mp3 / .vtt / .pdf / .json / .txt / clip.md). -mmin +1440 (~24h) leaves any
+# in-flight download's temp files untouched.
+CLIPS_DIR="${LFUCG_OUTPUT_DIR:-lfucg_output}/clips"
+if [ -d "$CLIPS_DIR" ]; then
+  swept_kb=0
+  while IFS= read -r -d '' f; do
+    fsz="$(du -k "$f" 2>/dev/null | cut -f1 || true)"
+    swept_kb=$(( swept_kb + ${fsz:-0} ))
+    rm -f "$f"
+  done < <(find "$CLIPS_DIR" -mindepth 2 -maxdepth 2 -type f \
+             \( -name '*_audio*.mp4' -o -name '*.temp.mp4' -o -name '*.part' -o -name '*.ytdl' \) \
+             -mmin +1440 -print0 2>/dev/null)
+  if [ "$swept_kb" -gt 0 ]; then
+    log "Swept stale video intermediates from clips/ — reclaimed ~$(( swept_kb / 1024 )) MiB"
+  fi
+fi
+
 # Disk floor guard: bail BEFORE doing any work if the output filesystem is
 # nearly full. A 100%-full box silently corrupts search.db.tmp / ChromaDB
 # writes; better to skip this run loudly and let the alerting catch the miss.

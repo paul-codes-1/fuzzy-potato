@@ -8,9 +8,28 @@ test_search.py.
 
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from rag.server import app
+
+
+@pytest.fixture(autouse=True)
+def _reset_server_state():
+    """Clear the in-process caches so a cached related/facets result from one
+    test can't satisfy another test's differently-mocked call."""
+    import rag.server as srv
+    from rag.rate_limit import limiter
+
+    def _clear():
+        srv._ask_cache.clear()
+        srv._related_cache.clear()
+        srv._facets_cache = None
+        limiter.reset()
+
+    _clear()
+    yield
+    _clear()
 
 
 # --- /api/search --------------------------------------------------------
@@ -167,3 +186,33 @@ class TestRelatedEndpoint:
             resp = client.get("/api/related/6669", params={"limit": 999})
             assert resp.status_code == 200
             assert mock_related.call_args.kwargs["limit"] <= 20
+
+    def test_related_is_cached_by_clip_and_limit(self):
+        """Second identical /api/related call is served from the LRU (no
+        second related_clips() call)."""
+        with patch("rag.server.related_clips") as mock_related, \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}):
+            mock_related.return_value = [{
+                "clip_id": 5500, "title": "X", "date": "2025-01-01",
+                "meeting_body": "Council", "similarity": 0.9,
+            }]
+            client = TestClient(app)
+            r1 = client.get("/api/related/6669")
+            r2 = client.get("/api/related/6669")
+        assert r1.json() == r2.json()
+        assert mock_related.call_count == 1
+
+    def test_related_sets_cache_control_header(self):
+        with patch("rag.server.related_clips", return_value=[]), \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}):
+            resp = TestClient(app).get("/api/related/6669")
+        assert resp.headers.get("cache-control") == "public, max-age=3600"
+
+
+class TestCacheControlHeaders:
+    def test_facets_sets_cache_control_header(self):
+        with patch("rag.server.search_facets", return_value={"bodies": []}):
+            resp = TestClient(app).get("/api/facets")
+        assert resp.headers.get("cache-control") == "public, max-age=3600"

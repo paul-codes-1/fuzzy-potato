@@ -99,6 +99,10 @@ class YouTubeSource:
         self.view_id = str(getattr(cfg, "default_view_id", ""))
         self.force_reprocess = False
 
+        # Parallel HLS fragment count (mirrors GranicusSource) — a throughput
+        # win for fragmented HLS renditions. 0/None disables it.
+        self.hls_concurrent_fragments = 5
+
         # Persistent videoId → int clip_id map (alongside state.json).
         output_dir = Path(getattr(cfg, "output_dir", "./lfucg_output"))
         self.id_map_path = output_dir / "source_ids.json"
@@ -449,8 +453,15 @@ class YouTubeSource:
             self.progress(f"Audio already exists ({size_mb:.2f} MB) - skipping download")
             return audio_filename
 
+        # Exclude compression/chunking intermediates — a crashed transcription
+        # run can leave *_chunk*.mp3 leftovers, and treating one as the full
+        # audio would transcribe only a fragment of the meeting (mirrors
+        # GranicusSource.download_audio).
         existing_mp3s = list(clip_dir.glob("*.mp3"))
-        existing_mp3s = [f for f in existing_mp3s if not f.name.endswith("_compressed.mp3")]
+        existing_mp3s = [
+            f for f in existing_mp3s
+            if not f.name.endswith("_compressed.mp3") and "_chunk" not in f.name
+        ]
         if existing_mp3s and not self.force_reprocess:
             existing = existing_mp3s[0]
             size_mb = existing.stat().st_size / (1024 * 1024)
@@ -470,9 +481,13 @@ class YouTubeSource:
                 "--audio-format", "mp3",
                 "--audio-quality", "48k",
                 "--postprocessor-args", "ffmpeg:-ar 22050 -ac 1",
-                "-o", str(output_path),
-                url,
             ]
+            # Parallel HLS fragments — throughput win for fragmented renditions
+            # (mirrors GranicusSource). Keeps --newline so the stall watchdog
+            # still sees progress output.
+            if self.hls_concurrent_fragments:
+                cmd += ["--concurrent-fragments", str(self.hls_concurrent_fragments)]
+            cmd += ["-o", str(output_path), url]
 
             process = subprocess.Popen(
                 cmd,

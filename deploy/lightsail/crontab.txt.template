@@ -7,14 +7,29 @@
 #           (cron honors the system TZ; ET keeps the schedule aligned to
 #            when the portal posts clips, and DST is handled automatically)
 #
-# All jobs share one flock so a long catch-up run can never overlap the next
-# tick or the weekly backfill (-n = skip this firing if the lock is held).
-# The lock + log paths are per-slug so two boxes never collide if co-located.
+# LOGS -> /var/log/fuzzy-potato/ (a dir OWNED BY ubuntu). Do NOT log straight
+# into /var/log — it is root:syslog, so the `ubuntu` user cannot CREATE a new
+# file there and cron's `>>` redirect fails to OPEN before flock runs, silently
+# skipping the job. Provision once (both the LFUCG box and every jurisdiction):
+#   sudo mkdir -p /var/log/fuzzy-potato && sudo chown ubuntu:ubuntu /var/log/fuzzy-potato
+# Rotation/compression: install deploy/lightsail/logrotate-fuzzy-potato into
+# /etc/logrotate.d/. Log FILENAMES stay per-slug so co-located boxes never collide.
 #
-# Each job appends `&& heartbeat.sh __SLUG__-<name>` — a success-only dead-man
-# ping to CloudWatch (LT/Heartbeat). `&&` means a failed run (or a lock-
-# contended skip) sends NO ping. The weekly index backup self-heartbeats from
-# inside the script after the S3 upload, so its cron line has no appended ping.
+# All jobs share one flock so a long catch-up run can never overlap the next
+# tick or the weekly backfill. `-n` skips this firing if the lock is held;
+# `-E 99` makes flock return a DISTINCT exit code (99) on that lock-contended
+# skip so we can tell "skipped" apart from "the job ran and FAILED". Each line
+# captures flock's exit code and:
+#   rc == 0   -> SUCCESS -> ping the success heartbeat (CloudWatch LT/Heartbeat)
+#   rc == 99  -> SKIPPED -> ping nothing (a rare skip is covered by the next run;
+#                          a whole missed window still trips the dead-man alarm)
+#   otherwise -> FAILED  -> ping a DISTINCT __SLUG__-<job>-fail metric, NEVER the
+#                          success one. main.py exits non-zero when the search.db
+#                          build / RAG ingest / index generation fail, so a broken
+#                          run can no longer masquerade as healthy. (Wire an alarm
+#                          on lt-heartbeat-__SLUG__-<job>-fail >0 for failure paging.)
+# The weekly index backup self-heartbeats from inside the script after the S3
+# upload, so its cron line has no appended ping.
 #
 # IMPORTANT (cold-start gate, spec §2.6): do NOT install this crontab until
 # the one-time cold-start backfill has finished. Lean + bulk runs fighting
@@ -22,22 +37,31 @@
 # mode the flock can't prevent (different scripts, same data dir).
 #
 # Provisioning note: document-driven jurisdictions (CivicClerk, e.g. Paris)
-# install ingest + daily summaries + weekly index backup and OMIT the weekly
-# backfill line (backfill-docs / tables-of-motions are Granicus-packet
-# specific). Granicus jurisdictions install all four.
+# install ingest + daily summaries + weekly index backup + telemetry prune and
+# OMIT the weekly backfill line (backfill-docs / tables-of-motions are Granicus-
+# packet specific). Granicus jurisdictions install all of them.
 #
-# Lean incremental ingest — every 6h on weekdays at 02:00/08:00/14:00/20:00 ET.
+# Lean incremental ingest — every 6h, EVERY day at 02:00/08:00/14:00/20:00 ET.
+# (Was weekdays-only [1-5]; a no-new-clip run exits in seconds, and skipping
+# weekends delayed weekend/Friday-evening clips by up to ~54h.)
 # probe -> process new clips -> RAG ingest -> reload API -> S3 + CF + feeds
-0 2,8,14,20 * * 1-5  /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh    >> /var/log/__SLUG__-ingest.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-ingest
+0 2,8,14,20 * * *  /usr/bin/flock -n -E 99 /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/ingest_cron.sh >> /var/log/fuzzy-potato/__SLUG__-ingest.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-ingest; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-ingest-fail; fi
 
 # Daily v2-summary upgrade — every day at 00:00 ET. Generates the two-pass
 # summary + facts for clips the lean ingest deferred, re-ingests + refreshes.
-0 0 * * *            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh  >> /var/log/__SLUG__-summaries.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-summaries
+0 0 * * *  /usr/bin/flock -n -E 99 /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/summaries_cron.sh >> /var/log/fuzzy-potato/__SLUG__-summaries.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-summaries; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-summaries-fail; fi
 
 # Heavy archive-wide sweeps — weekly, Sunday 03:00 ET. (Granicus only — omit
 # on document-driven boxes.) backfill-docs + tables-of-motions, then reload.
-0 3 * * 0            /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/__SLUG__-backfill.log 2>&1 && /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-backfill
+0 3 * * 0  /usr/bin/flock -n -E 99 /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backfill_weekly.sh >> /var/log/fuzzy-potato/__SLUG__-backfill.log 2>&1; rc=$?; if [ "$rc" -eq 0 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-backfill; elif [ "$rc" -ne 99 ]; then /opt/fuzzy-potato/deploy/lightsail/heartbeat.sh __SLUG__-backfill-fail; fi
 
-# Weekly off-box index backup — Sunday 04:30 ET. tars chroma_db + search.db +
-# rag_state.json (+ state.json) to S3. Self-heartbeats __SLUG__-index-backup.
-30 4 * * 0           /usr/bin/flock -n /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh  >> /var/log/__SLUG__-backup.log 2>&1
+# Weekly off-box index backup — Sunday 04:30 ET. tars vec.db + search.db +
+# rag_state.json (+ chroma_db + state.json where they exist) to S3.
+# Self-heartbeats __SLUG__-index-backup.
+30 4 * * 0  /usr/bin/flock -n -E 99 /tmp/__SLUG__-pipeline.lock /opt/fuzzy-potato/deploy/lightsail/backup_indexes.sh >> /var/log/fuzzy-potato/__SLUG__-backup.log 2>&1
+
+# Weekly telemetry retention prune — Sunday 05:00 ET. Deletes rag_events older
+# than 90 days from lfucg_output/telemetry.db, then wal_checkpoint(TRUNCATE).
+# Best-effort (never raises). No pipeline flock — telemetry.db is a separate WAL
+# sqlite and prune_old_events is concurrency-safe.
+0 5 * * 0  cd /opt/fuzzy-potato && set -a && . ./.env && set +a && /home/ubuntu/.local/bin/uv run python -c "from rag.telemetry import prune_old_events; print('telemetry rows pruned:', prune_old_events(90))" >> /var/log/fuzzy-potato/__SLUG__-telemetry-prune.log 2>&1

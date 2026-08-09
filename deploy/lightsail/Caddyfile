@@ -23,5 +23,11 @@ meetings-origin.lexingtonky.news {
 	# Ops marker so we can tell which origin CloudFront is hitting
 	# (box vs the legacy App Runner during/after cutover).
 	header X-Served-By "lfucg-meetings"
-	reverse_proxy 127.0.0.1:8000
+	reverse_proxy 127.0.0.1:8000 {
+		# Strip any client-supplied CF-Connecting-IP before it reaches the
+		# app. CloudFront → Caddy does NOT set it here, so anything present
+		# is a forged rate-limit-bypass attempt. The app resolves the real
+		# client from X-Forwarded-For's two-hop position instead.
+		header_up -CF-Connecting-IP
+	}
 }
