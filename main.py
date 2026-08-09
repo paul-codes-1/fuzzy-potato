@@ -26,6 +26,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import re
+from collections import Counter
 
 from dotenv import load_dotenv
 import httpx
@@ -49,6 +50,162 @@ try:
 except ImportError:
     print("Error: openai library not installed. Run: pip install openai")
     sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Transcript quality gate
+# ---------------------------------------------------------------------------
+# A truthy VTT/Whisper transcript is NOT automatically usable. Real prod
+# casualties: (a) Whisper repetition loops that emit thousands of words of one
+# repeated phrase, and (b) sub-1KB transcripts where an audio chunk silently
+# dropped. Accepting either wrote metadata.json with files.transcript, marking
+# the clip "done" forever. This shared gate rejects garbage so the pipeline can
+# fall through to the other transcription path instead of caching it. The
+# repetition-loop idea is ported from scripts/local_whisper_backfill.py's
+# qa_check (which works on segments); here we detect it in raw text via a
+# word-n-gram dominance check plus a line-run check.
+
+# Assumed word density of a FULLY transcribed meeting (words/min). A 2-3h
+# council meeting averages ~100-150 wpm of actual captured speech.
+TRANSCRIPT_FULL_WPM = 110
+# Coverage floor: below ~half the full density we assume ≥50% of the meeting
+# is missing (a dropped chunk / truncated upload).
+TRANSCRIPT_COVERAGE_MIN_WPM = 55
+# Absolute word floor for a multi-hour clip regardless of the coverage math.
+TRANSCRIPT_ABS_MIN_WORDS = 200
+# Below this we don't bother with the coverage check (tiny clips are legit).
+TRANSCRIPT_MIN_WORDS_SHORT = 20
+TRANSCRIPT_COVERAGE_MIN_DURATION = 300  # seconds
+# Repetition-loop detection.
+TRANSCRIPT_REPEAT_MAX_RUN = 8           # consecutive identical lines
+TRANSCRIPT_DOMINANCE_FRACTION = 0.30    # one line/phrase > this share of all
+TRANSCRIPT_DOMINANCE_MIN_LINES = 40
+TRANSCRIPT_NGRAM_SIZE = 6               # word-window for the joined-text loop check
+TRANSCRIPT_NGRAM_FRACTION = 0.25        # one 6-gram > this share ⇒ short-period loop
+# Distinct-6-gram ratio floor. A period-P loop yields ~P distinct 6-grams over
+# N total, so the ratio collapses toward 0 no matter the phrase length (the
+# dominance check alone misses long-period loops); natural speech sits ≥0.8.
+TRANSCRIPT_NGRAM_MIN_UNIQUE_RATIO = 0.10
+TRANSCRIPT_NGRAM_MIN_WORDS = 60
+
+
+def validate_transcript(text: Optional[str],
+                        duration_seconds: Optional[float] = None) -> tuple[bool, str]:
+    """Gate a transcript before it's accepted as final. Returns ``(ok, reason)``.
+
+    Rejects, in order: (a) too-short transcripts (scaled to duration, absolute
+    floor for multi-hour clips), (b) repetition loops where a few distinct
+    lines or word-n-grams dominate, and (c) low coverage (implied words/min far
+    below a plausible meeting density ⇒ a dropped chunk). ``duration_seconds``
+    may be None (VTT/Whisper paths pass the audio duration or the last segment
+    end when known); the coverage check is skipped when it's unavailable.
+    """
+    if not text or not text.strip():
+        return False, "empty"
+
+    words = text.split()
+    n_words = len(words)
+
+    # (a) Too short. Scale the floor to duration, capped at the absolute floor
+    # so a multi-hour clip always needs at least TRANSCRIPT_ABS_MIN_WORDS.
+    if duration_seconds and duration_seconds > 0:
+        scaled = int((duration_seconds / 60.0) * TRANSCRIPT_COVERAGE_MIN_WPM)
+        min_words = min(TRANSCRIPT_ABS_MIN_WORDS, max(TRANSCRIPT_MIN_WORDS_SHORT, scaled))
+    else:
+        min_words = TRANSCRIPT_MIN_WORDS_SHORT
+    if n_words < min_words:
+        return False, f"too_short:{n_words}w<{min_words}"
+
+    # (b) Repetition loop — checked BEFORE coverage because a loop is also
+    # (trivially) low-coverage, and "repetition_loop" is the more actionable
+    # diagnosis.
+    # Line-run / line-dominance: catches VTT-placeholder and segment-joined
+    # transcripts that carry newlines.
+    lines = [re.sub(r"\s+", " ", ln.strip().lower())
+             for ln in text.splitlines() if ln.strip()]
+    if len(lines) >= 2:
+        run = best_run = 1
+        for a, b in zip(lines, lines[1:]):
+            if b and a == b:
+                run += 1
+                best_run = max(best_run, run)
+            else:
+                run = 1
+        if best_run >= TRANSCRIPT_REPEAT_MAX_RUN:
+            return False, f"repetition_loop:{best_run}x_line"
+        if len(lines) >= TRANSCRIPT_DOMINANCE_MIN_LINES:
+            top_line, top_n = Counter(lines).most_common(1)[0]
+            if top_n / len(lines) > TRANSCRIPT_DOMINANCE_FRACTION:
+                return False, f"dominant_line:{top_n}/{len(lines)}"
+
+    # Word-n-gram dominance: catches loops joined into one long line with no
+    # newlines/punctuation (e.g. "thank you thank you thank you ..."), which
+    # the line check can't see.
+    if n_words >= TRANSCRIPT_NGRAM_MIN_WORDS:
+        toks = [w.lower() for w in words]
+        n = TRANSCRIPT_NGRAM_SIZE
+        grams = [tuple(toks[i:i + n]) for i in range(len(toks) - n + 1)]
+        if grams:
+            top_gram, top_n = Counter(grams).most_common(1)[0]
+            if top_n / len(grams) > TRANSCRIPT_NGRAM_FRACTION:
+                return False, f"repetition_loop:{top_n}/{len(grams)}_ngram"
+            unique_ratio = len(set(grams)) / len(grams)
+            if unique_ratio < TRANSCRIPT_NGRAM_MIN_UNIQUE_RATIO:
+                return False, f"repetition_loop:{unique_ratio:.3f}_uniq_ngram"
+
+    # (c) Low coverage — implied words/min far below a plausible meeting
+    # density means roughly half (or more) of the meeting never made it in.
+    if duration_seconds and duration_seconds > TRANSCRIPT_COVERAGE_MIN_DURATION:
+        implied_wpm = n_words / (duration_seconds / 60.0)
+        if implied_wpm < TRANSCRIPT_COVERAGE_MIN_WPM:
+            return False, (
+                f"low_coverage:{implied_wpm:.0f}wpm_over_{duration_seconds:.0f}s"
+            )
+
+    return True, ""
+
+
+def _normalize_failed_clips(failed) -> dict:
+    """Fold the failed-clips ledger into the keyed-dict form.
+
+    The ledger used to be a LIST with one row appended per attempt, never
+    deduped and never removed on success — so the retry budgets (which count
+    rows) burned lifetime attempts on stale failures. The canonical form is a
+    dict keyed by ``str(clip_id)`` with ``{first_ts, last_ts, attempts,
+    reason}``. A legacy list is folded once (on load); a dict passes through.
+    """
+    if isinstance(failed, dict):
+        return failed
+    out: Dict[str, dict] = {}
+    for entry in failed or []:
+        if not isinstance(entry, dict):
+            continue
+        cid = entry.get("clip_id")
+        if cid is None:
+            continue
+        key = str(cid)
+        ts = entry.get("timestamp")
+        reason = entry.get("reason")
+        rec = out.get(key)
+        if rec is None:
+            out[key] = {
+                "first_ts": ts,
+                "last_ts": ts,
+                "attempts": 1,
+                "reason": reason,
+            }
+        else:
+            rec["attempts"] += 1
+            # ISO-8601 sorts lexically = chronologically; be robust to
+            # out-of-order rows rather than trusting append order.
+            if ts:
+                if not rec.get("first_ts") or ts < rec["first_ts"]:
+                    rec["first_ts"] = ts
+                if not rec.get("last_ts") or ts > rec["last_ts"]:
+                    rec["last_ts"] = ts
+            if reason:
+                rec["reason"] = reason
+    return out
 
 
 class LFUCGPipeline:
@@ -186,11 +343,11 @@ class LFUCGPipeline:
     def load_state(self):
         """Load pipeline state from file (falls back to .bak when corrupt)"""
         bak_file = self.state_file.with_name(self.state_file.name + ".bak")
+        self.state = None
         if self.state_file.exists():
             try:
                 with open(self.state_file) as f:
                     self.state = json.load(f)
-                return
             except json.JSONDecodeError as e:
                 # A crash mid-write (pre-atomic-write era) leaves a torn
                 # state.json that would otherwise crash every run forever.
@@ -198,13 +355,20 @@ class LFUCGPipeline:
                 if bak_file.exists():
                     with open(bak_file) as f:
                         self.state = json.load(f)
-                    return
-                self.log("No state.json.bak found — starting from empty state", "ERROR")
-        self.state = {
-            "last_processed_clip_id": 0,
-            "processed_clips": [],
-            "failed_clips": []
-        }
+                else:
+                    self.log("No state.json.bak found — starting from empty state", "ERROR")
+        if self.state is None:
+            self.state = {
+                "last_processed_clip_id": 0,
+                "processed_clips": [],
+                "failed_clips": {},
+            }
+        # Migrate the legacy list-form failed_clips ledger to the keyed dict
+        # (one-time fold on load); ensure the other keys exist.
+        self.state.setdefault("last_processed_clip_id", 0)
+        self.state.setdefault("processed_clips", [])
+        self.state["failed_clips"] = _normalize_failed_clips(
+            self.state.get("failed_clips"))
 
     def save_state(self):
         """Save pipeline state to file (atomic, keeping a .bak of the last good state)"""
@@ -285,6 +449,12 @@ class LFUCGPipeline:
     # would garble or drop it in both halves).
     CHUNK_OVERLAP_SECONDS = 2.0
 
+    # ffprobe-failure fallback: estimate audio duration from file size. The
+    # pipeline downloads 48 kbps mono mp3 (~6 KB/s), so 1 MB ≈ 167 s of audio.
+    # The old `file_size_mb * 60` (~1 MB/min ≈ 133 kbps) under-estimated
+    # duration ~2.8x, which collapsed chunk offsets onto each other.
+    AUDIO_SECONDS_PER_MB = 167
+
     def get_audio_duration(self, audio_path: Path) -> Optional[float]:
         """Get audio duration in seconds via ffprobe. Returns None on failure."""
         try:
@@ -304,8 +474,9 @@ class LFUCGPipeline:
 
         duration = self.get_audio_duration(audio_path)
         if duration is None:
-            # Estimate duration from file size (assume ~1MB per minute at low bitrate)
-            duration = file_size_mb * 60
+            # Estimate duration from file size at the download bitrate (48kbps
+            # mono ≈ 167 s/MB), NOT the old ~1MB/min guess.
+            duration = file_size_mb * self.AUDIO_SECONDS_PER_MB
 
         chunk_duration = duration / num_chunks
         self.progress(f"Splitting {duration:.0f}s audio into {num_chunks} chunks of ~{chunk_duration:.0f}s each")
@@ -438,7 +609,6 @@ class LFUCGPipeline:
             MAX_SIZE_MB = 24  # Leave some headroom
 
             transcribe_file = audio_path
-            cleanup_files = []
 
             # Determine if we need to split — calculate chunks so each is under MAX_SIZE_MB
             import math
@@ -458,7 +628,7 @@ class LFUCGPipeline:
                     self.log(
                         f"Failed to split audio into chunks "
                         f"({len(chunk_paths)}/{num_chunks} created)", "ERROR")
-                    for f in cleanup_files + chunk_paths:
+                    for f in chunk_paths:
                         if f.exists():
                             f.unlink()
                     return None
@@ -468,7 +638,7 @@ class LFUCGPipeline:
                 # subsequent segment offset onto the same spot).
                 total_duration = self.get_audio_duration(transcribe_file)
                 if total_duration is None:
-                    total_duration = file_size_mb * 60  # same estimate as the splitter
+                    total_duration = file_size_mb * self.AUDIO_SECONDS_PER_MB  # same estimate as the splitter
                 nominal_chunk_duration = total_duration / num_chunks
 
                 # Compress any chunks that exceed the Whisper API size limit
@@ -488,6 +658,14 @@ class LFUCGPipeline:
                 all_segments = []
                 chunk_offset = 0.0  # Track time offset for each chunk
                 chunk_failed = False
+                # End (in global adjusted time) of the previous chunk's last
+                # segment. Chunk i>0 is downloaded CHUNK_OVERLAP_SECONDS early,
+                # so its first ~2s of segments re-transcribe audio the prior
+                # chunk already covered. Dropping segments whose adjusted start
+                # precedes this boundary removes the duplicated overlap window
+                # from BOTH the segment list and the rebuilt text (the old
+                # " ".join(chunk_texts) double-counted it).
+                prev_chunk_last_end = 0.0
 
                 for i, chunk_path in enumerate(chunk_paths):
                     self.progress(f"Transcribing chunk {i+1}/{len(chunk_paths)}...")
@@ -513,22 +691,33 @@ class LFUCGPipeline:
                             transcripts.append(chunk_result.text.strip())
                             self.progress(f"Chunk {i+1} transcribed: {len(transcripts[-1])} chars")
 
-                            # Add segments with adjusted timestamps
+                            # Add segments with adjusted timestamps, dropping the
+                            # overlap window from every chunk after the first.
+                            boundary = prev_chunk_last_end
+                            this_chunk_max_end = boundary
                             if hasattr(chunk_result, 'segments') and chunk_result.segments:
                                 for seg in chunk_result.segments:
                                     # Handle both dict and object access patterns
                                     if isinstance(seg, dict):
-                                        all_segments.append({
-                                            "start": seg.get("start", 0) + chunk_offset,
-                                            "end": seg.get("end", 0) + chunk_offset,
-                                            "text": seg.get("text", "").strip()
-                                        })
+                                        adj_start = seg.get("start", 0) + chunk_offset
+                                        adj_end = seg.get("end", 0) + chunk_offset
+                                        seg_text = seg.get("text", "").strip()
                                     else:
-                                        all_segments.append({
-                                            "start": getattr(seg, "start", 0) + chunk_offset,
-                                            "end": getattr(seg, "end", 0) + chunk_offset,
-                                            "text": getattr(seg, "text", "").strip()
-                                        })
+                                        adj_start = getattr(seg, "start", 0) + chunk_offset
+                                        adj_end = getattr(seg, "end", 0) + chunk_offset
+                                        seg_text = getattr(seg, "text", "").strip()
+                                    # Skip segments that fall inside the region
+                                    # the previous chunk already transcribed.
+                                    if i > 0 and adj_start < boundary:
+                                        continue
+                                    all_segments.append({
+                                        "start": adj_start,
+                                        "end": adj_end,
+                                        "text": seg_text,
+                                    })
+                                    if adj_end > this_chunk_max_end:
+                                        this_chunk_max_end = adj_end
+                            prev_chunk_last_end = this_chunk_max_end
                         else:
                             self.log(f"Chunk {i+1} transcribed empty", "WARNING")
                             chunk_failed = True
@@ -549,9 +738,8 @@ class LFUCGPipeline:
                     if chunk_failed:
                         break
 
-                # Clean up compressed files and any chunks left after an
-                # early break.
-                for f in cleanup_files + chunk_paths:
+                # Clean up any chunks left after an early break.
+                for f in chunk_paths:
                     if f.exists():
                         f.unlink()
 
@@ -568,8 +756,13 @@ class LFUCGPipeline:
                     self.log("All chunks failed to transcribe", "ERROR")
                     return None
 
-                # Combine transcripts
-                text = " ".join(transcripts)
+                # Combine transcripts. Prefer the overlap-deduped segments so
+                # the ~2s overlap window isn't double-counted; fall back to the
+                # raw chunk-text join only when no segments came back.
+                if all_segments:
+                    text = " ".join(s["text"] for s in all_segments if s["text"])
+                else:
+                    text = " ".join(transcripts)
                 word_count = len(text.split())
                 self.progress(f"Combined {len(chunk_paths)} chunks: {len(text)} chars, ~{word_count} words")
 
@@ -606,25 +799,12 @@ class LFUCGPipeline:
                 upload_elapsed = (datetime.now() - upload_start).total_seconds()
                 self.log(f"Transcription timed out after {upload_elapsed:.1f}s: {e}", "ERROR")
                 self.progress("Skipping this clip due to timeout - will retry on next run")
-                for f in cleanup_files:
-                    if f.exists():
-                        f.unlink()
-                        self.progress("Removed temporary compressed file")
                 return None
 
             except httpx.HTTPStatusError as e:
                 upload_elapsed = (datetime.now() - upload_start).total_seconds()
                 self.log(f"OpenAI API error after {upload_elapsed:.1f}s: {e}", "ERROR")
-                for f in cleanup_files:
-                    if f.exists():
-                        f.unlink()
                 return None
-
-            # Clean up compressed files
-            for f in cleanup_files:
-                if f.exists():
-                    f.unlink()
-                    self.progress("Removed temporary compressed file")
 
             text = transcript_result.text.strip() if transcript_result and transcript_result.text else ""
 
@@ -897,13 +1077,20 @@ Guidelines:
             return None
 
 
-    def generate_search_index(self, build_search_db: bool = True) -> Optional[Path]:
+    def generate_search_index(self, build_search_db: bool = True,
+                              seo: bool = True) -> Optional[Path]:
         """Generate index.json with all processed clips for frontend search.
 
         ``build_search_db=True`` (the default) also rebuilds the FTS5
         search.db that powers /api/search. Pass ``False`` from per-clip
         loop callsites — the FTS rebuild is ~30s on the full archive
         and only the final batch state needs to be searchable.
+
+        ``seo=True`` (the default) also runs generate_seo_artifacts, which
+        re-reads every clip's transcript and rewrites clip.md for ALL clips
+        (~300MB read / ~134MB write across the archive). Pass ``False`` from
+        per-clip loop callsites so a 100-clip batch doesn't redo that 100x;
+        the batch-end hook does one full SEO pass.
         """
         self.log("Generating search index...")
 
@@ -933,8 +1120,10 @@ Guidelines:
                     transcript_path = clip_dir / metadata["files"]["transcript"]
                     if transcript_path.exists():
                         with open(transcript_path, 'r', encoding='utf-8') as f:
-                            full_text = f.read()
-                            # First 500 chars for preview
+                            # Only need the first 500 chars — read a small
+                            # bounded prefix instead of the whole (up to
+                            # multi-MB) transcript for every clip.
+                            full_text = f.read(2048)
                             transcript_preview = full_text[:500].replace('\n', ' ').strip()
 
                 # Read agenda text for card preview
@@ -943,7 +1132,8 @@ Guidelines:
                     agenda_path = clip_dir / metadata["files"]["agenda_txt"]
                     if agenda_path.exists():
                         with open(agenda_path, 'r', encoding='utf-8') as f:
-                            agenda_text = f.read()
+                            # Bounded read — only the first 500 chars are used.
+                            agenda_text = f.read(2048)
                             agenda_preview = agenda_text[:500].replace('\n', ' ').strip()
 
                 # Normalize meeting body casing
@@ -993,11 +1183,12 @@ Guidelines:
 
         self.log(f"Generated index with {len(index_entries)} clips at {index_path}")
 
-        try:
-            from seo import generate_seo_artifacts
-            generate_seo_artifacts(index_entries, self.output_dir, log=self.log)
-        except Exception as e:
-            self.log(f"SEO artifact generation error: {e}", "WARNING")
+        if seo:
+            try:
+                from seo import generate_seo_artifacts
+                generate_seo_artifacts(index_entries, self.output_dir, log=self.log)
+            except Exception as e:
+                self.log(f"SEO artifact generation error: {e}", "WARNING")
 
         # Rebuild the SQLite FTS5 search index alongside index.json so the
         # frontend's server-backed search reflects the latest clips. The
@@ -1706,7 +1897,26 @@ Guidelines:
             agenda_doc: Optional[Dict[str, Any]] = None
             minutes_doc: Optional[Dict[str, Any]] = None
 
+            # Quality-gate a VTT transcript BEFORE accepting it as final. A
+            # truthy-but-garbage VTT (steno buffer looped, or only a few
+            # minutes captured before the CC feed dropped) would otherwise be
+            # written as the canonical transcript and the clip marked done
+            # forever. On failure we log loudly and fall through to the Whisper
+            # path (which re-derives the transcript from audio).
+            vtt_ok = False
             if caption_info and caption_info.get("transcript_text"):
+                vtt_segments = caption_info.get("segments") or []
+                vtt_duration = max(
+                    (s.get("end", 0) for s in vtt_segments), default=0) or None
+                vtt_ok, vtt_reason = validate_transcript(
+                    caption_info["transcript_text"], vtt_duration)
+                if not vtt_ok:
+                    self.log(
+                        f"REJECTED Granicus VTT transcript for clip {clip_id} "
+                        f"({vtt_reason}) — falling through to Whisper instead of "
+                        f"accepting garbage", "ERROR")
+
+            if vtt_ok:
                 # VTT path: Granicus stenographer captions are the
                 # canonical transcript. Audio download + Whisper are
                 # skipped entirely for this clip.
@@ -1766,11 +1976,7 @@ Guidelines:
                 else:
                     # No documents available for this meeting → nothing to
                     # build a record from. Record the miss and move on.
-                    self.state["failed_clips"].append({
-                        "clip_id": clip_id,
-                        "reason": "no_documents",
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    self._record_failure(clip_id, "no_documents")
                     self._advance_cursor(clip_id)
                     self.save_state()
                     self.log(
@@ -1794,11 +2000,7 @@ Guidelines:
                 # to transcribe the audio ourselves.
                 audio_filename = self.source.download_audio(clip_id, clip_dir, title, date=meeting_date)
                 if not audio_filename:
-                    self.state["failed_clips"].append({
-                        "clip_id": clip_id,
-                        "reason": "download_failed",
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    self._record_failure(clip_id, "download_failed")
                     self._advance_cursor(clip_id)
                     self.save_state()
                     return False
@@ -1813,11 +2015,29 @@ Guidelines:
                     transcript = transcript_result
 
                 if not transcript:
-                    self.state["failed_clips"].append({
-                        "clip_id": clip_id,
-                        "reason": "transcription_failed",
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    self._record_failure(clip_id, "transcription_failed")
+                    self._advance_cursor(clip_id)
+                    self.save_state()
+                    return False
+
+                # Quality-gate the Whisper output before accepting it. A
+                # repetition loop or a half-captured transcript (dropped chunk)
+                # must NOT be written as final — that marks the clip done
+                # forever. There's no other transcription path here, so we
+                # record a quality failure and let the retry/repair machinery
+                # re-attempt it (the garbage file stays on disk so
+                # --repair-short-transcripts can find it).
+                whisper_duration = self.get_audio_duration(audio_path)
+                if whisper_duration is None and transcript_segments:
+                    whisper_duration = max(
+                        (s.get("end", 0) for s in transcript_segments), default=0
+                    ) or None
+                ok, reason = validate_transcript(transcript, whisper_duration)
+                if not ok:
+                    self.log(
+                        f"REJECTED Whisper transcript for clip {clip_id} "
+                        f"({reason}) — not marking done; will retry", "ERROR")
+                    self._record_failure(clip_id, f"transcript_quality:{reason}")
                     self._advance_cursor(clip_id)
                     self.save_state()
                     return False
@@ -1960,6 +2180,9 @@ Guidelines:
             self._advance_cursor(clip_id)
             if clip_id not in self.state["processed_clips"]:
                 self.state["processed_clips"].append(clip_id)
+            # Success clears any prior failure ledger entry so old failures
+            # don't linger and burn future retry budgets.
+            self._clear_failure(clip_id)
             self.save_state()
 
             self.log(f"Successfully processed clip {clip_id} in {metadata['processing_time_seconds']:.1f}s")
@@ -1979,19 +2202,18 @@ Guidelines:
 
             # Regenerate the metadata search index after each successful
             # clip so the frontend list shows the new clip immediately.
-            # Skip the FTS5 rebuild here — it'd run for every clip in a
-            # batch (~30s × N). Batch-end callers do a final rebuild.
-            self.generate_search_index(build_search_db=False)
+            # Skip the FTS5 rebuild AND the full-transcript SEO pass here —
+            # both run for every clip in a batch otherwise (the SEO pass alone
+            # re-reads ~300MB and rewrites clip.md for all ~4700 clips PER
+            # processed clip). Batch-end callers do one final index+SEO+FTS
+            # pass. See generate_search_index(seo=...) and the main() hook.
+            self.generate_search_index(build_search_db=False, seo=False)
 
             return True
 
         except Exception as e:
             self.log(f"Unexpected error processing clip {clip_id}: {e}", "ERROR")
-            self.state["failed_clips"].append({
-                "clip_id": clip_id,
-                "reason": f"unexpected_error: {str(e)}",
-                "timestamp": datetime.now().isoformat()
-            })
+            self._record_failure(clip_id, f"unexpected_error: {str(e)}")
             # Update last_processed_clip_id even on failure so auto mode moves forward
             self._advance_cursor(clip_id)
             self.save_state()
@@ -2001,9 +2223,14 @@ Guidelines:
             self,
             start_id: int,
             end_id: int,
-            stop_on_failure: bool = True
+            stop_on_failure: bool = False
     ) -> dict:
-        """Process a range of clip IDs"""
+        """Process a range of clip IDs.
+
+        ``stop_on_failure`` defaults to False (safer batch default): a single
+        failed/absent clip in a range shouldn't abort the whole batch. Callers
+        that want fail-fast pass ``stop_on_failure=True`` explicitly.
+        """
 
         results = {
             "processed": [],
@@ -2070,6 +2297,37 @@ Guidelines:
             self.log(f"Could not refresh available clips from source: {e}", "WARNING")
             return
 
+    def _record_failure(self, clip_id: int, reason: str) -> None:
+        """Record (or update) a clip's entry in the keyed failed-clips ledger.
+
+        One entry per clip: first_ts is stamped once, last_ts + attempts move
+        on each new failure, reason reflects the latest. Counting a per-clip
+        ``attempts`` counter (instead of appending a row per attempt) is what
+        keeps stale failures from burning the lifetime retry budget.
+        """
+        failed = self.state.setdefault("failed_clips", {})
+        if not isinstance(failed, dict):
+            failed = _normalize_failed_clips(failed)
+            self.state["failed_clips"] = failed
+        key = str(clip_id)
+        ts = datetime.now().isoformat()
+        rec = failed.get(key)
+        if not isinstance(rec, dict):
+            failed[key] = {
+                "first_ts": ts, "last_ts": ts, "attempts": 1, "reason": reason,
+            }
+        else:
+            rec["attempts"] = rec.get("attempts", 0) + 1
+            rec["last_ts"] = ts
+            rec["reason"] = reason
+            rec.setdefault("first_ts", ts)
+
+    def _clear_failure(self, clip_id: int) -> None:
+        """Drop a clip's failed-clips entry (called when it enters processed)."""
+        failed = self.state.get("failed_clips")
+        if isinstance(failed, dict):
+            failed.pop(str(clip_id), None)
+
     def _advance_cursor(self, clip_id: int) -> None:
         """Advance last_processed_clip_id, never regressing it.
 
@@ -2095,31 +2353,29 @@ Guidelines:
         from datetime import timedelta
 
         cutoff = datetime.now() - timedelta(days=self.RETRY_RECENCY_DAYS)
-        failed_counts = {}
-        latest_ts = {}
-        for entry in self.state.get("failed_clips", []):
-            if not isinstance(entry, dict):
+        failed = _normalize_failed_clips(self.state.get("failed_clips"))
+        eligible = []
+        for key, rec in failed.items():
+            if not isinstance(rec, dict):
                 continue
-            cid = entry.get("clip_id")
-            if cid is None:
+            try:
+                cid = int(key)
+            except (TypeError, ValueError):
                 continue
-            failed_counts[cid] = failed_counts.get(cid, 0) + 1
-            ts_str = entry.get("timestamp")
-            if ts_str:
-                try:
-                    ts = datetime.fromisoformat(ts_str)
-                except ValueError:
-                    continue
-                if cid not in latest_ts or ts > latest_ts[cid]:
-                    latest_ts[cid] = ts
-
-        eligible = [
-            cid for cid, count in failed_counts.items()
-            if cid not in processed_set
-            and count < self.MAX_AUTO_RETRIES
-            and latest_ts.get(cid) is not None
-            and latest_ts[cid] >= cutoff
-        ]
+            if cid in processed_set:
+                continue
+            if rec.get("attempts", 0) >= self.MAX_AUTO_RETRIES:
+                continue
+            last_ts = rec.get("last_ts")
+            if not last_ts:
+                continue
+            try:
+                ts = datetime.fromisoformat(last_ts)
+            except (ValueError, TypeError):
+                continue
+            if ts < cutoff:
+                continue
+            eligible.append(cid)
         if available_set is not None:
             eligible = [c for c in eligible if c in available_set]
         return sorted(eligible)
@@ -2145,25 +2401,27 @@ Guidelines:
 
         now = now or datetime.now()
         cutoff = now - timedelta(days=self.SWEEP_WINDOW_DAYS)
-        first_ts = {}
-        for entry in self.state.get("failed_clips", []):
-            if not isinstance(entry, dict):
-                continue
-            cid = entry.get("clip_id")
-            ts_str = entry.get("timestamp")
-            if cid is None or not ts_str:
+        failed = _normalize_failed_clips(self.state.get("failed_clips"))
+        eligible = []
+        for key, rec in failed.items():
+            if not isinstance(rec, dict):
                 continue
             try:
-                ts = datetime.fromisoformat(ts_str)
-            except ValueError:
+                cid = int(key)
+            except (TypeError, ValueError):
                 continue
-            if cid not in first_ts or ts < first_ts[cid]:
-                first_ts[cid] = ts
-
-        eligible = [
-            cid for cid, ts in first_ts.items()
-            if cid not in processed_set and ts >= cutoff
-        ]
+            if cid in processed_set:
+                continue
+            first_ts = rec.get("first_ts")
+            if not first_ts:
+                continue
+            try:
+                ts = datetime.fromisoformat(first_ts)
+            except (ValueError, TypeError):
+                continue
+            if ts < cutoff:
+                continue
+            eligible.append(cid)
         if available_set is not None:
             eligible = [c for c in eligible if c in available_set]
         return sorted(eligible)
@@ -2194,6 +2452,101 @@ Guidelines:
                 results["processed"].append(clip_id)
             else:
                 results["failed"].append(clip_id)
+        return results
+
+    # Transcripts smaller than this are almost certainly truncated (a dropped
+    # chunk / interrupted upload), independent of the word-count gate.
+    SHORT_TRANSCRIPT_BYTES_FLOOR = 1024
+
+    def find_short_transcripts(self, max_clips: int = 0) -> list:
+        """Return ``[(clip_id, reason), ...]`` for clips whose stored Whisper
+        transcript is too small OR fails ``validate_transcript``.
+
+        Keyed on transcript file SIZE + the quality gate, NOT mere presence —
+        placeholder / document-driven transcripts (legitimately short, no
+        better source) are skipped so they aren't churned.
+        """
+        clips_dir = self.output_dir / "clips"
+        candidates: list = []
+        if not clips_dir.exists():
+            return candidates
+        for clip_dir in sorted(
+                clips_dir.iterdir(),
+                key=lambda x: int(x.name) if x.name.isdigit() else 0):
+            if not clip_dir.is_dir() or not clip_dir.name.isdigit():
+                continue
+            meta_path = clip_dir / "metadata.json"
+            if not meta_path.exists():
+                continue
+            try:
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            files = metadata.get("files", {})
+            tfile = files.get("transcript")
+            if not tfile:
+                continue
+            tpath = clip_dir / tfile
+            if not tpath.exists():
+                continue
+            # Leave placeholder / document-driven transcripts alone — they're
+            # legitimately short and have no better source to re-derive from.
+            source = metadata.get("transcript_source") or ""
+            if source in ("granicus_vtt", "civicclerk_minutes", "civicclerk_agenda"):
+                continue
+            size = tpath.stat().st_size
+            try:
+                text = tpath.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            # Duration from the segments' last end (best available offline).
+            duration = None
+            segf = files.get("transcript_segments")
+            if segf and (clip_dir / segf).exists():
+                try:
+                    segs = json.loads((clip_dir / segf).read_text())
+                    duration = max((s.get("end", 0) for s in segs), default=0) or None
+                except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                    pass
+            if size < self.SHORT_TRANSCRIPT_BYTES_FLOOR:
+                candidates.append((int(clip_dir.name), f"size:{size}b"))
+                continue
+            ok, reason = validate_transcript(text, duration)
+            if not ok:
+                candidates.append((int(clip_dir.name), reason))
+        if max_clips and max_clips > 0:
+            candidates = candidates[:max_clips]
+        return candidates
+
+    def repair_short_transcripts(self, max_clips: int = 10) -> dict:
+        """Re-attempt clips flagged by find_short_transcripts.
+
+        Forces a full reprocess (re-download → re-transcribe) of each flagged
+        clip so a truncated / looped transcript is replaced with a fresh one.
+        """
+        candidates = self.find_short_transcripts(max_clips=max_clips)
+        if not candidates:
+            self.log("Repair: no short/garbage transcripts found")
+            return {"processed": [], "failed": [], "skipped": []}
+
+        self.log(
+            f"Repair: re-attempting {len(candidates)} clip(s): "
+            f"{[c for c, _ in candidates]}")
+        results = {"processed": [], "failed": [], "skipped": []}
+        old_force = self.force_reprocess
+        self.force_reprocess = True  # ignore the cached (bad) transcript
+        try:
+            for idx, (clip_id, why) in enumerate(candidates, 1):
+                self.log(f"\n{'=' * 70}")
+                self.log(f"Repair clip {clip_id} ({why}) - [{idx}/{len(candidates)}]")
+                self.log(f"{'=' * 70}")
+                if self.process_clip(clip_id, skip_if_exists=False):
+                    results["processed"].append(clip_id)
+                else:
+                    results["failed"].append(clip_id)
+        finally:
+            self.force_reprocess = old_force
         return results
 
     def auto_process(self, max_clips: int = 10, reverse: bool = False, start: int = None,
@@ -2422,6 +2775,23 @@ Guidelines:
         return results
 
 
+# Max nightly Pass-1 (GPT-4o fact extraction) attempts before a clip that has
+# a transcript but keeps failing extraction is parked. Without this cap the
+# summaries cron retried it every night forever, re-billing ~$0.05/attempt
+# (its failure was only printed to stdout and discarded).
+MAX_PASS1_ATTEMPTS = 3
+
+
+def _pass1_attempts(clips_dir: Path, cid: int) -> int:
+    """Read the persisted Pass-1 attempt counter from a clip's metadata.json."""
+    meta_path = clips_dir / str(cid) / "metadata.json"
+    try:
+        with open(meta_path) as f:
+            return int(json.load(f).get("pass1_attempts", 0) or 0)
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return 0
+
+
 def filter_upgrade_candidates(clips_dir: Path, all_clip_ids: List[int],
                               max_clips: int, explicit: bool,
                               force: bool) -> tuple[List[int], int]:
@@ -2431,6 +2801,10 @@ def filter_upgrade_candidates(clips_dir: Path, all_clip_ids: List[int],
     `--upgrade-summaries --max N` no-oped once the oldest N were done.
     Explicitly-named clips are never filtered or capped.
 
+    Also parks clips that have exhausted MAX_PASS1_ATTEMPTS Pass-1 extraction
+    attempts (unless explicit/force), so a chronically-failing clip stops
+    re-billing GPT-4o every night. Both kinds of skip fold into skipped_count.
+
     Returns (clip_ids_to_process, skipped_count).
     """
     clip_ids = []
@@ -2438,6 +2812,13 @@ def filter_upgrade_candidates(clips_dir: Path, all_clip_ids: List[int],
     for cid in all_clip_ids:
         facts_path = clips_dir / str(cid) / "extracted_facts.json"
         if facts_path.exists() and not explicit and not force:
+            skipped += 1
+        elif not explicit and not force and \
+                _pass1_attempts(clips_dir, cid) >= MAX_PASS1_ATTEMPTS:
+            print(
+                f"Skipping clip {cid}: {MAX_PASS1_ATTEMPTS}+ failed Pass-1 "
+                f"extraction attempts (parked to stop re-billing)"
+            )
             skipped += 1
         else:
             clip_ids.append(cid)
@@ -2535,6 +2916,15 @@ Examples:
              "failure. Complements the inline --auto retry (3 attempts), which "
              "burns out across ~12h of cron runs — too fast for videos Granicus "
              "posts late. Meant for the weekly backfill cron. --max caps it (default 10)."
+    )
+
+    parser.add_argument(
+        "--repair-short-transcripts",
+        action="store_true",
+        help="Re-attempt clips whose stored Whisper transcript is too small "
+             "(< 1KB) or fails the quality gate (repetition loop / low "
+             "coverage). Forces a full re-download + re-transcribe of each. "
+             "--max caps it (default 10). Skips VTT/document-driven placeholders."
     )
 
     parser.add_argument(
@@ -3047,6 +3437,10 @@ Examples:
                     metadata["files"]["summary_txt"] = "summary.txt"
                     metadata.setdefault("models", {})["summary"] = f"{args.summary_model}+{NARRATION_MODEL}"
 
+                # A successful extraction clears any prior Pass-1 failure count.
+                if facts:
+                    metadata.pop("pass1_attempts", None)
+
                 # Save updated metadata
                 with open(meta_path, "w") as f:
                     json.dump(metadata, f, indent=2, ensure_ascii=False)
@@ -3054,6 +3448,23 @@ Examples:
                 succeeded += 1
             except Exception as e:
                 print(f"  ERROR: {e}")
+                # Persist a Pass-1 attempt counter so a clip that keeps failing
+                # extraction is parked after MAX_PASS1_ATTEMPTS instead of
+                # re-billing GPT-4o every nightly summaries_cron run.
+                attempts = int(metadata.get("pass1_attempts", 0) or 0) + 1
+                metadata["pass1_attempts"] = attempts
+                metadata["pass1_last_error"] = str(e)[:300]
+                metadata["pass1_last_attempt_at"] = datetime.now().isoformat()
+                try:
+                    with open(meta_path, "w") as f:
+                        json.dump(metadata, f, indent=2, ensure_ascii=False)
+                except OSError as werr:
+                    print(f"  (could not persist pass1_attempts: {werr})")
+                if attempts >= MAX_PASS1_ATTEMPTS:
+                    print(
+                        f"  Clip {clip_id} has now failed Pass-1 {attempts}x — "
+                        f"will be parked on future runs"
+                    )
                 failed_ids.append(clip_id)
 
         print(f"\nDone: {succeeded} upgraded, {len(failed_ids)} failed, {skipped} previously done")
@@ -3203,6 +3614,10 @@ Examples:
         # Weekly second-chance pass over dropped failed clips
         results = pipeline.retry_failed_sweep(max_clips=args.max)
 
+    elif args.repair_short_transcripts:
+        # Re-attempt clips with truncated / looped transcripts
+        results = pipeline.repair_short_transcripts(max_clips=args.max)
+
     elif len(args.clip_ids) == 1:
         # Single clip
         success = pipeline.process_clip(args.clip_ids[0], skip_if_exists=False)
@@ -3223,16 +3638,16 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Final FTS5 rebuild after the batch is done. The per-clip
-    # callsite skips it (~30s × N would be wasteful), so we do one
-    # build here so /api/search reflects the new clips.
+    # Final index + SEO + FTS5 pass after the batch is done. The per-clip
+    # callsite skips BOTH the ~30s FTS rebuild and the full-archive SEO pass
+    # (~300MB read / clip.md rewrite for all clips) — doing them once here is
+    # the whole point of the per-clip build_search_db=False/seo=False skips.
     if results.get("processed"):
         try:
-            from scripts.build_search_db import build as build_search_db_fn
-            build_search_db_fn(pipeline.output_dir, pipeline.output_dir / "search.db", verbose=False)
-            pipeline.log("Rebuilt search.db after batch")
+            pipeline.generate_search_index(build_search_db=True, seo=True)
+            pipeline.log("Rebuilt index.json + SEO artifacts + search.db after batch")
         except Exception as e:
-            pipeline.log(f"search.db rebuild error: {e}", "WARNING")
+            pipeline.log(f"batch-end index/SEO/search.db rebuild error: {e}", "WARNING")
 
     # Print summary
     print(f"\n{'=' * 60}")

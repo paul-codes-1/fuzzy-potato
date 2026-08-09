@@ -604,7 +604,8 @@ class TestMinutesAsContent:
             ok = pipe.process_clip(7)
 
         assert ok is False
-        reasons = [f["reason"] for f in pipe.state["failed_clips"]]
+        # failed_clips is now a dict keyed by clip_id → {..., "reason"}.
+        reasons = [f["reason"] for f in pipe.state["failed_clips"].values()]
         assert "no_documents" in reasons
 
     def test_document_driven_source_skips_ws4_agenda_source(self, tmp_path, monkeypatch):
@@ -672,7 +673,8 @@ class TestByteIdentityGuard:
             ok = pipe.process_clip(6669)
 
         assert ok is False
-        reasons = [f["reason"] for f in pipe.state["failed_clips"]]
+        # failed_clips is now a dict keyed by clip_id → {..., "reason"}.
+        reasons = [f["reason"] for f in pipe.state["failed_clips"].values()]
         # The Whisper branch fired (download_failed), NOT the doc branch.
         assert "download_failed" in reasons
         assert "no_documents" not in reasons
