@@ -4,7 +4,32 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 from httpx import AsyncClient
+
+from starlette.requests import Request as StarletteRequest
+
+
+@pytest.fixture(autouse=True)
+def _reset_server_state():
+    """Drop the in-process answer/related/facets caches and rate-limit state
+    between tests so a cached response (or spent budget) from one test can't
+    leak into the next. The caches are keyed on question/clip, so two tests
+    posting the same question would otherwise collide."""
+    import rag.server as srv
+    from rag.rate_limit import limiter
+
+    def _clear():
+        srv._ask_cache.clear()
+        srv._related_cache.clear()
+        srv._facets_cache = None
+        srv._daily_ask_day = None
+        srv._daily_ask_count = 0
+        limiter.reset()
+
+    _clear()
+    yield
+    _clear()
 
 
 # ============================================================
@@ -587,6 +612,44 @@ class TestHealthSha:
         assert "sha" in data
         assert isinstance(data["sha"], str) and data["sha"]
 
+    def test_health_reports_backend_dims_and_max_distance(self, monkeypatch):
+        monkeypatch.setenv("VECTOR_BACKEND", "sqlite")
+        monkeypatch.setenv("RAG_EMBED_DIMS", "512")
+        monkeypatch.setenv("RAG_MAX_DISTANCE", "0.75")
+        from rag.server import app
+        from fastapi.testclient import TestClient
+
+        data = TestClient(app).get("/api/health").json()
+        assert data["backend"] == "sqlite"
+        assert data["dims"] == 512
+        assert data["max_distance"] == 0.75
+
+
+class TestAskCache:
+    """Identical question+filters are served from the in-process answer cache
+    (dropped on /admin/reload), so the second call makes no OpenAI call."""
+
+    def test_second_identical_ask_served_from_cache(self):
+        from rag.server import app
+
+        with patch("rag.server.ask") as mock_ask, \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.get_openai"):
+            mock_ask.return_value = {
+                "answer": "cached answer", "sources": [{"clip_id": 1}],
+                "model_used": "gpt-4o", "filters_applied": {}, "chunks_retrieved": 1,
+            }
+            client = TestClient(app)
+            r1 = client.post("/api/ask", json={"question": "  What About Zoning? "})
+            # Different casing / whitespace normalizes to the same cache key.
+            r2 = client.post("/api/ask", json={"question": "what about zoning?"})
+
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert r1.json()["answer"] == "cached answer"
+        assert r2.json()["answer"] == "cached answer"
+        assert mock_ask.call_count == 1  # second request hit the cache
+
 
 # ============================================================
 # N+3. Date-filter validation (backends diverge on malformed dates)
@@ -667,3 +730,94 @@ class TestDateFilterValidation:
             })
             assert resp.status_code == 200
             assert mock_ask.call_args.kwargs["filters"] is None
+
+
+# ============================================================
+# N+4. Client-IP resolution for rate limiting (spoof-proofing)
+# ============================================================
+
+
+class TestClientIpResolution:
+    """Behind CloudFront → Caddy → uvicorn, the real client must be read from
+    X-Forwarded-For's second-from-last entry (the two proxy hops are appended),
+    and forwarded headers must only be trusted when the socket peer is our own
+    proxy. CF-Connecting-IP is never consulted."""
+
+    def _req(self, peer, headers):
+        raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+        scope = {"type": "http", "headers": raw}
+        if peer is not None:
+            scope["client"] = (peer, 12345)
+        return StarletteRequest(scope)
+
+    def test_legit_cloudfront_caddy_resolves_real_client(self):
+        from rag.server import _client_ip_from_request
+
+        # peer = Caddy on loopback; XFF = "<real client>, <cloudfront edge>".
+        req = self._req("127.0.0.1", {"x-forwarded-for": "203.0.113.7, 130.176.1.9"})
+        assert _client_ip_from_request(req) == "203.0.113.7"
+
+    def test_forged_cf_connecting_ip_is_ignored(self):
+        from rag.server import _client_ip_from_request
+
+        # CF-Connecting-IP is never read; the real client still comes from XFF.
+        req = self._req("127.0.0.1", {
+            "cf-connecting-ip": "9.9.9.9",
+            "x-forwarded-for": "203.0.113.7, 130.176.1.9",
+        })
+        assert _client_ip_from_request(req) == "203.0.113.7"
+
+    def test_forged_leftmost_xff_is_ignored(self):
+        from rag.server import _client_ip_from_request
+
+        # Attacker prepends a spoofed entry; CloudFront still appends the true
+        # viewer IP and Caddy appends CloudFront's edge, so [-2] lands on the
+        # real client, never the client-chosen leftmost.
+        req = self._req("127.0.0.1", {
+            "x-forwarded-for": "6.6.6.6, 203.0.113.7, 130.176.1.9",
+        })
+        assert _client_ip_from_request(req) == "203.0.113.7"
+        assert _client_ip_from_request(req) != "6.6.6.6"
+
+    def test_direct_to_origin_forged_header_falls_back_to_peer(self):
+        from rag.server import _client_ip_from_request
+
+        # Socket peer is a public IP (not our proxy) → forwarded headers are
+        # untrusted; the peer IP is the client.
+        req = self._req("8.8.8.8", {
+            "cf-connecting-ip": "9.9.9.9",
+            "x-forwarded-for": "203.0.113.7, 130.176.1.9",
+        })
+        assert _client_ip_from_request(req) == "8.8.8.8"
+
+
+# ============================================================
+# N+5. Global daily expensive-tier backstop (OpenAI spend ceiling)
+# ============================================================
+
+
+class TestDailyAskCap:
+    """A process-wide UTC-daily ceiling on expensive-tier calls that trips
+    independent of the per-IP limiter (protects total OpenAI spend)."""
+
+    def test_daily_cap_returns_429_when_exceeded(self, monkeypatch):
+        monkeypatch.setenv("RAG_DAILY_ASK_CAP", "1")
+        from rag.server import app
+
+        with patch("rag.server.ask") as mock_ask, \
+             patch("rag.server.get_vecstore"), \
+             patch("rag.server.load_clip_metadata", return_value={}), \
+             patch("rag.server.get_openai"):
+            mock_ask.return_value = {
+                "answer": "a", "sources": [], "filters_applied": {},
+                "chunks_retrieved": 0,
+            }
+            client = TestClient(app)
+            # Two DIFFERENT questions so the answer cache can't serve the 2nd
+            # (a cache hit bypasses the cap by design — it makes no OpenAI call).
+            r1 = client.post("/api/ask", json={"question": "first question on zoning"})
+            r2 = client.post("/api/ask", json={"question": "second question on parks"})
+
+        assert r1.status_code == 200
+        assert r2.status_code == 429
+        assert r2.json()["reason"] == "daily_ask_cap"

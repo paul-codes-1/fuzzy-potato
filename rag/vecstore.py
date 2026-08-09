@@ -586,7 +586,22 @@ def get_vecstore(output_dir: str) -> VecStore:
 
         return ChromaVecStore(get_chroma_collection(output_dir))
     if backend == "sqlite":
-        return SqliteVecStore(vec_db_path(output_dir))
+        store = SqliteVecStore(vec_db_path(output_dir))
+        # The store adopts whatever dims the on-disk vec.db was built at. If
+        # that disagrees with RAG_EMBED_DIMS (what query-time embeds use), fail
+        # LOUDLY here instead of letting the mismatch surface as an opaque 500
+        # deep inside _serialize() on the first query. Flip VECTOR_BACKEND /
+        # RAG_EMBED_DIMS together to match how vec.db was built.
+        expected = embedding_dims()
+        if store.dims != expected:
+            store.close()
+            raise ValueError(
+                f"vec.db at {vec_db_path(output_dir)} was built at {store.dims} "
+                f"dims but RAG_EMBED_DIMS={expected}. Rebuild via "
+                f"scripts/rebuild_vec_db.py or fix the env (see this module's "
+                f"docstring)."
+            )
+        return store
     raise ValueError(f"Unknown VECTOR_BACKEND {backend!r} (expected 'chroma' or 'sqlite')")
 
 
