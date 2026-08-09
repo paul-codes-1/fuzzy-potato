@@ -156,7 +156,7 @@ Set in `.env` file:
 
 ## System Requirements
 
-- Python 3.10+ (the `mcp` SDK requires 3.10+; the production Lightsail box runs 3.11. The repo `Dockerfile` is legacy from the App Runner era — kept for reference, not used in production)
+- Python 3.10+ (the `mcp` SDK requires 3.10+; the production Lightsail box runs 3.10.12. The App-Runner-era `Dockerfile`/`entrypoint.sh`/`ingest_all.sh`/`lambda/` and the disabled `.github/workflows/ingest.yml` second-ingest workflow were **deleted 2026-08-08** — production is the Lightsail git-checkout path only)
 - ffmpeg (system installation required)
 - yt-dlp (installed via uv)
 - tesseract-ocr (for OCR of scanned agenda PDFs)
@@ -326,12 +326,14 @@ React 18 SPA with:
 
 ### Scheduled sync — cron on the Lightsail box (`deploy/lightsail/`)
 
-Since the 2026-06-11 App Runner→Lightsail migration, scheduled syncing runs as **cron on the co-located Lightsail box** (not the old EventBridge Lambda). All jobs are `flock`-guarded on `/tmp/lfucg-pipeline.lock` and times are ET:
-- **`ingest_cron.sh`** — lean incremental ingest every 6h on weekdays (02/08/14/20): probe → process new clips → RAG ingest → reload API (`POST /admin/reload`, falls back to `systemctl restart lfucg-rag`) → S3 + CloudFront + feeds.
+Since the 2026-06-11 App Runner→Lightsail migration, scheduled syncing runs as **cron on the co-located Lightsail box**. All jobs write logs to `/var/log/fuzzy-potato/` (ubuntu-owned — writing to `/var/log` directly fails the redirect-open before `flock`, which silently killed the never-run jobs; fixed 2026-08-08), are `flock`-guarded on `/tmp/lfucg-pipeline.lock`, and use a tri-state heartbeat (`flock -E 99`: success → `<job>`, real failure → `<job>-fail`, lock-skip → nothing). Times are ET:
+- **`ingest_cron.sh`** — lean incremental ingest every 6h, **every day** (02/08/14/20): sweep orphaned video intermediates → probe → process new clips → RAG ingest → reload API (`POST /admin/reload`, falls back to `systemctl restart lfucg-rag`) → S3 + CloudFront + feeds.
 - **`summaries_cron.sh`** — daily 00:00: two-pass v2 summary + facts for clips the lean ingest left as VTT placeholders, then re-ingest + reload.
-- **`backfill_weekly.sh`** — Sunday 03:00: archive-wide `--backfill-docs` + `--backfill-tables-of-motions`, then reload + sync.
+- **`backfill_weekly.sh`** — Sunday 03:00: archive-wide `--backfill-docs` + `--backfill-tables-of-motions` + `--retry-failed-sweep`, then reload + sync.
+- **`backup_indexes.sh`** — Sunday 04:30: tars `vec.db` (via `sqlite3 .backup`) + `search.db` + `rag_state.json` → `s3://lt-backups-861476138515/fuzzy-potato/<slug>/`.
+- telemetry prune — Sunday 05:00: `prune_old_events(90)`.
 
-The `lambda/sync_meetings.py` handler is **legacy** (kept for reference; the EventBridge schedule was removed in the migration). Full runbook + crontab: `deploy/lightsail/SETUP.md` + `deploy/lightsail/crontab.txt`.
+Full runbook + crontab: `deploy/lightsail/SETUP.md` + `deploy/lightsail/crontab.txt`. **Paris (`civicmemory.news`) was decommissioned 2026-08-08** (reversibly — data in `s3://lt-backups-861476138515/fuzzy-potato/paris/decommission-20260808.tar.gz`, box stopped, DNS+CloudFront down); its multi-jurisdiction code support remains in-tree for revival.
 
 ## State Management
 
@@ -422,9 +424,7 @@ frontend/
   package.json
   vite.config.js
 
-lambda/                                   # LEGACY (pre-2026-06-11 App Runner era; superseded by deploy/lightsail/ cron)
-  sync_meetings.py                        # old EventBridge Lambda handler
-  requirements.txt                        # Lambda dependencies
+                                          # (lambda/, Dockerfile, entrypoint.sh, ingest_all.sh — App-Runner-era, DELETED 2026-08-08)
 
 deploy/lightsail/                         # Co-located Lightsail deploy (current prod)
   SETUP.md                                # provisioning + migration runbook
