@@ -40,23 +40,34 @@ for p in chroma_db search.db rag_state.json state.json; do
   [ -e "$OUTPUT_DIR/$p" ] && paths+=("$p")
 done
 
-# vec.db is the LIVE store (held open + written by the RAG API), so tarring the
-# on-disk file directly can capture a torn page mid-write. Snapshot it
-# CONSISTENTLY with `sqlite3 .backup` into a temp dir first, then tar the
-# snapshot under the name vec.db. Guarded so boxes still on chroma (no vec.db)
-# and boxes lacking sqlite3 degrade gracefully rather than shipping a bad file.
+# vec.db is the LIVE store (held open + written by the RAG pipeline), so tarring
+# the on-disk file directly can capture a torn page mid-write. Snapshot it
+# CONSISTENTLY via SQLite's online backup API into a temp dir first, then tar
+# the snapshot under the name vec.db. We use Python's stdlib sqlite3 — always
+# present wherever this pipeline runs — NOT the sqlite3 CLI, which is not
+# installed on the Lightsail boxes and silently omitted vec.db from the backup
+# (found 2026-08-08). The backup API is page-level so it doesn't need the
+# sqlite-vec extension loaded. Guarded so chroma-only boxes (no vec.db) degrade
+# gracefully rather than shipping a bad file.
 tar_vec_args=()
 if [ -e "$OUTPUT_DIR/vec.db" ]; then
-  if command -v sqlite3 >/dev/null 2>&1; then
-    VEC_SNAP_DIR="$(mktemp -d)"
-    if sqlite3 "$OUTPUT_DIR/vec.db" ".backup '$VEC_SNAP_DIR/vec.db'"; then
-      tar_vec_args=(-C "$VEC_SNAP_DIR" vec.db)
-    else
-      log "WARNING: sqlite3 .backup of vec.db failed — omitting vec.db from this backup"
-      rm -rf "$VEC_SNAP_DIR"; VEC_SNAP_DIR=""
-    fi
+  VEC_SNAP_DIR="$(mktemp -d)"
+  if python3 - "$OUTPUT_DIR/vec.db" "$VEC_SNAP_DIR/vec.db" <<'PY'
+import sqlite3, sys
+src = sqlite3.connect(sys.argv[1])
+dst = sqlite3.connect(sys.argv[2])
+try:
+    with dst:
+        src.backup(dst)
+finally:
+    dst.close()
+    src.close()
+PY
+  then
+    tar_vec_args=(-C "$VEC_SNAP_DIR" vec.db)
   else
-    log "WARNING: sqlite3 not found — cannot safely snapshot vec.db; omitting it"
+    log "WARNING: python sqlite3 backup of vec.db failed — omitting vec.db from this backup"
+    rm -rf "$VEC_SNAP_DIR"; VEC_SNAP_DIR=""
   fi
 fi
 
