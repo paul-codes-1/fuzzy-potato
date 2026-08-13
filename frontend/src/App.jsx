@@ -1,8 +1,6 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import MeetingList from './components/MeetingList'
 import MeetingDetail from './components/MeetingDetail'
-import AskQuestion from './components/AskQuestion'
-import ChatLFUCG from './components/ChatLFUCG'
 import { About, Methodology, Corrections } from './components/StaticPages'
 import RouteChangeTracker from './components/RouteChangeTracker'
 import { getSiteConfig } from './config/site'
@@ -24,8 +22,6 @@ function App() {
             <h1>{site.archive_name}</h1>
             <nav className="header-nav">
               <Link to="/" className="header-link">Browse</Link>
-              <Link to="/chat" className="header-link">Chat</Link>
-              <Link to="/ask" className="header-link">Ask a Question</Link>
             </nav>
           </div>
           <p>{site.tagline}</p>
@@ -36,8 +32,11 @@ function App() {
         <Routes>
           <Route path="/" element={<MeetingList />} />
           <Route path="/meeting/:clipId" element={<MeetingDetail />} />
-          <Route path="/chat" element={<ChatLFUCG />} />
-          <Route path="/ask" element={<AskQuestion />} />
+          {/* Chat + Ask a Question UI temporarily removed (2026-08-13) pending
+              fine-tuning; the /api/ask + /api/chat endpoints remain live for
+              agents. Redirect old routes home so bookmarks don't dead-end. */}
+          <Route path="/chat" element={<Navigate to="/" replace />} />
+          <Route path="/ask" element={<Navigate to="/" replace />} />
           <Route path="/about" element={<About />} />
           <Route path="/about/methodology" element={<Methodology />} />
           <Route path="/corrections" element={<Corrections />} />

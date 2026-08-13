@@ -697,7 +697,6 @@ def generate_seo_artifacts(
         f"- Methodology (audio source, model versions, accuracy caveats): [{site_url}/about/methodology]({site_url}/about/methodology)",
         f"- Corrections workflow: [{site_url}/corrections]({site_url}/corrections)",
         f"- Search index (JSON): [{site_url}/data/index.json]({site_url}/data/index.json)",
-        f"- RAG Q&A (HTML): [{site_url}/ask]({site_url}/ask) — natural-language Q&A over the archive",
         f"- **Model Context Protocol (MCP) endpoint**: `{site_url}/api/mcp` — "
         f"native MCP server exposing the archive as five tools (`ask_meetings`, "
         f"`search_meetings`, `find_related_clips`, `get_meeting_clip`, "
