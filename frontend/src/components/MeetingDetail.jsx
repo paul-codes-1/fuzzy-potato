@@ -3,6 +3,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useMeeting } from '../hooks/useMeetings'
 import { useRelatedClips } from '../hooks/useRelatedClips'
 import { useFeedsLink } from '../hooks/useFeedsLink'
+import AdSlot from './AdSlot'
 import {
   cleanTitle,
   buildSeoTitle,
@@ -547,6 +548,8 @@ function MeetingDetail() {
           Spot an error?
         </a>
       </aside>
+
+      <AdSlot slot="8650097859" />
 
       <div className="meeting-files">
         <h2>Download Files</h2>
