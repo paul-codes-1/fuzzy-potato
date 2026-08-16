@@ -373,11 +373,17 @@ def build_site_config(cfg: "Jurisdiction | None" = None) -> dict:
         # Curated, RAG-verified showcase questions: each reliably produces a
         # cited, specific answer (named roll call, multi-year STR timeline,
         # ARPA spending breakdown, USB debate with named speakers).
+        # Each of these is battery-tested against prod /api/ask (2026-08-16):
+        # every one returns a specific, multi-source answer with citations and
+        # video timestamps. Don't add untested questions — a suggestion that
+        # yields a "no coverage" answer is worse than none.
         derived["chat"]["suggested_questions"] = [
             "How did each council member vote on the Government Center lease-to-own ordinance in December 2025?",
+            "How much has Lexington put into the Affordable Housing Fund, and what has it paid for?",
             "What has the council done about short-term rental regulations?",
             "How has the council spent the ARPA pandemic relief money?",
             "What has the council discussed about expanding the urban service boundary?",
+            "What has the council discussed about Lexington's tree canopy?",
         ]
 
     return _deep_merge(derived, cfg.frontend_overrides)

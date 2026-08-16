@@ -366,7 +366,7 @@ export function Methodology() {
       <p>
         Browse-and-search is served by a SQLite full-text (FTS5) index covering all
         {isDoc ? ' summaries, agendas, and minutes' : ' transcripts, summaries, agendas, and minutes'}.
-        The Q&amp;A API endpoints (<code>/api/ask</code>{' '}and <code>/api/chat</code>)
+        The Q&amp;A endpoints (<Link to="/ask">/ask</Link>{' '}and <Link to="/chat">/chat</Link>)
         use a retrieval-augmented generation (RAG) pipeline: chunks are embedded with{' '}
         <code>text-embedding-3-small</code> and stored in ChromaDB; questions are
         embedded, top-K chunks retrieved, and synthesized into an answer with citations

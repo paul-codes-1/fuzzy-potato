@@ -2284,6 +2284,11 @@ a:hover {
   border-color: var(--blue-700);
   background: var(--blue-50);
 }
+/* On the /ask page the chips sit under the form, centered, a bit wider. */
+.ask-suggested-questions {
+  margin: 24px auto 0;
+  max-width: 560px;
+}
 
 /* Loading / Typing indicator */
 .chat-typing {

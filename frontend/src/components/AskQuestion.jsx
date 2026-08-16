@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useFacets } from '../hooks/useFacets'
 import { getSiteConfig } from '../config/site'
+import { SUGGESTED_QUESTIONS } from './ChatLFUCG'
 
 // Hard-coded fallback for when /api/facets hasn't loaded (or failed)
 const FALLBACK_MEETING_BODIES = ['Council', 'Committee', 'Commission', 'Board']
@@ -68,7 +69,19 @@ export default function AskQuestion() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!question.trim()) return
+    ask(question)
+  }
+
+  // A suggested-question chip fills the input and submits in one click.
+  // `ask` takes the text explicitly because setQuestion is async — reading
+  // `question` state right after clicking a chip would race the update.
+  function handleSuggestedClick(q) {
+    setQuestion(q)
+    ask(q)
+  }
+
+  async function ask(q) {
+    if (!q.trim()) return
 
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -80,7 +93,7 @@ export default function AskQuestion() {
     setShowUncited(false)
 
     try {
-      const body = { question: question.trim() }
+      const body = { question: q.trim() }
       if (meetingBody) body.meeting_body = meetingBody
       if (dateAfter) body.date_after = dateAfter
       if (dateBefore) body.date_before = dateBefore
@@ -125,12 +138,11 @@ export default function AskQuestion() {
 
       {site.show_coverage_note && (
         <div className="ask-coverage-note">
-          <strong>Coverage note:</strong> The archive spans August 2007 to present with no monthly gaps,
-          but only about 10% of meetings have full transcripts so far. Results are strongest for late 2007,
-          late 2019, and August 2025 onward. We're working to transcribe the rest — if you'd like to help
-          cover the cost of AI transcription for the remaining ~2,000 meetings,{' '}
+          <strong>Coverage:</strong> The archive spans August 2007 to present — 2,800+ meetings, nearly
+          all with full transcripts, AI summaries, and structured vote records. New meetings are
+          ingested automatically, usually the same day they're posted. The pipeline is{' '}
           <a href="https://github.com/paul-codes-1/fuzzy-potato/" target="_blank" rel="noopener noreferrer">
-            get in touch on GitHub
+            open source
           </a>.
         </div>
       )}
@@ -186,6 +198,21 @@ export default function AskQuestion() {
           </label>
         </div>
       </form>
+
+      {!result && !loading && !error && (
+        <div className="chat-suggested-questions ask-suggested-questions">
+          {(chat.suggested_questions || SUGGESTED_QUESTIONS).map((q) => (
+            <button
+              key={q}
+              type="button"
+              className="chat-suggested-btn"
+              onClick={() => handleSuggestedClick(q)}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading && (
         <div className="ask-loading">

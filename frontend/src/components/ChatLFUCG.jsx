@@ -7,11 +7,13 @@ import { getSiteConfig } from '../config/site'
 // Fallback when site.json doesn't provide chat.suggested_questions — mirrors
 // the curated LFUCG list in config.build_site_config (the baked-in defaults
 // here are always the LFUCG strings; see config/site.js header note).
-const SUGGESTED_QUESTIONS = [
+export const SUGGESTED_QUESTIONS = [
   "How did each council member vote on the Government Center lease-to-own ordinance in December 2025?",
+  "How much has Lexington put into the Affordable Housing Fund, and what has it paid for?",
   "What has the council done about short-term rental regulations?",
   "How has the council spent the ARPA pandemic relief money?",
   "What has the council discussed about expanding the urban service boundary?",
+  "What has the council discussed about Lexington's tree canopy?",
 ]
 
 export default function ChatLFUCG() {
