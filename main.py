@@ -1457,9 +1457,14 @@ Guidelines:
                     self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: already has all docs")
                 results["skipped"].append(clip_id)
 
-        # Regenerate index if anything was updated
+        # Regenerate index if anything was updated, and re-embed the touched
+        # clips so the NEW minutes/agenda text reaches the vector store too —
+        # generate_search_index only refreshes the keyword side (search.db);
+        # without the re-ingest, late-arriving minutes were invisible to
+        # semantic retrieval. Same pattern as --backfill-tables-of-motions.
         if results["updated"]:
             self.generate_search_index()
+            self._reingest_clips(sorted(results["updated"]))
 
         self.log(f"\nBackfill complete: {len(results['updated'])} updated, "
                  f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
@@ -1512,7 +1517,7 @@ Guidelines:
                 and self._doc_result_empty(result)):
             try:
                 fallback = self.agenda_source.fetch_for_date(
-                    meeting_date, body, clip_dir)
+                    meeting_date, body, clip_dir, title=title)
                 if not self._doc_result_empty(fallback):
                     return fallback
             except Exception as e:
@@ -1534,7 +1539,7 @@ Guidelines:
                 and self._doc_result_empty(result)):
             try:
                 fallback = self.agenda_source.fetch_minutes_for_date(
-                    meeting_date, body, clip_dir)
+                    meeting_date, body, clip_dir, title=title)
                 if not self._doc_result_empty(fallback):
                     return fallback
             except Exception as e:

@@ -290,8 +290,15 @@ def test_make_agenda_source_civicplus():
 
 
 def test_make_agenda_source_unknown_returns_none():
-    cfg = SimpleNamespace(agenda_type="legistar")
+    cfg = SimpleNamespace(agenda_type="swagit")
     assert make_agenda_source(cfg, _log) is None
+
+
+def test_make_agenda_source_legistar():
+    from sources.legistar import LegistarAgendaSource
+    cfg = SimpleNamespace(agenda_type="legistar",
+                          agenda_base_url="https://lexington.legistar.com")
+    assert isinstance(make_agenda_source(cfg, _log), LegistarAgendaSource)
 
 
 # ---------------------------------------------------------------------------
@@ -626,7 +633,8 @@ def test_fallback_runs_when_video_empty_and_agenda_source_configured(tmp_path):
     pipe = _FakePipeline(source, agenda_source=agenda_source)
     result = pipe._agenda_with_fallback(1, tmp_path, title="T", meeting_date="2026-05-12", body="City Commission")
     assert result is fallback_result
-    agenda_source.fetch_for_date.assert_called_once_with("2026-05-12", "City Commission", tmp_path)
+    agenda_source.fetch_for_date.assert_called_once_with(
+        "2026-05-12", "City Commission", tmp_path, title="T")
 
 
 def test_fallback_not_run_when_no_meeting_date(tmp_path):

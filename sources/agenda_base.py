@@ -92,7 +92,8 @@ class AgendaSource(Protocol):
     """
 
     def fetch_for_date(
-        self, date: str, body: Optional[str], clip_dir: Path
+        self, date: str, body: Optional[str], clip_dir: Path,
+        title: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Find + download the agenda doc for ``date`` (best-effort ``body``).
 
@@ -102,7 +103,8 @@ class AgendaSource(Protocol):
         ...
 
     def fetch_minutes_for_date(
-        self, date: str, body: Optional[str], clip_dir: Path
+        self, date: str, body: Optional[str], clip_dir: Path,
+        title: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Find + download the minutes doc for ``date`` (best-effort ``body``).
 

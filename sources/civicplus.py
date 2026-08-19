@@ -316,7 +316,8 @@ class CivicPlusAgendaSource:
     # AgendaSource protocol
     # ------------------------------------------------------------------
     def fetch_for_date(
-        self, date: str, body: Optional[str], clip_dir: Path
+        self, date: str, body: Optional[str], clip_dir: Path,
+        title: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not date:
             return empty_agenda_result()
@@ -327,7 +328,8 @@ class CivicPlusAgendaSource:
         return self._download_and_extract_pdf(doc, clip_dir, prefix="agenda")
 
     def fetch_minutes_for_date(
-        self, date: str, body: Optional[str], clip_dir: Path
+        self, date: str, body: Optional[str], clip_dir: Path,
+        title: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not date:
             return empty_minutes_result()

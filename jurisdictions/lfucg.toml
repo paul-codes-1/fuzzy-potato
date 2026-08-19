@@ -27,6 +27,14 @@ first_clip_id = 6669
 # a later PR adds "youtube". LFUCG ingests from a Granicus portal.
 type = "granicus"
 
+[agenda]
+# SECONDARY agenda/minutes fallback (WS4) — only consulted when Granicus
+# returns no document. Added 2026-08-19: LFUCG publishes official minutes to
+# lexington.legistar.com within days, while Granicus MinutesViewer lags ~2
+# months for council meetings and has never carried work-session minutes.
+type = "legistar"
+base_url = "https://lexington.legistar.com"
+
 [taxonomy]
 # Meeting-body alternatives matched (word-boundary, case-insensitive) in
 # the clip title. body_acronyms stay uppercased; everything else is

@@ -14,6 +14,7 @@ from .civicclerk import CivicClerkAgendaSource
 from .civicclerk_source import CivicClerkSource
 from .civicplus import CivicPlusAgendaSource
 from .granicus import GranicusSource
+from .legistar import LegistarAgendaSource
 from .youtube import YouTubeSource
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "AgendaDoc",
     "CivicClerkAgendaSource",
     "CivicPlusAgendaSource",
+    "LegistarAgendaSource",
     "make_agenda_source",
 ]
 
@@ -48,6 +50,7 @@ _SOURCES: dict[str, type] = {
 _AGENDA_SOURCES: dict[str, type] = {
     "civicclerk": CivicClerkAgendaSource,
     "civicplus": CivicPlusAgendaSource,
+    "legistar": LegistarAgendaSource,
 }
 
 
