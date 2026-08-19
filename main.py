@@ -3475,8 +3475,15 @@ Examples:
 
     # Handle backfill-docs mode
     if args.backfill_docs:
+        # Same convention as --backfill-tables-of-motions: a bare
+        # --backfill-docs sweeps ALL clips; the --max default of 10 only
+        # applies when the user explicitly passes --max. (The default used to
+        # silently cap the sweep at the 10 newest clips, so minutes that
+        # Granicus publishes ~2 months late were never picked up.)
+        max_explicit = any(a == "--max" or a.startswith("--max=")
+                           for a in sys.argv)
         results = pipeline.backfill_documents(
-            max_clips=args.max,
+            max_clips=args.max if max_explicit else 0,
             regenerate_summary=args.regenerate_summary
         )
         print(f"\nBackfill results:")

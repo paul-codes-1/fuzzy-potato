@@ -106,6 +106,25 @@ uv run python -m scripts.match_youtube_videos || log "video matcher failed (non-
 
 after="$(read_last)"
 
+# Archive-freshness dead-man. The success heartbeat only proves the job RAN —
+# a wedged probe that finds nothing every run still pings healthy (real prod
+# symptom 2026-08: probe wedged for 13 days, nobody paged). LFUCG always has
+# at least one Granicus-published meeting per week, so a newest-clip date
+# older than 10 days means discovery is broken, not that the city went quiet.
+# Emits a DISTINCT metric (never the success heartbeat) + a loud log line.
+newest_date="$(python3 -c "
+import json
+idx = json.load(open('${LFUCG_OUTPUT_DIR:-lfucg_output}/index.json'))
+print(max((c.get('date') or '') for c in idx.get('clips', [])))
+" 2>/dev/null || echo "")"
+if [ -n "$newest_date" ]; then
+  age_days="$(( ( $(date +%s) - $(date -d "$newest_date" +%s 2>/dev/null || echo 0) ) / 86400 ))"
+  if [ "$age_days" -gt 10 ] && [ "$age_days" -lt 30000 ]; then
+    log "WARNING: STALE ARCHIVE — newest clip is $newest_date (${age_days}d old). Probe/discovery is likely wedged."
+    "$REPO/deploy/lightsail/heartbeat.sh" lfucg-ingest-stale
+  fi
+fi
+
 # Skip the downstream churn (restart / S3 / CloudFront / feeds) when nothing
 # new landed. last_processed_clip_id is the cheap proxy; the weekly backfill
 # job handles edits to OLDER clips and runs its own sync.

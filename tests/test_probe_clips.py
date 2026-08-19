@@ -1,13 +1,20 @@
 """Tests for probe_clips.py: the resume high-water mark, the raised gap
-budget, and the 404-vs-network-error distinction.
+budget, the 404-vs-network-error distinction, and the late-publish recheck.
 
 The old scanner stopped after 5 consecutive 404s and saved the resume point
 REWOUND to the last FOUND clip, so every rerun restarted inside the same gap
-and wedged forever. And a network/tool error looked identical to a 404, so a
-transient blip could both count toward the gap budget and terminate the scan.
+and wedged forever. The monotonic high-water fix then wedged the other way:
+Granicus publishes clips days after allocating their ids, so ids the scanner
+had already walked past were absent-forever (prod 2026-08: clips 6846-6856).
+run_recheck covers that window. Probing is plain HTTP now — yt-dlp's generic
+extractor broke against the redesigned Granicus player and classified every
+real clip as absent.
 """
 
 import json
+
+import pytest
+import requests
 
 import probe_clips
 
@@ -86,10 +93,7 @@ class TestRunScan:
         errors break the scan immediately without counting."""
         monkeypatch.setattr(probe_clips, "MAX_CONSECUTIVE_ABSENT", 3)
 
-        calls = {"n": 0}
-
         def probe(cid):
-            calls["n"] += 1
             if cid == 402:
                 return {"status": "error", "clip_id": cid, "error": "SSL error"}
             return {"status": "absent", "clip_id": cid}
@@ -102,49 +106,106 @@ class TestRunScan:
         assert last_probed == 401
 
 
+class TestRunRecheck:
+    """Late-published clips: ids the scan already walked past (absent at the
+    time) must be re-checked so a clip published days later is still found."""
+
+    def test_late_published_clip_is_picked_up(self):
+        available = [{"clip_id": 100, "title": "old"}]
+
+        def probe(cid):
+            if cid == 103:  # published after the scanner first passed it
+                return {"status": "found", "clip_id": cid, "title": "late"}
+            return {"status": "absent", "clip_id": cid}
+
+        out = probe_clips.run_recheck(101, 110, available, probe=probe)
+        assert sorted(c["clip_id"] for c in out) == [100, 103]
+
+    def test_already_known_ids_are_not_reprobed(self):
+        available = [{"clip_id": 100, "title": "a"}, {"clip_id": 102, "title": "b"}]
+        probed = []
+
+        def probe(cid):
+            probed.append(cid)
+            return {"status": "absent", "clip_id": cid}
+
+        probe_clips.run_recheck(100, 103, available, probe=probe)
+        assert probed == [101, 103]  # 100 and 102 skipped
+
+    def test_error_stops_recheck_without_losing_found(self):
+        def probe(cid):
+            if cid == 201:
+                return {"status": "found", "clip_id": cid, "title": "x"}
+            if cid == 202:
+                return {"status": "error", "clip_id": cid, "error": "timeout"}
+            return {"status": "absent", "clip_id": cid}
+
+        out = probe_clips.run_recheck(200, 210, [], probe=probe)
+        assert [c["clip_id"] for c in out] == [201]
+
+    def test_empty_range_is_noop(self):
+        available = [{"clip_id": 5, "title": "a"}]
+        out = probe_clips.run_recheck(6, 5, available, probe=lambda cid: pytest.fail("probed"))
+        assert out is available
+
+
 class TestProbeClipClassification:
-    def _run(self, monkeypatch, returncode=0, stdout="", stderr="", exc=None):
+    """HTTP classification: 200+<title> = found, 404/redirect = absent,
+    anything transient (network error, 5xx, 403, titleless 200) = error."""
+
+    def _run(self, monkeypatch, status_code=200, text="", exc=None):
         class R:
             pass
         r = R()
-        r.returncode = returncode
-        r.stdout = stdout
-        r.stderr = stderr
+        r.status_code = status_code
+        r.text = text
 
-        def fake_run(*a, **k):
+        def fake_get(*a, **k):
             if exc is not None:
                 raise exc
             return r
-        monkeypatch.setattr(probe_clips.subprocess, "run", fake_run)
+        monkeypatch.setattr(probe_clips.requests, "get", fake_get)
         return probe_clips.probe_clip(999)
 
     def test_found(self, monkeypatch):
-        res = self._run(monkeypatch, returncode=0, stdout="Council Meeting")
+        res = self._run(monkeypatch, 200, "<html><title>Council Meeting </title></html>")
         assert res["status"] == "found"
         assert res["title"] == "Council Meeting"
 
-    def test_absent_on_clean_nonzero(self, monkeypatch):
-        res = self._run(monkeypatch, returncode=1, stdout="",
-                        stderr="ERROR: Unable to download webpage: HTTP Error 404: Not Found")
+    def test_found_unescapes_entities(self, monkeypatch):
+        res = self._run(monkeypatch, 200, "<title>Social Services &amp; Public Safety</title>")
+        assert res["status"] == "found"
+        assert res["title"] == "Social Services & Public Safety"
+
+    def test_absent_on_404(self, monkeypatch):
+        res = self._run(monkeypatch, 404)
         assert res["status"] == "absent"
 
-    def test_error_on_timeout(self, monkeypatch):
-        import subprocess
-        res = self._run(monkeypatch, exc=subprocess.TimeoutExpired(cmd="yt-dlp", timeout=30))
+    def test_absent_on_redirect(self, monkeypatch):
+        # A 302 (e.g. to the view listing) means no public player page.
+        res = self._run(monkeypatch, 302)
+        assert res["status"] == "absent"
+
+    def test_error_on_200_without_title(self, monkeypatch):
+        # A markup change must stop the scan, not eat the archive as absent.
+        res = self._run(monkeypatch, 200, "<html><body>hi</body></html>")
         assert res["status"] == "error"
 
-    def test_error_on_network_signature(self, monkeypatch):
-        res = self._run(monkeypatch, returncode=1, stdout="",
-                        stderr="ERROR: Unable to download: Temporary failure in name resolution")
+    def test_error_on_network_exception(self, monkeypatch):
+        res = self._run(monkeypatch, exc=requests.ConnectionError("boom"))
+        assert res["status"] == "error"
+
+    def test_error_on_timeout(self, monkeypatch):
+        res = self._run(monkeypatch, exc=requests.Timeout("timed out"))
         assert res["status"] == "error"
 
     def test_error_on_5xx(self, monkeypatch):
-        res = self._run(monkeypatch, returncode=1, stdout="",
-                        stderr="ERROR: HTTP Error 503: Service Unavailable")
+        res = self._run(monkeypatch, 503)
         assert res["status"] == "error"
 
-    def test_error_on_missing_tool(self, monkeypatch):
-        res = self._run(monkeypatch, exc=FileNotFoundError("yt-dlp"))
+    def test_error_on_403(self, monkeypatch):
+        # A WAF challenge must not classify the whole archive as ended.
+        res = self._run(monkeypatch, 403)
         assert res["status"] == "error"
 
 

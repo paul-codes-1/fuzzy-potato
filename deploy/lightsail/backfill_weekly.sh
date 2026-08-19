@@ -30,7 +30,12 @@ log() { echo "==> [$(date -Is)] $*"; }
 # by default and only flip REGEN_SUMMARIES=1 deliberately, e.g. after a
 # summary parser/prompt change.
 log "Backfilling missing minutes/agenda"
-BACKFILL_ARGS=(--backfill-docs)
+# --max 150 ≈ 6 months of clips. Granicus publishes official minutes ~2
+# months after the meeting (observed 2026-08: minutes through June 9 were
+# up, June 18+ still pending), so the sweep window must comfortably exceed
+# that lag. A bare --backfill-docs now sweeps the WHOLE archive — fine for a
+# one-off, too much HTTP churn for every week.
+BACKFILL_ARGS=(--backfill-docs --max 150)
 if [ "${REGEN_SUMMARIES:-0}" = "1" ]; then
   log "REGEN_SUMMARIES=1 — also regenerating summaries for touched clips"
   BACKFILL_ARGS+=(--regenerate-summary)

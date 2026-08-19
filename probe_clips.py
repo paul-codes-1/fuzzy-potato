@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Probe all clip IDs to find available clips without downloading."""
+"""Probe clip IDs to find available clips without downloading.
 
+Probing is plain HTTP against the Granicus player page (status code +
+``<title>``), NOT yt-dlp extraction. yt-dlp's generic extractor broke against
+the redesigned Granicus player (2026-08: "[html5] No video formats found"
+for clips that exist and play fine), and when extraction breaks every real
+clip classifies as "absent" — which is indistinguishable from the end of the
+archive. An HTTP 200/404 can't lie about existence.
+"""
+
+import html as html_mod
 import json
-import os
-import subprocess
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
+
+import requests
 from dotenv import load_dotenv
 
 from config import get_config
@@ -28,30 +38,24 @@ VIEW_ID = _CFG.default_view_id
 # much larger budget AND persist a monotonic high-water mark (see run_scan).
 MAX_CONSECUTIVE_ABSENT = 25
 
-# Substrings that mark a transient network / tooling failure rather than a
-# genuine "this clip does not exist" (404). Network errors must NOT count
-# toward the end-of-archive gap budget, must NOT advance the resume point
-# past the id, and must NOT be mistaken for the end of the archive.
-_NETWORK_ERROR_SIGNS = (
-    "temporary failure in name resolution",
-    "timed out",
-    "timeout",
-    "connection reset",
-    "connection refused",
-    "unable to connect",
-    "getaddrinfo",
-    "network is unreachable",
-    "read timed out",
-    "http error 5",  # any 5xx is a transient server-side error
-    "ssl",
-    "max retries",
-    "remote end closed",
+# Granicus publishes clips DAYS after allocating their ids, so the monotonic
+# high-water mark alone re-creates the wedge in the other direction: the
+# scanner walks past a not-yet-published id, marks it absent forever, and the
+# clip is never picked up when it goes live (real prod symptom 2026-08: clips
+# 6846-6856 were published after the scanner had already crawled to the old
+# hard-coded 7000 ceiling, wedging the archive for 13 days). Every run
+# therefore RE-CHECKS the absent ids between the newest found clip and the
+# high-water mark (bounded by RECHECK_WINDOW), and the high-water mark is
+# never allowed to run more than MAX_LOOKAHEAD past the newest found clip.
+RECHECK_WINDOW = 500
+MAX_LOOKAHEAD = 400
+
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 )
 
-
-def _looks_like_network_error(text: str) -> bool:
-    t = (text or "").lower()
-    return any(sign in t for sign in _NETWORK_ERROR_SIGNS)
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
 
 def probe_clip(clip_id: int) -> dict:
@@ -59,40 +63,78 @@ def probe_clip(clip_id: int) -> dict:
 
     Returns a dict with a ``status`` of:
       - ``"found"``  — clip exists (``title`` present)
-      - ``"absent"`` — genuine 404 / no such clip (counts toward the gap budget)
-      - ``"error"``  — transient network/tool failure (does NOT count as a gap)
+      - ``"absent"`` — genuine 404 / not-public (counts toward the gap budget)
+      - ``"error"``  — transient network/server failure (does NOT count as a gap)
     """
     url = f"https://{GRANICUS_HOST}/player/clip/{clip_id}?view_id={VIEW_ID}&redirect=true"
 
     try:
-        result = subprocess.run(
-            ["yt-dlp", "--no-download", "--print", "title", url],
-            capture_output=True,
-            text=True,
-            timeout=30
+        resp = requests.get(
+            url,
+            timeout=30,
+            allow_redirects=False,  # a redirect means "no public player page"
+            headers={"User-Agent": _UA},
         )
-    except subprocess.TimeoutExpired:
-        # A timeout is a network/tool stall, not proof the clip is missing.
-        return {"status": "error", "clip_id": clip_id, "error": "timeout"}
-    except FileNotFoundError as e:
-        # yt-dlp not on PATH — a tooling error, definitely not a 404.
-        return {"status": "error", "clip_id": clip_id, "error": f"tool_missing:{e}"}
-    except Exception as e:  # pragma: no cover - defensive
-        return {"status": "error", "clip_id": clip_id, "error": str(e)}
+    except requests.RequestException as e:
+        return {"status": "error", "clip_id": clip_id, "error": str(e)[:200]}
 
-    if result.returncode == 0 and result.stdout.strip():
-        title = result.stdout.strip()
-        # Filter out error messages that might come through on stdout
-        if "ERROR" not in title and "Unable" not in title:
+    if resp.status_code == 200:
+        m = _TITLE_RE.search(resp.text)
+        title = html_mod.unescape(m.group(1)).strip() if m else ""
+        if title:
             return {"status": "found", "clip_id": clip_id, "title": title}
+        # A 200 with no parseable title is suspicious (markup change?) — treat
+        # as transient so the scan stops here instead of eating the archive.
+        return {"status": "error", "clip_id": clip_id, "error": "200 without <title>"}
 
-    # Non-zero exit (or no usable title). Distinguish a real missing clip from
-    # a transient network/server hiccup so the latter doesn't look like the
-    # end of the archive.
-    diag = f"{result.stderr or ''}\n{result.stdout or ''}"
-    if _looks_like_network_error(diag):
-        return {"status": "error", "clip_id": clip_id, "error": diag.strip()[:200]}
-    return {"status": "absent", "clip_id": clip_id}
+    if resp.status_code == 404 or 300 <= resp.status_code < 400:
+        # 404 = no such clip; a redirect (e.g. to the view listing) = clip id
+        # exists but has no public player page. Both are "not available".
+        return {"status": "absent", "clip_id": clip_id}
+
+    # 403 / 5xx / anything else — a server-side or WAF hiccup must NOT look
+    # like the end of the archive.
+    return {
+        "status": "error",
+        "clip_id": clip_id,
+        "error": f"HTTP {resp.status_code}",
+    }
+
+
+def run_recheck(
+    start: int,
+    end: int,
+    available: list,
+    probe=probe_clip,
+) -> list:
+    """Re-probe previously-absent ids ``start..end`` for late-published clips.
+
+    No gap budget — the range is bounded by the caller (it sits between the
+    newest found clip and the high-water mark, capped at RECHECK_WINDOW).
+    A transient error stops the pass; the ids simply get re-checked next run.
+    """
+    if end < start:
+        return available
+
+    known = {c["clip_id"] for c in available}
+
+    for clip_id in range(start, end + 1):
+        if clip_id in known:
+            continue
+        res = probe(clip_id)
+        status = res.get("status")
+
+        if status == "error":
+            print(
+                f"[recheck {clip_id}] network error: {res.get('error')} — "
+                f"stopping recheck (retried next run)"
+            )
+            break
+        if status == "found":
+            available.append({"clip_id": clip_id, "title": res.get("title")})
+            print(f"[recheck {clip_id}] LATE-PUBLISHED: {res.get('title')}")
+
+    return available
 
 
 def run_scan(
@@ -112,6 +154,7 @@ def run_scan(
     as the resume point, so a later run never rewinds into an already-scanned
     gap. A transient ``"error"`` stops the scan WITHOUT advancing past the id
     (so the next run retries it) and WITHOUT counting toward the gap budget.
+    Ids the budget skipped are covered by run_recheck on later runs.
 
     Returns ``(available, last_probed)``.
     """
@@ -192,9 +235,36 @@ def main():
         )
         print(f"Resuming from clip {last_probed + 1}, found {len(available)} so far")
 
-    # Parse args
+    max_found = max((c["clip_id"] for c in available), default=0)
+
+    # Pass 1 — re-check the absent ids behind the high-water mark for clips
+    # that were published AFTER the scanner first walked past their id.
+    recheck_start = max(max_found + 1, last_probed - RECHECK_WINDOW + 1)
+    if recheck_start <= last_probed:
+        print(f"Re-checking previously-absent ids {recheck_start}..{last_probed}")
+        before = len(available)
+        available = run_recheck(recheck_start, last_probed, available)
+        if len(available) != before:
+            save_progress(output_file, available, last_probed)
+            max_found = max((c["clip_id"] for c in available), default=0)
+
+    # Pass 2 — fresh ground past the high-water mark, capped so the frontier
+    # can never run away from the newest real clip (the old hard-coded 7000
+    # ceiling both let it run 150+ ids ahead AND froze the scan once reached).
     start = int(sys.argv[1]) if len(sys.argv) > 1 else max(1, last_probed + 1)
-    end = int(sys.argv[2]) if len(sys.argv) > 2 else 7000
+    end = int(sys.argv[2]) if len(sys.argv) > 2 else max_found + MAX_LOOKAHEAD
+
+    if end < start:
+        print(
+            f"Fresh scan skipped: high-water mark {last_probed} is already "
+            f"{last_probed - max_found} ids past newest found clip {max_found} "
+            f"(cap {MAX_LOOKAHEAD})."
+        )
+        save_progress(output_file, available, last_probed)
+        print(f"\nDone! Found {len(available)} available clips")
+        print(f"Resume point (last_checked) saved as: {last_probed}")
+        print(f"Saved to {output_file}")
+        return
 
     print(f"Probing clips {start} to {end}...")
 
