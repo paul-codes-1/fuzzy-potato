@@ -38,3 +38,45 @@ def test_ocr_no_warning_when_within_cap(tmp_path):
          patch.object(documents.pytesseract, "image_to_string", return_value="t"):
         documents.ocr_pdf(pdf, max_pages=40, log_fn=lambda m, lvl="INFO": logs.append((lvl, m)))
     assert not any("OCR truncated" in m for _, m in logs)
+
+
+# ── Word minutes (Granicus serves .docx / legacy .doc for some years) ────────
+import zipfile
+
+
+def _make_docx(path):
+    xml = ('<?xml version="1.0"?><w:document xmlns:w="x"><w:body>'
+           '<w:p><w:r><w:t>MINUTES</w:t></w:r></w:p>'
+           '<w:p><w:r><w:t>I.</w:t></w:r><w:tab/><w:r><w:t>CALL TO ORDER &amp; roll</w:t></w:r></w:p>'
+           '</w:body></w:document>')
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("word/document.xml", xml)
+
+
+def test_sniff_office_kind():
+    assert documents.sniff_office_kind(b"PK\x03\x04rest") == "docx"
+    assert documents.sniff_office_kind(b"\xd0\xcf\x11\xe0rest") == "doc"
+    assert documents.sniff_office_kind(b"%PDF-1.4") is None
+    assert documents.sniff_office_kind(b"") is None
+
+
+def test_extract_docx_text(tmp_path):
+    p = tmp_path / "m.docx"; _make_docx(p)
+    assert documents.extract_office_text(p, "docx") == "MINUTES\nI.\tCALL TO ORDER & roll"
+
+
+def test_extract_doc_text_without_antiword_warns(tmp_path):
+    p = tmp_path / "m.doc"; p.write_bytes(b"\xd0\xcf\x11\xe0")
+    logs = []
+    with patch.object(documents.shutil, "which", return_value=None):
+        assert documents.extract_office_text(p, "doc", log_fn=lambda m, lvl="INFO": logs.append((lvl, m))) is None
+    assert any("antiword" in m for _, m in logs)
+
+
+def test_extract_doc_text_via_antiword(tmp_path):
+    p = tmp_path / "m.doc"; p.write_bytes(b"\xd0\xcf\x11\xe0")
+    fake = MagicMock(stdout="BOARD OF ADJUSTMENT\nSeptember 25, 2015\n", returncode=0)
+    with patch.object(documents.shutil, "which", return_value="/usr/bin/antiword"), \
+         patch.object(documents.subprocess, "run", return_value=fake) as run:
+        assert documents.extract_office_text(p, "doc") == "BOARD OF ADJUSTMENT\nSeptember 25, 2015"
+    assert run.call_args[0][0][:3] == ["antiword", "-w", "0"]

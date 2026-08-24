@@ -117,7 +117,7 @@ cold-start (§2.6) → validate (§2.7) → flip public DNS → enable the cron.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y ffmpeg tesseract-ocr poppler-utils git curl
+sudo apt-get install -y ffmpeg tesseract-ocr poppler-utils antiword git curl
 # uv (installs to ~/.local/bin/uv)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # AWS CLI v2

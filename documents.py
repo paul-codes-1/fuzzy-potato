@@ -7,6 +7,11 @@ no pipeline state required.
 
 from __future__ import annotations
 
+import html as _html
+import re
+import shutil
+import subprocess
+import zipfile
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -99,4 +104,66 @@ def extract_html_text(html_content: str) -> Optional[str]:
     text = soup.get_text(separator="\n", strip=True)
     if text and len(text) > 100:
         return text
+    return None
+
+
+# ── Word documents ────────────────────────────────────────────────────────────
+# Granicus serves some LFUCG minutes as Word files instead of PDF: .docx for
+# 2024 Planning Commission subdivision minutes, legacy binary .doc for
+# 2007–2015 BOA/PC minutes. The MinutesViewer redirect lands on
+# DocumentViewer.php?file=lfucg_<hash>.doc[x] with content-type
+# application/msword either way, so sniff magic bytes, not the header.
+
+DOCX_MAGIC = b"PK\x03\x04"
+DOC_MAGIC = b"\xd0\xcf\x11\xe0"
+
+
+def sniff_office_kind(content: bytes) -> Optional[str]:
+    """'docx' / 'doc' / None from the first bytes of a download."""
+    if content[:4] == DOCX_MAGIC:
+        return "docx"
+    if content[:4] == DOC_MAGIC:
+        return "doc"
+    return None
+
+
+def extract_docx_text(path: Path) -> Optional[str]:
+    """Stdlib .docx → text: paragraphs become lines, tabs preserved. No
+    python-docx dependency (the box's uv env doesn't ship it)."""
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("word/document.xml").decode("utf-8", errors="replace")
+    xml = re.sub(r"</w:p>", "\n", xml)
+    xml = re.sub(r"<w:tab/>", "\t", xml)
+    xml = re.sub(r"<w:br[^>]*/>", "\n", xml)
+    text = _html.unescape(re.sub(r"<[^>]+>", "", xml))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text or None
+
+
+def extract_doc_text(path: Path, *, log_fn: Callable = _noop) -> Optional[str]:
+    """Legacy binary .doc → text via ``antiword`` (apt package on the boxes;
+    see deploy/lightsail/SETUP.md). Returns None if antiword is missing."""
+    if not shutil.which("antiword"):
+        log_fn("antiword not installed — cannot extract legacy .doc minutes "
+               "(sudo apt-get install -y antiword)", "WARNING")
+        return None
+    try:
+        out = subprocess.run(["antiword", "-w", "0", str(path)],
+                             capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        log_fn(f"antiword failed for {path.name}: {e}", "WARNING")
+        return None
+    text = out.stdout.strip()
+    return text or None
+
+
+def extract_office_text(path: Path, kind: str, *, log_fn: Callable = _noop) -> Optional[str]:
+    """Dispatch on ``kind`` from :func:`sniff_office_kind`."""
+    try:
+        if kind == "docx":
+            return extract_docx_text(path)
+        if kind == "doc":
+            return extract_doc_text(path, log_fn=log_fn)
+    except Exception as e:
+        log_fn(f"Word extraction error for {path.name}: {e}", "WARNING")
     return None

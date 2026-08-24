@@ -613,7 +613,7 @@ ssh_run <<'REMOTE'
 set -euo pipefail
 echo "==> apt deps"
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg tesseract-ocr poppler-utils git curl unzip python3.11 python3.11-venv
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg tesseract-ocr poppler-utils antiword git curl unzip python3.11 python3.11-venv
 
 echo "==> uv (idempotent installer)"
 if ! command -v "$HOME/.local/bin/uv" >/dev/null 2>&1; then

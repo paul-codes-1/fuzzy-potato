@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-from documents import extract_html_text, extract_pdf_text
+from documents import extract_html_text, extract_pdf_text, sniff_office_kind, extract_office_text
 from granicus_captions import download_vtt
 
 from .base import MeetingRef
@@ -508,6 +508,19 @@ class GranicusSource:
             is_pdf = 'pdf' in content_type.lower() or response.content[:4] == b'%PDF'
 
             if not is_pdf:
+                kind = sniff_office_kind(response.content)
+                if kind:
+                    doc_path = clip_dir / f"{txt_path.stem}.{kind}"
+                    with open(doc_path, 'wb') as f:
+                        f.write(response.content)
+                    agenda_text = extract_office_text(doc_path, kind, log_fn=self.log)
+                    if agenda_text:
+                        with open(txt_path, 'w', encoding='utf-8') as f:
+                            f.write(agenda_text)
+                        result["txt_file"] = txt_filename
+                        result["text"] = agenda_text
+                        self.progress(f"Extracted {len(agenda_text)} chars from agenda .{kind}")
+                        return result
                 self.progress("No PDF agenda available for this clip")
                 return result
 
@@ -629,8 +642,26 @@ class GranicusSource:
                 except Exception as e:
                     self.log(f"Minutes HTML text extraction error: {e}", "WARNING")
 
+            # Handle Word minutes (.docx 2024 PC-subdivision, legacy .doc 2007-2015)
+            elif sniff_office_kind(response.content):
+                kind = sniff_office_kind(response.content)
+                doc_filename = f"{base_filename}.{kind}"
+                doc_path = clip_dir / doc_filename
+                with open(doc_path, 'wb') as f:
+                    f.write(response.content)
+                self.progress(f"Downloaded minutes .{kind} ({len(response.content) / 1024:.1f} KB)")
+                minutes_text = extract_office_text(doc_path, kind, log_fn=self.log)
+                if minutes_text:
+                    with open(txt_path, 'w', encoding='utf-8') as f:
+                        f.write(minutes_text)
+                    result["txt_file"] = txt_filename
+                    result["text"] = minutes_text
+                    self.progress(f"Extracted {len(minutes_text)} chars from minutes .{kind}")
+                else:
+                    self.progress(f"Could not extract text from minutes .{kind}")
+
             else:
-                self.progress("No minutes available for this clip (unexpected content type)")
+                self.progress(f"No minutes available for this clip (unexpected content type: {content_type[:40]})")
 
         except requests.exceptions.RequestException as e:
             self.progress(f"Minutes not available: {e}")
