@@ -1470,6 +1470,84 @@ Guidelines:
                  f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
         return results
 
+    def reocr_scanned_documents(self, max_clips: int = 0, min_pages: int = 6) -> dict:
+        """Re-extract text for scanned minutes/agenda PDFs that the old 5-page
+        OCR cap truncated, then rebuild search.db + re-embed the touched clips.
+
+        A PDF counts as scanned when pdfplumber gets no native text off its
+        first page; it counts as truncated when it has ``min_pages`` or more
+        pages (the old cap OCR'd only 5). Clips already re-OCR'd carry
+        ``docs_reocr_at`` in metadata and are skipped, so re-runs are cheap.
+        """
+        import pdfplumber
+        from documents import extract_pdf_text
+
+        results = {"updated": [], "skipped": [], "failed": []}
+        clips_dir = self.output_dir / "clips"
+        clip_ids = sorted(
+            (int(n) for n in os.listdir(clips_dir)
+             if n.isdigit() and (clips_dir / n / "metadata.json").exists()),
+            reverse=True)
+        if max_clips > 0:
+            clip_ids = clip_ids[:max_clips]
+        self.log(f"Checking {len(clip_ids)} clips for truncated scanned documents")
+
+        for idx, clip_id in enumerate(clip_ids, 1):
+            clip_dir = clips_dir / str(clip_id)
+            meta_path = clip_dir / "metadata.json"
+            try:
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                self.log(f"Clip {clip_id}: bad metadata - {e}", "WARNING")
+                results["failed"].append(clip_id)
+                continue
+            if metadata.get("docs_reocr_at"):
+                results["skipped"].append(clip_id)
+                continue
+            files = metadata.get("files", {})
+            touched = False
+            for kind in ("minutes", "agenda"):
+                pdf_name = files.get(f"{kind}_pdf")
+                if not pdf_name or not (clip_dir / pdf_name).exists():
+                    continue
+                pdf_path = clip_dir / pdf_name
+                try:
+                    with pdfplumber.open(pdf_path) as pdf:
+                        n_pages = len(pdf.pages)
+                        native = (pdf.pages[0].extract_text() or "").strip() if n_pages else ""
+                except Exception as e:
+                    self.log(f"Clip {clip_id}: cannot open {pdf_name} - {e}", "WARNING")
+                    continue
+                if len(native) >= 50 or n_pages < min_pages:
+                    continue
+                self.progress(f"[{idx}/{len(clip_ids)}] Clip {clip_id}: re-OCR {kind} ({n_pages} pages)...")
+                text = extract_pdf_text(pdf_path, log_fn=self.log, progress_fn=self.progress)
+                if not text:
+                    self.log(f"Clip {clip_id}: re-OCR of {pdf_name} produced no text", "WARNING")
+                    continue
+                txt_name = files.get(f"{kind}_txt") or (Path(pdf_name).stem + ".txt")
+                with open(clip_dir / txt_name, "w", encoding="utf-8") as f:
+                    f.write(text)
+                files[f"{kind}_txt"] = txt_name
+                touched = True
+                self.log(f"Clip {clip_id}: re-OCR'd {kind} — {n_pages} pages, {len(text)} chars")
+            if touched:
+                metadata["files"] = files
+                metadata["docs_reocr_at"] = datetime.now().isoformat()
+                with open(meta_path, "w") as f:
+                    json.dump(metadata, f, indent=2)
+                results["updated"].append(clip_id)
+            else:
+                results["skipped"].append(clip_id)
+
+        if results["updated"]:
+            self.generate_search_index()
+            self._reingest_clips(sorted(results["updated"]))
+        self.log(f"\nRe-OCR complete: {len(results['updated'])} updated, "
+                 f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
+        return results
+
     def _is_document_driven(self) -> bool:
         """True when the active source is a DOCUMENT-DRIVEN source — i.e. it
         has no audio / video / captions and the meeting's *content* is its
@@ -3045,6 +3123,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--reocr-scanned-docs",
+        action="store_true",
+        help="Re-OCR scanned minutes/agenda PDFs truncated by the old 5-page OCR cap "
+             "(6+ pages, no native text), then rebuild search.db + re-embed. "
+             "--max caps clips checked (newest first); idempotent via docs_reocr_at."
+    )
+    parser.add_argument(
         "--regenerate-summary",
         action="store_true",
         help="With --backfill-docs, regenerate summary when new docs are found"
@@ -3477,6 +3562,16 @@ Examples:
             print(f"Failed clips: {failed_ids}")
         print(f"\nNext step: uv run python main.py --rebuild-rag")
         sys.exit(0 if not failed_ids else 1)
+
+    # Handle re-OCR of truncated scanned documents
+    if args.reocr_scanned_docs:
+        max_explicit = any(a == "--max" or a.startswith("--max=") for a in sys.argv)
+        results = pipeline.reocr_scanned_documents(max_clips=args.max if max_explicit else 0)
+        print(f"\nRe-OCR results: {len(results['updated'])} updated, "
+              f"{len(results['skipped'])} skipped, {len(results['failed'])} failed")
+        if results['updated']:
+            print(f"    {results['updated']}")
+        sys.exit(0 if not results['failed'] else 1)
 
     # Handle backfill-docs mode
     if args.backfill_docs:

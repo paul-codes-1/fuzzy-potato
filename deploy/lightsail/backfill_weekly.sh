@@ -35,7 +35,9 @@ log "Backfilling missing minutes/agenda"
 # up, June 18+ still pending), so the sweep window must comfortably exceed
 # that lag. A bare --backfill-docs now sweeps the WHOLE archive — fine for a
 # one-off, too much HTTP churn for every week.
-BACKFILL_ARGS=(--backfill-docs --max 150)
+# 600 (was 150): Granicus posts PC/BOA minutes 1-3 months late; the 150
+# newest clips span only ~5 weeks, so late minutes were never rechecked.
+BACKFILL_ARGS=(--backfill-docs --max 600)
 if [ "${REGEN_SUMMARIES:-0}" = "1" ]; then
   log "REGEN_SUMMARIES=1 — also regenerating summaries for touched clips"
   BACKFILL_ARGS+=(--regenerate-summary)

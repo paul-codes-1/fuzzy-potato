@@ -25,7 +25,7 @@ def extract_pdf_text(
     *,
     log_fn: Callable = _noop,
     progress_fn: Callable = _noop,
-    ocr_max_pages: int = 5,
+    ocr_max_pages: int = 40,
 ) -> Optional[str]:
     """Extract text from a PDF. Tries pdfplumber first; if no text comes out
     (scanned PDF), falls back to OCR on the first ``ocr_max_pages`` pages.
@@ -52,13 +52,24 @@ def extract_pdf_text(
 def ocr_pdf(
     pdf_path: Path,
     *,
-    max_pages: int = 5,
+    max_pages: int = 40,
     log_fn: Callable = _noop,
     progress_fn: Callable = _noop,
 ) -> Optional[str]:
     """OCR the first ``max_pages`` of a PDF via tesseract. Returns extracted
     text or None on failure / no text."""
     try:
+        # The old 5-page default silently dropped the back half of scanned
+        # Planning Commission minutes (Action/vote lines sit at the END of
+        # each item) — a 9-0 adoption vote on p.10 vanished from the archive.
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                total_pages = len(pdf.pages)
+        except Exception:
+            total_pages = 0
+        if total_pages > max_pages:
+            log_fn(f"OCR truncated: {pdf_path.name} has {total_pages} pages, "
+                   f"only the first {max_pages} will be OCR'd", "WARNING")
         images = convert_from_path(pdf_path, first_page=1, last_page=max_pages)
         if not images:
             return None

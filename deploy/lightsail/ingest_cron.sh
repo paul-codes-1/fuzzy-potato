@@ -85,6 +85,10 @@ log "Processing new clips (--auto --rag --no-audio)"
 # end-of-batch: rebuilds index.json + SEO artifacts (clip.md/llms.txt) + search.db
 uv run python main.py --auto --rag --no-audio
 
+log "Light docs recheck: minutes/agenda for the 40 newest clips (idempotent)"
+# Minutes land on Granicus days-to-weeks after the video; the weekly sweep
+# alone left the June 11 2026 PC adoption vote invisible for 10+ weeks.
+uv run python main.py --backfill-docs --max 40 || log "docs recheck failed (non-fatal)"
 log "Backstop: ingest any new clips that slipped (idempotent)"
 uv run python -m rag.ingest --new
 
