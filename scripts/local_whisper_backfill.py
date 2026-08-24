@@ -12,7 +12,9 @@ reload, S3 sync, CloudFront invalidation).
 
 Scope: clips whose metadata has NO ``files.transcript`` and NO
 ``transcript_source`` — i.e. no transcript of any kind. VTT-placeholder
-clips (``transcript_source == "granicus_vtt"``) are intentionally NOT
+clips (``transcript_source == "granicus_vtt"``) are included only with
+``census --include-vtt`` (added 2026-08-24 after Granicus captions turned
+out to have multi-minute silent gaps — the Blue Sky vote); by default NOT
 touched; upgrading those is a separate speaker-enrichment-aware pass.
 
 Backfilled clips get ``transcript_source = "whisper-large-v3-local"``
@@ -89,10 +91,14 @@ for d in sorted(glob.glob("REMOTE_CLIPS/*/")):
         m = json.load(open(mp))
     except Exception:
         continue
-    if m.get("transcript_source") or m.get("files", {}).get("transcript"):
+    is_vtt = m.get("transcript_source") == "granicus_vtt"
+    if INCLUDE_VTT and is_vtt:
+        pass  # caption placeholder — re-transcribe with real Whisper
+    elif m.get("transcript_source") or m.get("files", {}).get("transcript"):
         continue
     out.append({
         "clip_id": int(cid),
+        "vtt": is_vtt,
         "url": m.get("url"),
         "date": m.get("date"),
         "title": m.get("title"),
@@ -100,6 +106,10 @@ for d in sorted(glob.glob("REMOTE_CLIPS/*/")):
     })
 print(json.dumps(out))
 """.replace("REMOTE_CLIPS", REMOTE_CLIPS)
+
+
+def census_script(include_vtt: bool) -> str:
+    return CENSUS_REMOTE_SCRIPT.replace("INCLUDE_VTT", "True" if include_vtt else "False")
 
 
 def sanitize_filename(title: str) -> str:
@@ -214,11 +224,12 @@ def ssh(host: str, *args: str, **kw) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, **kw)
 
 
-def cmd_census(host: str) -> None:
-    log(f"Querying {host} for clips with no transcript at all...")
+def cmd_census(host: str, include_vtt: bool = False) -> None:
+    log(f"Querying {host} for clips with no transcript at all"
+        f"{' (+ granicus_vtt caption placeholders)' if include_vtt else ''}...")
     res = subprocess.run(
         ["ssh", "-o", "ConnectTimeout=10", host, "python3", "-"],
-        input=CENSUS_REMOTE_SCRIPT, capture_output=True, text=True, timeout=300,
+        input=census_script(include_vtt), capture_output=True, text=True, timeout=300,
     )
     if res.returncode != 0:
         sys.exit(f"census failed: {res.stderr.strip()}")
@@ -405,7 +416,9 @@ def _prepare_clip(host: str, clip: dict) -> dict:
     if scp.returncode != 0:
         raise RuntimeError(f"metadata_fetch_failed: {scp.stderr.strip()}")
     meta = json.loads(meta_path.read_text())
-    if meta.get("transcript_source") or meta.get("files", {}).get("transcript"):
+    if clip.get("vtt") and meta.get("transcript_source") == "granicus_vtt":
+        pass  # caption placeholder — replacing it is the point of --include-vtt
+    elif meta.get("transcript_source") or meta.get("files", {}).get("transcript"):
         return {"clip": clip, "skip": "box_already_has_transcript"}
 
     audio = download_audio(clip, workdir)
@@ -532,13 +545,14 @@ cd __REPO__
 exec 9>/tmp/lfucg-pipeline.lock
 flock -w 7200 9
 set -a; [ -f .env ] && source .env; set +a
-# RAG SUSPENDED 2026-07-16: Chroma ingest deferred — the growing index
-# OOM-froze the box twice mid-backfill. Queue clip ids to a ledger for one
-# bulk ingest after the vector-store re-architecture (rag-capacity plan).
+# Post sqlite-vec cutover (2026-07-19): ingest directly. ingest_clip deletes
+# the clip's old chunks first, so re-transcribed VTT clips re-embed cleanly.
+# A failed ingest falls back to the ledger (drain: scripts/rebuild_vec_db.py --from-ledger).
 for id in __IDS__; do
-  echo "$id" >> pending_rag_ingest.txt
+  uv run python -m rag.ingest --clip "$id" >/dev/null 2>&1 \
+    && echo "==> ingested $id" \
+    || { echo "$id" >> pending_rag_ingest.txt; echo "==> ingest FAILED $id -> ledger"; }
 done
-echo "==> queued __IDS__ to pending_rag_ingest.txt (chroma ingest deferred)"
 echo "==> generate-index"
 uv run python main.py --generate-index
 # Full restart, NOT /admin/reload: repeated reloads after big ingest waves
@@ -630,11 +644,13 @@ def main() -> None:
     ap.add_argument("--keep-audio", action="store_true")
     ap.add_argument("--retry-failed", action="store_true")
     ap.add_argument("--no-finalize", action="store_true")
+    ap.add_argument("--include-vtt", action="store_true",
+                    help="census: also target granicus_vtt caption-placeholder clips")
     args = ap.parse_args()
 
     WORKROOT.mkdir(parents=True, exist_ok=True)
     if args.command == "census":
-        cmd_census(args.host)
+        cmd_census(args.host, args.include_vtt)
     elif args.command == "run":
         cmd_run(args.host, args.max, args.keep_audio, args.retry_failed,
                 args.parallel_downloads)
