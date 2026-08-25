@@ -613,8 +613,10 @@ def cmd_push(host: str, finalize: bool) -> None:
                 "-o", "ConnectTimeout=20"]
     launch = subprocess.run(
         ["ssh", *ssh_opts, host,
-         f"cat > {remote_sh} && chmod +x {remote_sh} && "
-         f"setsid nohup bash {remote_sh} > {remote_log} 2>&1 < /dev/null & echo launched"],
+         # Parenthesize the background job: a bare `a && b && c &` backgrounds
+         # the WHOLE list, so `cat` inherits /dev/null and writes a 0-byte script.
+         f"cat > {remote_sh} && chmod +x {remote_sh} && test -s {remote_sh} && "
+         f"(setsid nohup bash {remote_sh} > {remote_log} 2>&1 < /dev/null &) && echo launched"],
         input=script, capture_output=True, text=True, timeout=60)
     if launch.returncode != 0 or "launched" not in launch.stdout:
         sys.exit(f"finalize launch FAILED: {launch.stderr.strip()} — clips are on the box but not ingested")
