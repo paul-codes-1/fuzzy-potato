@@ -44,6 +44,7 @@ retry failures).
 from __future__ import annotations
 
 import argparse
+import time
 import fcntl
 import itertools
 import json
@@ -538,7 +539,9 @@ def cmd_run(host: str, max_clips: int, keep_audio: bool, retry_failed: bool,
 
 
 FINALIZE_TEMPLATE = r"""
-set -euo pipefail
+set -uo pipefail
+trap 'rc=$?; [ "$rc" -ne 0 ] && echo "FINALIZE_EXIT=$rc"' EXIT
+set -e
 export AWS_PAGER=""
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 cd __REPO__
@@ -572,6 +575,7 @@ echo "==> finalize done"
 """
 
 
+
 def cmd_push(host: str, finalize: bool) -> None:
     state = load_state()
     staged_ids = sorted(
@@ -598,14 +602,44 @@ def cmd_push(host: str, finalize: bool) -> None:
               .replace("__REPO__", REMOTE_REPO)
               .replace("__IDS__", " ".join(str(i) for i in staged_ids)))
     log("running finalize on the box (flock-guarded; RAG ingest + index + reload + S3)...")
-    proc = subprocess.Popen(["ssh", host, "bash", "-s"],
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True)
-    out, _ = proc.communicate(script, timeout=7200)
-    print(out)
-    if proc.returncode != 0:
-        sys.exit(f"finalize FAILED (exit {proc.returncode}) — clips are on the box but "
-                 "may not be ingested; re-run push after fixing")
+    # Detach the finalize from our ssh session (setsid+nohup) and poll its log.
+    # An interactive `ssh host bash -s` died with the connection twice on
+    # 2026-08-24/25 (box-side resets), silently killing the finalize mid-run
+    # and leaving the push hung on communicate(). A detached run survives.
+    tag = datetime.now().strftime("%Y%m%d-%H%M%S")
+    remote_sh = f"/tmp/wb-finalize-{tag}.sh"
+    remote_log = f"/tmp/wb-finalize-{tag}.log"
+    ssh_opts = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
+                "-o", "ConnectTimeout=20"]
+    launch = subprocess.run(
+        ["ssh", *ssh_opts, host,
+         f"cat > {remote_sh} && chmod +x {remote_sh} && "
+         f"setsid nohup bash {remote_sh} > {remote_log} 2>&1 < /dev/null & echo launched"],
+        input=script, capture_output=True, text=True, timeout=60)
+    if launch.returncode != 0 or "launched" not in launch.stdout:
+        sys.exit(f"finalize launch FAILED: {launch.stderr.strip()} — clips are on the box but not ingested")
+    deadline = time.time() + 7200 + 1800  # flock wait + generous run time
+    last_len = 0
+    status = None
+    while time.time() < deadline:
+        time.sleep(30)
+        try:
+            r = subprocess.run(["ssh", *ssh_opts, host, f"cat {remote_log}"],
+                               capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            continue
+        if r.returncode != 0:
+            continue  # transient ssh failure; keep polling
+        out = r.stdout
+        if len(out) > last_len:
+            sys.stdout.write(out[last_len:]); sys.stdout.flush(); last_len = len(out)
+        if "==> finalize done" in out:
+            status = "ok"; break
+        if "FINALIZE_EXIT=" in out:
+            status = "fail"; break
+    if status != "ok":
+        sys.exit(f"finalize {'FAILED' if status == 'fail' else 'TIMED OUT'} (log: {host}:{remote_log}) — "
+                 "clips are on the box but may not be ingested; re-run push after fixing")
     for cid in staged_ids:
         set_clip_state(state, cid, "pushed",
                        **{k: v for k, v in state["clips"][str(cid)].items()
