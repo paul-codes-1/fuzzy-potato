@@ -64,3 +64,33 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --exclude "vec.db*" \
   --exclude "*.bak" \
   --exclude "*.mp3" --exclude "*.mp4" --exclude "*.part" --exclude "*.ytdl"
+
+# ---- SEO / agent artifacts (sitemap*.xml, robots.txt, llms*.txt, skill.md,
+# .well-known/). generate_seo_artifacts() rewrites these into frontend/public/
+# on every --generate-index run, but NOTHING shipped them: this script only
+# ever synced lfucg_output/ -> /data/, and deploy-spa.sh only uploads
+# dist/assets/ + dist/index.html. So the live sitemap froze at whatever a
+# manual upload last left there (2026-06-03: 2,769 URLs / 12 weeks stale,
+# caught 2026-08-25) while the box happily regenerated a current one.
+#
+# These are small, mutable, and crawler-facing -> no-cache + an explicit
+# CloudFront invalidation (they sit at root paths, not /data/*, so the
+# callers' '/data/*' invalidation never covered them).
+PUBLIC_DIR="frontend/public"
+if [ -d "$PUBLIC_DIR" ]; then
+  aws s3 sync "$PUBLIC_DIR/" "$S3_BUCKET/" \
+    --cache-control "no-cache" \
+    --exclude "*" \
+    --include "sitemap.xml" --include "sitemap_index.xml" --include "news-sitemap.xml" \
+    --include "robots.txt" --include "llms.txt" --include "llms-full.txt" \
+    --include "skill.md" --include ".well-known/*" \
+    --no-follow-symlinks
+  CF="${CLOUDFRONT_DISTRIBUTION_ID:-}"
+  if [ -n "$CF" ]; then
+    aws cloudfront create-invalidation --distribution-id "$CF" \
+      --paths '/sitemap.xml' '/sitemap_index.xml' '/news-sitemap.xml' \
+              '/robots.txt' '/llms.txt' '/llms-full.txt' '/skill.md' \
+              '/.well-known/*' \
+      --query 'Invalidation.Id' --output text
+  fi
+fi
