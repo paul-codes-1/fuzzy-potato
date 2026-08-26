@@ -5,7 +5,6 @@ import AskQuestion from './components/AskQuestion'
 import ChatLFUCG from './components/ChatLFUCG'
 import { About, Methodology, Corrections } from './components/StaticPages'
 import RouteChangeTracker from './components/RouteChangeTracker'
-import AdSlot from './components/AdSlot'
 import { getSiteConfig } from './config/site'
 
 function App() {
@@ -43,9 +42,6 @@ function App() {
           <Route path="/about/methodology" element={<Methodology />} />
           <Route path="/corrections" element={<Corrections />} />
         </Routes>
-        <div className="container">
-          <AdSlot slot="3748486934" />
-        </div>
       </main>
 
       <footer className="site-footer">

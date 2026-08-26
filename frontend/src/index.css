@@ -2341,23 +2341,3 @@ a:hover {
   .chat-filters-panel { flex-direction: column; }
 }
 
-/* ---------- Manual AdSense slots ---------- */
-.ad-slot {
-  margin: 2rem 0 1rem;
-  text-align: center;
-}
-.ad-slot-label {
-  display: block;
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #6b7280;
-  margin-bottom: 0.4rem;
-}
-/* Collapse the reserved space when AdSense returns no fill */
-.ad-slot ins.adsbygoogle[data-ad-status='unfilled'] {
-  display: none !important;
-}
-.ad-slot:has(ins.adsbygoogle[data-ad-status='unfilled']) {
-  display: none;
-}
