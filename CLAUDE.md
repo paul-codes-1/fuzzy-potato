@@ -64,6 +64,22 @@ uv run python main.py --backfill-tables-of-motions --no-reingest  # Skip RAG/sea
 uv run python main.py --update-transcripts               # All clips missing timestamps
 uv run python main.py --update-transcripts --max 10      # Limit to 10 clips
 
+# Whisper the Council / Work Session / Committee of the Whole / Planning Commission
+# clips that are still serving the Granicus caption track as their transcript
+# (new clips for these bodies are Whispered inline by process_clip since 2026-09-12;
+# this backfills the older placeholders). Newest first; ~$0.006/audio-min (whisper-1)
+# + ~$0.12/clip for facts+summary; re-ingests + rebuilds the index at the end.
+uv run python main.py --retranscribe-placeholders --dry-run            # census + cost estimate
+uv run python main.py --retranscribe-placeholders --since 2026-01-01 --limit 20 --no-audio
+uv run python main.py --retranscribe-placeholders --bodies "planning commission" --limit 5
+
+# Re-open the retry budget for specific failed clips (next --auto + weekly sweep re-attempt them)
+uv run python main.py --retry-failed 6804 6816 6825 6828 6832
+
+# Pre-rendered per-clip HTML pages (SEO) — also runs at the end of every batch/--generate-index
+uv run python main.py --prerender                        # incremental (fingerprint state)
+uv run python main.py --prerender --full                 # after a new SPA bundle ships
+
 # Advanced options
 uv run python main.py 6669 --output-dir /path/to/output
 uv run python main.py 6669 --summary-model gpt-4o-mini   # Cheaper summaries
@@ -153,6 +169,10 @@ Set in `.env` file:
 - `VECTOR_BACKEND` - RAG vector store backend: `chroma` (default, in-RAM HNSW under `lfucg_output/chroma_db/`) or `sqlite` (disk-first sqlite-vec at `lfucg_output/vec.db`; see `rag/vecstore.py` + RAG_CAPACITY_PLAN.md). Flip together with `RAG_EMBED_DIMS` to match how vec.db was built.
 - `RAG_EMBED_DIMS` - text-embedding-3-small dimensions for ingest AND query embeds (default 1536; the sqlite capacity-plan rebuild uses 512). Must match the serving store's dims.
 - `LFUCG_SITE_URL` - Public site URL used in seo.py and the MCP server's URL decoration (default: `https://meetings.lexingtonky.news`)
+- `RAG_MAX_DISTANCE` - cosine-distance gate for retrieved chunks (default **0.55**, calibrated 2026-09-12 on the 512-dim prod store; a 1536-dim Chroma dev store sits lower on the scale — set 0.75 there if the no-coverage rate spikes)
+- `RAG_RECENCY_HALF_LIFE_DAYS` / `RAG_RECENCY_GRACE_DAYS` / `RAG_RECENCY_FLOOR` - date-aware re-rank of retrieved chunks (defaults 6400 / 365 / 0.5 → last 12 months untouched, ≈0.7× at 10 years; `0` half-life disables). `RAG_RECENCY_RESERVED_SLOTS` (3) / `RAG_RECENCY_RECENT_DAYS` (180) hold context slots for the newest material.
+- `LFUCG_WHISPER_REQUIRED_BODIES` - regex of meeting titles/bodies whose Granicus VTT is only a placeholder (default `urban county council|council work session|committee of the whole|planning commission`; empty string disables)
+- `PRERENDER_ENABLED` (`1`) / `PRERENDER_TEMPLATE` (path) - per-clip HTML pre-rendering kill switch + explicit SPA-shell template (default: fetch the live `<site_url>/index.html`, then `frontend/dist/index.html`)
 
 ## System Requirements
 
@@ -189,6 +209,7 @@ Two-mode integration with Granicus's live-CC WebVTT track:
 
 - **Speaker enrichment** — for clips that already have Whisper segments, parse VTT into speaker turns (`>> Mayor Gorton:` / `>> councilmember hale:` markers) and align speakers onto Whisper segments by timestamp max-overlap. The Whisper text remains canonical; only attribution is added. `transcript_source` becomes `"whisper-1+vtt-speakers"`.
 - **VTT-as-placeholder** — for un-Whispered clips, render the VTT directly as a transcript so the meeting page is searchable / RAG-ingestible immediately. The page disclosure says "Closed-caption placeholder — Whisper transcription pending." `transcript_source` becomes `"granicus_vtt"`. Replaced when Whisper runs.
+- **Whisper-required bodies (2026-09-12)** — `requires_whisper(title, body)` in `main.py` (regex `LFUCG_WHISPER_REQUIRED_BODIES`: Urban County Council, Council Work Session, Committee of the Whole, Planning Commission) makes `process_clip` treat a validated VTT as a placeholder ONLY: it downloads audio + Whispers in the same pass and folds the VTT back in for speaker labels (`whisper-1+vtt-speakers`). If the Whisper pass fails (download, empty, QA-rejected) the VTT placeholder is written so the page goes live and metadata gets `whisper_pending: true`; `--retranscribe-placeholders` (`find_placeholder_clips` → `retranscribe_clip` → `upgrade_clip_summary_v2` → re-ingest + index) backfills those and the historical placeholders. `retranscribe_clip` backs the placeholder up and restores it if Whisper output fails `validate_transcript`. Other bodies keep the cheap VTT shortcut.
 
 VTT URL discovery uses yt-dlp (`--write-subs --sub-langs en --skip-download`). Result is cached in `lfucg_output/clips/<id>/captions.vtt`.
 
@@ -262,16 +283,19 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
   - **minutes** — official minutes split by section boundaries with ~100-word overlap
   - **agenda** — agenda text split by section boundaries with ~100-word overlap
   - **transcript** — topic-aware chunks (~500 words) with silence gap and procedural phrase boundary detection, ~100-word overlap. When per-segment speakers exist, speaker changes are prefixed (`Mayor Gorton: ...`) into the embedded text, and `transcript_source` + comma-joined `speakers` are written to ChromaDB metadata.
-- **`rag/query.py`** - Embeds question, retrieves top-K chunks from ChromaDB with metadata filtering, deduplicates (max 4 chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations. Anti-hallucination guards (added 2026-06-11):
+- **`rag/query.py`** - Embeds question, retrieves top-K chunks from the vector store with metadata filtering, re-ranks by date, deduplicates (max **3** chunks/clip, max 2 per source type per clip for diversity), synthesizes answer via gpt-4o with citations. Retrieval-quality changes (2026-09-12 — retrieval was date-blind: a snow-plan question cited a 2015 clip over the Aug 2026 report):
+  - **Recency re-rank** (`recency_rank_scores`) — each hit's similarity is multiplied by `recency_weight(date)` (1.0 inside a 365-day grace window, then an exponential decay with a 6400-day half-life ≈0.7 at 10 years, floor 0.5) BEFORE the per-clip dedup and the top-k cap, so a newer-but-slightly-less-similar chunk wins ties. Skipped when the question names a 4-digit year (`question_names_year`) or the caller passed date filters. `apply_reserved_recent_slots` then guarantees up to 3 of the 15 context slots to chunks from the last 180 days when any exist. All env-tunable (see Environment Variables).
+  - `verify_citations` parses EVERY ID in a bracket (`[Clip 6865, 5695, 6757]`, `[Clips 6865 and 5695]`, `[Clip 6865; Clip 5695, 12:34]`) via `parse_citation_ids`, removes only the invented IDs, and the frontend (`utils/citations.js`) links each ID to `/meeting/<id>` and each timestamp to `/meeting/<id>?t=<seconds>`.
+  Anti-hallucination guards (added 2026-06-11):
   - Synthesis runs at `temperature=0.1` with explicit `max_tokens` (the OpenAI default of 1.0 was a major hallucination source)
-  - Cosine-distance gate (`RAG_MAX_DISTANCE`, default 0.75) — far-away nearest-neighbor chunks never reach the LLM
+  - Cosine-distance gate (`RAG_MAX_DISTANCE`, default **0.55** since 2026-09-12; was 0.75) — far-away nearest-neighbor chunks never reach the LLM. Re-calibrated read-only on the prod 512-dim sqlite-vec store with 20 real telemetry questions (top-15 distances 0.18–0.52), 5 borderline (0.32–0.52) and 10 nonsense questions (0.51–0.84): at 0.75 seven of ten nonsense queries still fed chunks to the LLM; 0.55 keeps every real question's top-10. The distribution table lives in the constant's comment.
   - Final context capped at `top_k` (was: unbounded, up to ~180 chunks)
   - Zero surviving chunks → canned no-coverage answer WITHOUT calling the LLM (an empty-context call invites answering from parametric memory)
   - The original question is always embedded alongside the rewrites (lossy rewrites can't sink retrieval)
   - `verify_citations()` strips `[Clip N]` citations whose clip was never retrieved, marks each source `cited: true|false`, and orders cited sources first (frontend collapses the uncited remainder)
   - Multi-turn `/api/chat` condenses follow-ups ("what about the vote?") into standalone questions via gpt-4o-mini before retrieval
 - **`rag/server.py`** - FastAPI with `POST /api/ask` and `GET /api/health` endpoints. Singleton OpenAI client, input validation (empty/length), error handling. `/api/health` reports `status` + `jurisdiction` + the running git `sha` (resolved once at startup — proves what deploy-code.sh landed). Also mounts the MCP server (see below) at `/api/mcp` and `/mcp`, threading the FastMCP session manager into the app's lifespan. `POST /admin/reload` clears BOTH `rag.server` and `rag.mcp_server` per-process caches — collection, clip metadata, **and the computed `/api/facets` result** (`_facets_cache`, an in-process cache since facets only change on a reindex but every SPA cold-mount hits it) — the MCP module keeps its own `_collection`/`_clip_metadata`, so forgetting it serves a stale index until restart. `GET /admin/analytics` (same token guard as `/admin/reload` — `RELOAD_TOKEN` + `X-Reload-Token`, origin-only, 404 when unset) reads the telemetry SQLite sink and returns top queries / empty-result rate / volume by transport (http vs mcp) + endpoint / p50-p95 latency / rate-limited count. Forwarded-IP headers (`CF-Connecting-IP`/XFF) are only trusted when the socket peer is loopback/private (our own proxy) — otherwise they're client-spoofable and would bypass rate limits.
-- **`rag/telemetry.py`** - Per-query structured logging + a SQLite sink. Each event is logged as a `rag.query {...}` JSON line (journalctl-grep-able) **and** appended to `${LFUCG_OUTPUT_DIR}/telemetry.db` (`rag_events` table, WAL, thread-safe under one lock — callers span the FastAPI threadpool + the MCP asyncio worker threads). The sink is best-effort: any DB failure is logged and swallowed so telemetry can never break a request. `log_query_event(..., model=…)` records the synthesis `model_used` (wired through from `ask()`/`chat()` on the success path). Free-text queries capped at 200 chars; IPs hashed with a daily-rotated salt, never stored raw. The synthesis model is env-configurable via `RAG_SYNTHESIS_MODEL` (resolved at call time inside `ask()`/`chat()` so a `.env` value applies; an explicit `--model` still wins). Backs `GET /admin/analytics`.
+- **`rag/telemetry.py`** - Per-query structured logging + a SQLite sink. Each event is logged as a `rag.query {...}` JSON line (journalctl-grep-able) **and** appended to `${LFUCG_OUTPUT_DIR}/telemetry.db` (`rag_events` table, WAL, thread-safe under one lock — callers span the FastAPI threadpool + the MCP asyncio worker threads). The sink is best-effort: any DB failure is logged and swallowed so telemetry can never break a request. `log_query_event(..., model=…)` records the synthesis `model_used` (wired through from `ask()`/`chat()` on the success path). `referer` + `origin` request headers are recorded too (columns added 2026-09-12 by an idempotent `ALTER TABLE … ADD COLUMN` migration in `_migrate()`, guarded by `PRAGMA table_info`; `/admin/analytics` reports `top_referers` by scheme://host). Free-text queries capped at 200 chars; IPs hashed with a daily-rotated salt, never stored raw. The synthesis model is env-configurable via `RAG_SYNTHESIS_MODEL` (resolved at call time inside `ask()`/`chat()` so a `.env` value applies; an explicit `--model` still wins). Backs `GET /admin/analytics`.
 - **`rag/prompts.py`** - System prompts for LLM synthesis. Instructs `[Clip ID, MM:SS]` citation format, prefers facts and minutes for precise data. Shared `_GROUNDING_RULES` block (both synthesis prompts): refusal template, no cross-meeting fact fusion, no outside knowledge, exact-name-form attribution (a question's "Shayla Sheehan" must not be confirmed when excerpts only say "Sheehan"), false-premise pushback, placeholder-transcript caveat.
 - Vector store: ChromaDB (local, persisted to `lfucg_output/chroma_db/`)
 - Embedding model: `text-embedding-3-small` (1536 dims)
@@ -283,7 +307,7 @@ Natural-language Q&A over the meeting archive using retrieval-augmented generati
 Replaces the old client-side FlexSearch (40 MB chunked JSON downloaded + indexed on every browser cold-mount). The full-text index now lives server-side in a SQLite FTS5 database (`lfucg_output/search.db`, ~300 MB) and is queried by the RAG server on the Lightsail box:
 
 - **`scripts/build_search_db.py`** — destructive rebuilder. One row per clip with title/transcript/agenda/minutes/facts as searchable columns; speakers/body/date as UNINDEXED filter columns. ~30s on the full archive. Auto-rebuilt by `pipeline.generate_search_index()` and at the end of every `--auto`/`--scrape` batch (per-clip skips the FTS rebuild via `build_search_db=False` to avoid 30s × N).
-- **`rag/search.py`** — BM25-ranked search + filters + snippets. Title weighted 10×, facts 5×, speakers 3×, agenda 2×, minutes 1.5×, transcript 1×. Snippets HTML-escaped server-side; sentinel marks (`\x01M\x01`) are reinserted as `<mark>` so the frontend can render via `dangerouslySetInnerHTML` without XSS risk.
+- **`rag/search.py`** — BM25-ranked search + filters + snippets. Title weighted 10×, facts 5×, speakers 3×, agenda 2×, minutes 1.5×, transcript 1×. Snippets HTML-escaped server-side; sentinel marks (`\x01M\x01`) are reinserted as `<mark>` so the frontend can render via `dangerouslySetInnerHTML` without XSS risk. Query shaping (2026-09-12): `query_tokens` lowercases, drops punctuation-only tokens and English stopwords before the implicit-AND bag-of-words query (a question used to require "what"/"did"/"about" to appear in the clip); `looks_like_question` (ends with `?`, opens with who/what/when/…, or >6 tokens) adds an OR-fallback pass — rows carrying ALL content terms rank first (the "phrase bonus"), then BM25-ranked any-term rows fill the remaining slots. Quoted phrases stay exact. Only ONE `snippet()` column is computed now (`-1` = FTS5 picks the best column) since the UI renders a single snippet.
 - **`rag/related.py`** — "more like this" using the centroid of the source clip's existing summary embeddings. Reuses ChromaDB; no extra OpenAI calls.
 - **Endpoints (rag/server.py)**:
   - `POST /api/search` — `{q, meeting_body?, speaker?, date_after?, date_before?, limit?}` → ranked clips + pre-marked snippets
@@ -318,11 +342,21 @@ React 18 SPA with:
 - Server-backed full-text search via `useServerSearch` (POST /api/search, debounced 250ms, AbortController on cancel). No client-side index — the homepage loads instantly.
 - Autocomplete dropdown via `useSuggestions` (GET /api/suggest, 100ms debounce, ↑/↓/Enter/Esc keyboard navigation)
 - Speaker filter dropdown sourced from `useFacets` (GET /api/facets, cached at module level — single fetch on mount)
-- "Related meetings" section on the detail page via `useRelatedClips` (GET /api/related/{id})
+- "Related meetings" section on the detail page via `useRelatedClips` (GET /api/related/{id}) — **lazy** since 2026-09-12: the request fires only when the section scrolls into view (IntersectionObserver, 200px margin) or the reader clicks "Show related meetings", and never for `navigator.webdriver` clients (it was 94% of API traffic, 58% bots)
+- RAG answers link every `[Clip N, MM:SS]` citation (`utils/citations.js`); `/meeting/:id?t=<seconds>` starts the embedded video at that time
 - Component-based architecture (MeetingList, MeetingDetail, SearchBar, TopicFilter, AskQuestion)
 - **MeetingDetail** has tabbed view: Overview (extracted facts), Transcript (timestamped), Agenda, Official Minutes
 - **Overview tab** renders structured `extracted_facts.json` directly — votes with pass/fail badges, financial items, agenda items, public comments, appointments, contested items. Timestamps are clickable (jump to video).
 - RAG Q&A interface at `/ask` route with filter dropdowns, source cards, and Granicus video timestamp links
+
+### Pre-rendered meeting pages (`prerender.py`, `seo.py`)
+
+CloudFront serves the SPA shell for every unknown path (S3 404 → `/index.html` 200), and until 2026-09-12 that shell carried a hard-coded homepage `<link rel="canonical">`, so all 2,847 `/meeting/<id>` pages told Google they were the homepage (GSC: 3,340 crawled-not-indexed, 708 duplicates). Now:
+
+- `frontend/index.html` has **no canonical / og:url**; each route sets its own client-side (`MeetingList` → `/`, `MeetingDetail`, `StaticPages`).
+- `prerender.py` renders one real HTML document per clip — the live SPA shell (`<site_url>/index.html`, so asset hashes match prod; `PRERENDER_TEMPLATE` overrides) with `<title>`, description, canonical, og:/twitter:, `text/markdown` alternate, the same JSON-LD `@graph` as `utils/seo.js`, and a no-JS body in `<div id="root">` (h1, date/body, disclosure, summary, decisions, Granicus + clip.md + transcript links) that `createRoot().render` replaces on mount. Also the flat static routes (`ask`, `chat`, `about`, `corrections`). Incremental via `lfucg_output/prerender_state.json` (fingerprint = template hash + mtimes of metadata/summary/facts); a new bundle changes the template hash and forces a full pass. Runs at the end of `generate_seo_artifacts` (so every batch / `--generate-index`), or `main.py --prerender [--full]`.
+- `sync_data_s3.sh` uploads `lfucg_output/prerender/` to the bucket **root** as extension-less keys (`meeting/<id>`, `Content-Type: text/html; charset=utf-8`) and invalidates `/meeting/*` only when something uploaded; `--prerender-only` skips the /data tree. The exact path now resolves to a 200 document instead of the error fallback.
+- **Deploy rule:** `deploy-spa.sh` / `deploy.sh` no longer `--delete` old `/assets/` hashes (pre-rendered pages pin the hash live when they were generated) and exclude the page keys from the root `--delete`. `deploy-spa.sh` regenerates the pages over ssh when `PRERENDER_SSH_HOST` is set; otherwise the box's next ingest cron does it and the old pages keep working meanwhile.
 
 ### Scheduled sync — cron on the Lightsail box (`deploy/lightsail/`)
 
@@ -352,6 +386,8 @@ lfucg_output/
   search.db                               # SQLite FTS5 full-text index (powers /api/search) — ~300 MB
   available_clips.json                    # Probed clip IDs (from probe_clips.py)
   rag_state.json                          # RAG ingestion state (which clips are embedded)
+  prerender_state.json                    # per-clip fingerprints for the pre-rendered HTML pages
+  prerender/meeting/{clip_id}             # pre-rendered HTML page (uploaded to the S3 bucket root)
   chroma_db/                              # ChromaDB vector store
   clips/
     {clip_id}/
@@ -475,7 +511,7 @@ deploy/lightsail/                         # Co-located Lightsail deploy (current
 `transcript_source` is one of:
 - `"whisper-1"` — Whisper transcript only, no captions track available
 - `"whisper-1+vtt-speakers"` — Whisper transcript + speaker labels folded in from VTT
-- `"granicus_vtt"` — Placeholder transcript synthesized from VTT (Whisper hasn't run yet)
+- `"granicus_vtt"` — Placeholder transcript synthesized from VTT (Whisper hasn't run yet). On a Whisper-required body this comes with `"whisper_pending": true` when the inline Whisper pass failed; `--retranscribe-placeholders` clears it and stamps `retranscribed_at`.
 
 ## Extracted Facts JSON Structure
 
