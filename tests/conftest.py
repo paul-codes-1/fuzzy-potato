@@ -5,6 +5,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# Never let a test's generate_seo_artifacts() fetch the live SPA shell for
+# the per-clip pre-render step (prerender.py); tests that want it pass a
+# template explicitly.
+os.environ.setdefault("PRERENDER_ENABLED", "0")
+
 
 def sqlite_vec_available() -> bool:
     """True when this Python can load the sqlite-vec extension.

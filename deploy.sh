@@ -13,16 +13,22 @@ cd frontend
 npm run build
 cd ..
 
-# Hashed JS/CSS bundles — content-hashed filenames, safe to cache forever
-echo "==> Syncing hashed assets (immutable, 1y cache)..."
+# Hashed JS/CSS bundles — content-hashed filenames, safe to cache forever.
+# NO --delete: the pre-rendered per-clip pages (prerender.py, S3 keys
+# meeting/<id>) pin whichever hashes were live when the box generated them
+# and must keep loading until the box re-renders them against the new shell.
+echo "==> Syncing hashed assets (immutable, 1y cache; old hashes kept)..."
 aws s3 sync frontend/dist/assets/ "$S3_BUCKET/assets/" \
-  --cache-control "public, max-age=31536000, immutable" \
-  --delete
+  --cache-control "public, max-age=31536000, immutable"
 
-# Root files (index.html, favicons) — must revalidate every load
+# Root files (index.html, favicons) — must revalidate every load. The
+# pre-rendered page keys (meeting/*, ask, chat, about, corrections) and
+# media/ are box-owned and NOT in dist/, so they're excluded from --delete.
 echo "==> Syncing root files (no-cache)..."
 aws s3 sync frontend/dist/ "$S3_BUCKET" \
-  --exclude "data/*" --exclude "assets/*" --delete \
+  --exclude "data/*" --exclude "assets/*" --exclude "media/*" \
+  --exclude "meeting/*" --exclude "ask" --exclude "chat" --exclude "about" --exclude "corrections" \
+  --delete \
   --cache-control "no-cache"
 
 # Re-stamp the top-level Markdown surface (skill.md) so it's served as

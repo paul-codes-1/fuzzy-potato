@@ -501,14 +501,24 @@ def _build_skill_md(site_url: str) -> str:
         )
 
 
+def prerender_enabled() -> bool:
+    """Per-clip HTML pre-rendering kill switch (PRERENDER_ENABLED=0 disables).
+    Off by default under pytest (tests/conftest.py) so no test fetches the
+    live SPA shell."""
+    return os.environ.get("PRERENDER_ENABLED", "1").strip().lower() not in ("0", "false", "no", "")
+
+
 def generate_seo_artifacts(
     index_entries: List[Dict[str, Any]],
     output_dir: Path,
     public_dir: Optional[Path] = None,
     site_url: Optional[str] = None,
     log: Callable[..., None] = _default_log,
+    prerender: Optional[bool] = None,
 ) -> None:
-    """Write sitemap.xml, sitemap_index.xml, news-sitemap.xml, llms.txt, skill.md, llms-full.txt.
+    """Write sitemap.xml, sitemap_index.xml, news-sitemap.xml, llms.txt, skill.md, llms-full.txt,
+    per-clip clip.md alternates, and (see prerender.py) the pre-rendered
+    per-clip HTML pages under ``<output_dir>/prerender/``.
 
     Args:
         index_entries: Same shape as `index.json`'s `clips` array — each entry
@@ -971,3 +981,14 @@ def generate_seo_artifacts(
         f"sitemap_index.xml, news-sitemap.xml ({len(news_clips)} urls), llms.txt, skill.md, "
         f"llms-full.txt, {md_written} per-clip clip.md alternates"
     )
+
+    # ---- Pre-rendered per-clip HTML (real <title>/canonical/og:/JSON-LD +
+    # a no-JS body at the exact /meeting/<id> path). Incremental; runs LAST
+    # because the pages link to the clip.md just written. Best-effort.
+    if prerender if prerender is not None else prerender_enabled():
+        try:
+            from prerender import generate_prerendered_pages
+
+            generate_prerendered_pages(valid_clips, output_dir, site_url, log=log)
+        except Exception as e:  # pragma: no cover - defensive
+            log(f"Pre-render generation error: {e}", "WARNING")

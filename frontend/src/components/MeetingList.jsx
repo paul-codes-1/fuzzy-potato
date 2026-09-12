@@ -5,6 +5,7 @@ import { useSearch } from '../hooks/useSearch'
 import SearchBar from './SearchBar'
 import TopicFilter from './TopicFilter'
 import { getSiteConfig } from '../config/site'
+import { setCanonical } from '../utils/seo'
 
 const PER_PAGE = 24
 
@@ -141,8 +142,12 @@ function MeetingList() {
   // Homepage route: the static index.html <title> is the LFUCG default; set the
   // browser title to this jurisdiction's archive name (the SPA serves one bundle
   // to every county).
+  // The shell carries no canonical (it is served for every unknown path), so
+  // the homepage declares its own here.
   useEffect(() => {
-    document.title = getSiteConfig().archive_name
+    const site = getSiteConfig()
+    document.title = site.archive_name
+    setCanonical(`${site.site_url}/`)
   }, [])
   const {
     query,

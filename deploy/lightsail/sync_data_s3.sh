@@ -19,7 +19,15 @@ export AWS_PAGER=""
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 S3_BUCKET="${S3_BUCKET:-s3://public-meetings}"
 SRC="lfucg_output"
+CF="${CLOUDFRONT_DISTRIBUTION_ID:-}"
 
+# `--prerender-only`: ship just the pre-rendered per-clip HTML pages (used by
+# deploy-spa.sh right after a new bundle lands, when only the page shells
+# changed and the 11GB /data tree comparison would be wasted time).
+PRERENDER_ONLY=0
+if [ "${1:-}" = "--prerender-only" ]; then PRERENDER_ONLY=1; fi
+
+if [ "$PRERENDER_ONLY" -eq 0 ]; then
 # Per-clip PDFs (agendas + minutes): never change after processing -> 1y immutable.
 aws s3 sync "$SRC/" "$S3_BUCKET/data/" --size-only \
   --exclude "*" --include "clips/*/*.pdf" \
@@ -53,6 +61,8 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
 # store), and any *.bak backup files must NEVER land on the public CloudFront
 # /data/* path. The trailing `*` on the db globs also catches the sqlite WAL
 # sidecars (-wal / -shm / -journal).
+# prerender/ + prerender_state.json are the per-clip HTML pages (shipped to
+# the bucket ROOT below, never under /data/) and their fingerprint ledger.
 aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --cache-control "no-cache" \
   --exclude "clips/*" \
@@ -63,6 +73,8 @@ aws s3 sync "$SRC/" "$S3_BUCKET/data/" \
   --exclude "telemetry.db*" \
   --exclude "vec.db*" \
   --exclude "*.bak" \
+  --exclude "prerender/*" \
+  --exclude "prerender_state.json*" \
   --exclude "*.mp3" --exclude "*.mp4" --exclude "*.part" --exclude "*.ytdl"
 
 # ---- SEO / agent artifacts (sitemap*.xml, robots.txt, llms*.txt, skill.md,
@@ -85,12 +97,43 @@ if [ -d "$PUBLIC_DIR" ]; then
     --include "robots.txt" --include "llms.txt" --include "llms-full.txt" \
     --include "skill.md" --include ".well-known/*" \
     --no-follow-symlinks
-  CF="${CLOUDFRONT_DISTRIBUTION_ID:-}"
   if [ -n "$CF" ]; then
     aws cloudfront create-invalidation --distribution-id "$CF" \
       --paths '/sitemap.xml' '/sitemap_index.xml' '/news-sitemap.xml' \
               '/robots.txt' '/llms.txt' '/llms-full.txt' '/skill.md' \
               '/.well-known/*' \
       --query 'Invalidation.Id' --output text
+  fi
+fi
+
+fi  # PRERENDER_ONLY
+
+# ---- Pre-rendered per-clip HTML pages (prerender.py). Uploaded to the bucket
+# ROOT as extension-less keys `meeting/<id>` (+ the flat static routes) so the
+# exact path CloudFront requests resolves to a real 200 document instead of
+# the S3-404 -> index.html shell that made every meeting page claim the
+# homepage canonical. `--content-type` is REQUIRED: with no extension the CLI
+# would guess binary/octet-stream and browsers would download the page.
+# Generation only rewrites files whose content changed (mtime preserved
+# otherwise), so this sync pushes just the deltas; invalidate `/meeting/*`
+# (one wildcard path) only when something actually uploaded.
+PRERENDER_DIR="$SRC/prerender"
+if [ -d "$PRERENDER_DIR" ]; then
+  sync_out="$(aws s3 sync "$PRERENDER_DIR/" "$S3_BUCKET/" \
+    --exclude "*" \
+    --include "meeting/*" --include "ask" --include "chat" --include "about" --include "corrections" \
+    --exclude "*.tmp" \
+    --content-type "text/html; charset=utf-8" \
+    --cache-control "public, max-age=300, s-maxage=86400, stale-while-revalidate=86400" \
+    --no-follow-symlinks 2>&1 | tee /dev/stderr)"
+  paths=()
+  if echo "$sync_out" | grep -q "upload: .*/meeting/"; then paths+=('/meeting/*'); fi
+  for pg in ask chat about corrections; do
+    if echo "$sync_out" | grep -q "upload: .*prerender/$pg to "; then paths+=("/$pg"); fi
+  done
+  if [ -n "$CF" ] && [ "${#paths[@]}" -gt 0 ]; then
+    echo "Invalidating pre-rendered pages: ${paths[*]}"
+    aws cloudfront create-invalidation --distribution-id "$CF" \
+      --paths "${paths[@]}" --query 'Invalidation.Id' --output text
   fi
 fi

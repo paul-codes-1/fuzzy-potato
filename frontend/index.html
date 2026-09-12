@@ -6,11 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LFUCG Meeting Archive</title>
     <meta name="description" content="Searchable archive of Lexington-Fayette Urban County Government council and committee meetings — transcripts, summaries, agendas, and minutes." />
-    <link rel="canonical" href="https://meetings.lexingtonky.news/" />
+    <!-- No canonical link / og:url in the shell ON PURPOSE. CloudFront
+         serves this file for every unknown path (S3 404 -> /index.html), so a
+         hard-coded homepage canonical made every /meeting/<id>, /ask, /about…
+         claim to be the homepage (GSC: 3,340 crawled-not-indexed, 708
+         duplicates, 2026-09). Each route sets its own canonical client-side
+         (MeetingList / MeetingDetail / StaticPages), and /meeting/<id> is now
+         served from a pre-rendered per-clip page (prerender.py) with the
+         canonical baked in. -->
     <meta property="og:title" content="LFUCG Meeting Archive" />
     <meta property="og:description" content="Searchable archive of Lexington-Fayette Urban County Government council and committee meetings." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://meetings.lexingtonky.news/" />
     <meta property="og:site_name" content="LFUCG Meeting Archive" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="LFUCG Meeting Archive" />
