@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { linkifyCitations, handleCitationClick } from '../utils/citations'
 import { useFacets } from '../hooks/useFacets'
 import { getSiteConfig } from '../config/site'
 import { SUGGESTED_QUESTIONS } from './ChatLFUCG'
@@ -47,6 +48,7 @@ function SourceCard({ source }) {
 export default function AskQuestion() {
   const site = getSiteConfig()
   const chat = site.chat || {}
+  const navigate = useNavigate()
   useEffect(() => {
     document.title = `Ask a question | ${site.archive_name}`
   }, [site.archive_name])
@@ -230,7 +232,12 @@ export default function AskQuestion() {
       {result && (
         <div className="ask-result">
           <div className="ask-answer">
-            <div dangerouslySetInnerHTML={{ __html: simpleMarkdown(result.answer) }} />
+            {/* [Clip N, MM:SS] citations become in-app links (see utils/citations.js);
+                the click handler routes them through React Router. */}
+            <div
+              onClick={e => handleCitationClick(e, navigate)}
+              dangerouslySetInnerHTML={{ __html: linkifyCitations(simpleMarkdown(result.answer), sources) }}
+            />
           </div>
 
           {sources.length > 0 && !hasCitedFlags && (

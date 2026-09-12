@@ -50,6 +50,24 @@ _request_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 _user_agent_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "rag_user_agent", default=None
 )
+# Referer + Origin (2026-09-12): lets /admin/analytics split SPA traffic from
+# direct API callers and embedders — /api/related alone was 94% of volume
+# and nothing said whether it came from our own detail page.
+_referer_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "rag_referer", default=None
+)
+_origin_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "rag_origin", default=None
+)
+
+MAX_HEADER_CHARS = 512
+
+
+def _clip_header(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    value = str(value).strip()
+    return value[:MAX_HEADER_CHARS] if value else None
 
 
 def set_request_context(
@@ -57,6 +75,8 @@ def set_request_context(
     client_ip: Optional[str],
     user_agent: Optional[str],
     request_id: Optional[str] = None,
+    referer: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> str:
     """Stash per-request metadata for the duration of this asyncio task / thread.
 
@@ -66,6 +86,8 @@ def set_request_context(
     _client_ip_var.set(client_ip)
     _user_agent_var.set(user_agent)
     _request_id_var.set(rid)
+    _referer_var.set(_clip_header(referer))
+    _origin_var.set(_clip_header(origin))
     return rid
 
 
@@ -143,6 +165,25 @@ CREATE INDEX IF NOT EXISTS idx_rag_events_endpoint ON rag_events(endpoint);
 CREATE INDEX IF NOT EXISTS idx_rag_events_transport ON rag_events(transport);
 """
 
+# Columns added after the table first shipped. Applied by _migrate() with an
+# `ALTER TABLE … ADD COLUMN` guarded by PRAGMA table_info so an existing
+# telemetry.db (prod: 17k rows) upgrades in place on first open and a fresh
+# DB (already created with them by _SCHEMA_SQL? no — kept out of the CREATE
+# so both paths run the same code) ends up identical.
+_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("referer", "ALTER TABLE rag_events ADD COLUMN referer TEXT"),
+    ("origin", "ALTER TABLE rag_events ADD COLUMN origin TEXT"),
+)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add any missing columns from _MIGRATIONS. Idempotent."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(rag_events)")}
+    for column, ddl in _MIGRATIONS:
+        if column not in existing:
+            conn.execute(ddl)
+    conn.commit()
+
 
 def _telemetry_db_path() -> str:
     """Resolve the telemetry DB path at call time.
@@ -186,6 +227,7 @@ def _get_db() -> Optional[sqlite3.Connection]:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
+        _migrate(conn)
         _db_conn = conn
         return _db_conn
     except Exception:
@@ -232,8 +274,8 @@ def _write_event_row(
                 INSERT INTO rag_events (
                   ts, transport, endpoint, query, filters, result_count,
                   latency_ms, status, error_type, rate_limited, model_used,
-                  jurisdiction, ip_hash, user_agent, request_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  jurisdiction, ip_hash, user_agent, request_id, referer, origin
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.now(timezone.utc).isoformat(),
@@ -251,6 +293,8 @@ def _write_event_row(
                     hash_ip(_client_ip_var.get()),
                     _user_agent_var.get(),
                     _request_id_var.get(),
+                    _referer_var.get(),
+                    _origin_var.get(),
                 ),
             )
             conn.commit()
@@ -300,6 +344,8 @@ def log_query_event(
             "ip_hash": hash_ip(_client_ip_var.get()),
             "user_agent": _user_agent_var.get(),
             "request_id": _request_id_var.get(),
+            "referer": _referer_var.get(),
+            "origin": _origin_var.get(),
         }
         # One compact, grep-friendly JSON line. journalctl / CloudWatch Logs
         # Insights parse the JSON tail of the message automatically. (We used
@@ -355,6 +401,7 @@ def analytics(window_days: int = 7, *, top_queries_limit: int = 20) -> dict:
         "top_queries": [],
         "by_transport": {},
         "by_endpoint": [],
+        "top_referers": [],
         "latency_ms": {"p50": 0.0, "p95": 0.0},
     }
     with _db_lock:
@@ -399,11 +446,26 @@ def analytics(window_days: int = 7, *, top_queries_limit: int = 20) -> dict:
                 "WHERE ts >= ? AND latency_ms IS NOT NULL ORDER BY latency_ms",
                 (cutoff,),
             ).fetchall()
+
+            # Referer host (scheme://host, path dropped) — NULL/blank = direct.
+            referer_rows = conn.execute(
+                "SELECT COALESCE(NULLIF(referer, ''), '(none)') AS r, COUNT(*) AS c "
+                "FROM rag_events WHERE ts >= ? GROUP BY r ORDER BY c DESC LIMIT 200",
+                (cutoff,),
+            ).fetchall()
         except Exception:
             logger.warning("telemetry: analytics query failed", exc_info=True)
             return empty
 
     lats = [r[0] for r in lat_rows]
+    hosts: dict[str, int] = {}
+    for ref, count in referer_rows:
+        key = ref if ref == "(none)" else _referer_host(ref)
+        hosts[key] = hosts.get(key, 0) + int(count)
+    top_referers = [
+        {"referer": k, "count": v}
+        for k, v in sorted(hosts.items(), key=lambda kv: (-kv[1], kv[0]))[:10]
+    ]
     return {
         "window_days": window_days,
         "total": total,
@@ -414,8 +476,22 @@ def analytics(window_days: int = 7, *, top_queries_limit: int = 20) -> dict:
         ],
         "by_transport": {r[0]: r[1] for r in transport_rows},
         "by_endpoint": [{"endpoint": r[0], "count": r[1]} for r in endpoint_rows],
+        "top_referers": top_referers,
         "latency_ms": {"p50": _percentile(lats, 0.5), "p95": _percentile(lats, 0.95)},
     }
+
+
+def _referer_host(value: str) -> str:
+    """scheme://host of a Referer/Origin value (or the raw value if unparseable)."""
+    try:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(value)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+    except ValueError:
+        pass
+    return value
 
 
 def prune_old_events(days: int = 90) -> int:

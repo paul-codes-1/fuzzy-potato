@@ -36,7 +36,7 @@ from pydantic import BaseModel, field_validator
 from clients import get_anthropic, get_openai
 from config import get_config
 from rag.mcp_server import mcp_server
-from rag.query import ask, chat, load_clip_metadata
+from rag.query import DEFAULT_MAX_DISTANCE, ask, chat, load_clip_metadata
 from rag.vecstore import ISO_DATE_RE, embedding_dims, get_vecstore
 from rag.rate_limit import check as rate_check
 from rag.related import related as related_clips
@@ -306,6 +306,8 @@ async def _request_context_middleware(request: Request, call_next):
     set_request_context(
         client_ip=_client_ip_from_request(request),
         user_agent=request.headers.get("user-agent"),
+        referer=request.headers.get("referer"),
+        origin=request.headers.get("origin"),
     )
     return await call_next(request)
 
@@ -897,7 +899,7 @@ def health_endpoint():
     except (TypeError, ValueError):
         result["dims"] = None
     try:
-        result["max_distance"] = float(os.getenv("RAG_MAX_DISTANCE", "0.75"))
+        result["max_distance"] = float(os.getenv("RAG_MAX_DISTANCE", str(DEFAULT_MAX_DISTANCE)))
     except (TypeError, ValueError):
         result["max_distance"] = None
     if _store is not None:

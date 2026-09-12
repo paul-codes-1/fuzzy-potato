@@ -154,3 +154,69 @@ def test_analytics_aggregates(temp_telemetry_db):
     # rate_limited event had no latency → excluded from percentiles, which
     # are computed over the 4 timed events.
     assert a["latency_ms"]["p50"] > 0
+
+
+# --- referer / origin columns (2026-09-12) ------------------------------
+
+def test_referer_and_origin_recorded(temp_telemetry_db):
+    telemetry.set_request_context(
+        client_ip="10.0.0.1", user_agent="pytest/1.0",
+        referer="https://meetings.lexingtonky.news/meeting/6865?highlight=x",
+        origin="https://meetings.lexingtonky.news",
+    )
+    telemetry.log_query_event(surface="http", endpoint="/api/related", status="ok", result_count=5)
+    row = _fetch_events(temp_telemetry_db)[0]
+    assert row["referer"] == "https://meetings.lexingtonky.news/meeting/6865?highlight=x"
+    assert row["origin"] == "https://meetings.lexingtonky.news"
+
+
+def test_referer_absent_is_null_and_long_values_clipped(temp_telemetry_db):
+    telemetry.set_request_context(client_ip=None, user_agent=None)
+    telemetry.log_query_event(surface="mcp", endpoint="search_meetings", status="ok")
+    telemetry.set_request_context(client_ip=None, user_agent=None, referer="x" * 2000, origin="")
+    telemetry.log_query_event(surface="http", endpoint="/api/search", status="ok")
+    rows = _fetch_events(temp_telemetry_db)
+    assert rows[0]["referer"] is None and rows[0]["origin"] is None
+    assert len(rows[1]["referer"]) == telemetry.MAX_HEADER_CHARS
+    assert rows[1]["origin"] is None
+
+
+def test_migration_adds_columns_to_pre_existing_db(tmp_path, monkeypatch):
+    """A telemetry.db created by the old schema (no referer/origin) must be
+    upgraded in place on open — prod has 17k rows in one."""
+    db_path = tmp_path / "old.db"
+    conn = sqlite3.connect(str(db_path))
+    old_schema = telemetry._SCHEMA_SQL
+    conn.executescript(old_schema)
+    conn.execute(
+        "INSERT INTO rag_events (ts, transport, endpoint, status) VALUES ('2026-01-01T00:00:00+00:00','http','/api/ask','ok')"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("RAG_TELEMETRY_DB", str(db_path))
+    telemetry._reset_db_state_for_tests()
+    try:
+        telemetry.set_request_context(client_ip=None, user_agent=None, referer="https://a.example/x")
+        telemetry.log_query_event(surface="http", endpoint="/api/ask", status="ok")
+        rows = _fetch_events(db_path)
+        assert {"referer", "origin"} <= set(rows[0].keys())
+        assert rows[0]["referer"] is None          # legacy row
+        assert rows[1]["referer"] == "https://a.example/x"
+        # Re-open is idempotent (no "duplicate column" error).
+        telemetry._reset_db_state_for_tests()
+        telemetry.log_query_event(surface="http", endpoint="/api/ask", status="ok")
+        assert len(_fetch_events(db_path)) == 3
+    finally:
+        telemetry._reset_db_state_for_tests()
+
+
+def test_analytics_reports_top_referer_hosts(temp_telemetry_db):
+    for ref in ("https://meetings.lexingtonky.news/meeting/1", "https://meetings.lexingtonky.news/", None,
+                "https://feeds.lexingtonky.news/article/x"):
+        telemetry.set_request_context(client_ip=None, user_agent=None, referer=ref)
+        telemetry.log_query_event(surface="http", endpoint="/api/related", status="ok")
+    out = telemetry.analytics(window_days=7)
+    hosts = {r["referer"]: r["count"] for r in out["top_referers"]}
+    assert hosts["https://meetings.lexingtonky.news"] == 2
+    assert hosts["https://feeds.lexingtonky.news"] == 1
+    assert hosts["(none)"] == 1

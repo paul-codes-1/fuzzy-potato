@@ -31,20 +31,24 @@ Restart=always
 RestartSec=3
 # Surface OOMs clearly; let systemd restart on crash.
 OOMPolicy=kill
-# Memory guard rails (16GB box). The store is disk-first sqlite now — search.db
-# (FTS5) and the sqlite-vec vec.db are mmap'd and mostly serve from the OS page
-# cache, so steady-state RSS is well under this cap; MemoryHigh mainly bounds a
-# runaway (e.g. a huge synthesis context or a concurrent pipeline burst).
-# MemoryHigh is a SOFT throttle (reclaim pressure under load) — deliberately NOT
-# a hard MemoryMax, which could kill the API mid-/api/ask. Sized well below the
-# 16GB box with headroom for a concurrent ingest run. Pair with swap (see
+# Memory guard rails — the lfucg-meetings Lightsail box has 3.8 GB RAM + 4 GB
+# swap (NOT 16 GB; that comment was stale and the live unit had drifted to
+# MemoryHigh=3G, 2026-09-12). The store is disk-first sqlite — search.db (FTS5)
+# and the sqlite-vec vec.db are mmap'd and mostly serve from the OS page cache,
+# so steady-state RSS is a few hundred MB; MemoryHigh mainly bounds a runaway
+# (a huge synthesis context or a concurrent pipeline burst). MemoryHigh is a
+# SOFT throttle (reclaim pressure under load) — deliberately NOT a hard
+# MemoryMax, which could kill the API mid-/api/ask. 2500M leaves ~1.3 GB for
+# the OS page cache + a concurrent ingest run on this box. Pair with swap (see
 # SETUP.md) so the pipeline's bursty allocations don't OOM the API. Historical
 # note: the 2026-07-14 outage was a too-LOW MemoryHigh on the old ChromaDB
 # (in-RAM HNSW) serving path reclaim-throttling uvicorn into a live-looking
 # wedge (6h of 502s, service 'active', health checks dead) — the disk-first
-# store makes that far less likely, but keep the cap generous. Tune on real RSS.
+# store makes that far less likely. Tune on real RSS (systemctl status shows it).
+# Apply on the box: sudo cp deploy/lightsail/lfucg-rag.service /etc/systemd/system/
+#   && sudo systemctl daemon-reload && sudo systemctl restart lfucg-rag
 MemoryAccounting=yes
-MemoryHigh=5500M
+MemoryHigh=2500M
 
 [Install]
 WantedBy=multi-user.target

@@ -193,6 +193,38 @@ a:hover {
   font-size: 1.25em;
 }
 
+/* Lazy related-meetings placeholder (the /api/related call only fires once
+   this scrolls into view or is clicked). */
+.related-meetings-placeholder {
+  min-height: 48px;
+}
+.related-meetings-toggle {
+  background: none;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.related-meetings-toggle:hover {
+  border-color: var(--accent, #2563eb);
+}
+.related-meetings-loading {
+  opacity: 0.7;
+}
+
+/* [Clip N, MM:SS] citations inside RAG answers (utils/citations.js) */
+.citation-link {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  color: inherit;
+  font-weight: 500;
+}
+.citation-link:hover {
+  color: var(--accent, #2563eb);
+}
+
 .related-meetings-list {
   list-style: none;
   padding: 0;

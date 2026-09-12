@@ -206,14 +206,23 @@ function MeetingDetail() {
   const { clipId } = useParams()
   const [searchParams] = useSearchParams()
   const highlightTerm = searchParams.get('highlight') || ''
+  // ?t=<seconds> (from RAG answer citation links) starts the video there.
+  const startParam = parseInt(searchParams.get('t') || '', 10)
   const { meeting, extractedFacts, transcript, transcriptSegments, agenda, minutes, loading, error } = useMeeting(clipId)
   const site = getSiteConfig()
   const SITE_URL = site.site_url
   const DEFAULT_DESCRIPTION = site.description
   const feedsLink = useFeedsLink(clipId)
   const [activeTab, setActiveTab] = useState('overview')
-  const [videoStartTime, setVideoStartTime] = useState(null)
+  const [videoStartTime, setVideoStartTime] = useState(
+    Number.isFinite(startParam) && startParam >= 0 ? startParam : null
+  )
   const [videoLoading, setVideoLoading] = useState(false)
+  // Related-meetings fetch is deferred until the section is on screen (or
+  // requested) — see useRelatedClips. Never for automated browsers.
+  const [relatedWanted, setRelatedWanted] = useState(false)
+  const relatedRef = useRef(null)
+  const isAutomated = typeof navigator !== 'undefined' && navigator.webdriver === true
   const [summaryText, setSummaryText] = useState('')
   const videoContainerRef = useRef(null)
   const firstMatchRef = useRef(null)
@@ -419,10 +428,32 @@ function MeetingDetail() {
     return result
   }, [extractedFacts, transcript, agenda, minutes, meeting])
 
-  // Fetch related-meeting suggestions in parallel with the page;
-  // hook always runs (passing null on cold mounts) so hook order is
-  // stable across the loading/error early returns below.
-  const { clips: relatedClips } = useRelatedClips(meeting?.clip_id || null, { limit: 5 })
+  // Related-meeting suggestions: the hook always runs (passing null on cold
+  // mounts) so hook order is stable across the loading/error early returns
+  // below, but the request itself only fires once `relatedWanted` flips —
+  // when the placeholder section enters the viewport or the reader clicks.
+  const { clips: relatedClips, loading: relatedLoading } = useRelatedClips(
+    meeting?.clip_id || null,
+    { limit: 5, enabled: relatedWanted && !isAutomated }
+  )
+
+  // Reset the lazy flag when navigating between clips.
+  useEffect(() => { setRelatedWanted(false) }, [clipId])
+
+  useEffect(() => {
+    if (relatedWanted || isAutomated || !meeting) return
+    const el = relatedRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') return  // click still works
+    const obs = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) {
+        setRelatedWanted(true)
+        obs.disconnect()
+      }
+    }, { rootMargin: '200px 0px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [relatedWanted, isAutomated, meeting])
 
   if (loading) {
     return <div className="loading">Loading meeting details...</div>
@@ -1026,6 +1057,23 @@ function MeetingDetail() {
         )
       })()}
 
+      {!isAutomated && !relatedWanted && (
+        <section className="related-meetings related-meetings-placeholder" ref={relatedRef}>
+          <button
+            type="button"
+            className="related-meetings-toggle"
+            onClick={() => setRelatedWanted(true)}
+          >
+            Show related meetings
+          </button>
+        </section>
+      )}
+      {relatedWanted && relatedLoading && relatedClips.length === 0 && (
+        <section className="related-meetings" aria-busy="true">
+          <h2>Related meetings</h2>
+          <p className="related-meetings-loading">Finding related meetings…</p>
+        </section>
+      )}
       {relatedClips.length > 0 && (
         <section className="related-meetings">
           <h2>Related meetings</h2>

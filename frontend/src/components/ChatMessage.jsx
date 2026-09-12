@@ -1,4 +1,6 @@
+import { useNavigate } from 'react-router-dom'
 import ChatSourceCards from './ChatSourceCards'
+import { linkifyCitations, handleCitationClick } from '../utils/citations'
 
 function simpleMarkdown(text) {
   if (!text) return ''
@@ -15,6 +17,7 @@ function simpleMarkdown(text) {
 }
 
 export default function ChatMessage({ message }) {
+  const navigate = useNavigate()
   const isUser = message.role === 'user'
   const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -29,7 +32,12 @@ export default function ChatMessage({ message }) {
         {isUser ? (
           <p>{message.content}</p>
         ) : (
-          <div dangerouslySetInnerHTML={{ __html: simpleMarkdown(message.content) }} />
+          <div
+            onClick={e => handleCitationClick(e, navigate)}
+            dangerouslySetInnerHTML={{
+              __html: linkifyCitations(simpleMarkdown(message.content), message.sources || []),
+            }}
+          />
         )}
       </div>
       <span className="chat-message-time">{time}</span>
