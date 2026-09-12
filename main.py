@@ -89,6 +89,41 @@ TRANSCRIPT_NGRAM_MIN_UNIQUE_RATIO = 0.10
 TRANSCRIPT_NGRAM_MIN_WORDS = 60
 
 
+# Meeting bodies whose Granicus live-caption (VTT) track must NOT become the
+# final transcript. The stenographer feed on Council / Work Session /
+# Committee of the Whole / Planning Commission clips is what people ask the
+# RAG about most, and it ships with 0 speaker labels and dropped sentences —
+# votes were being extracted from it. For these bodies the VTT is only an
+# immediate placeholder (page goes live now); Whisper runs in the same
+# process_clip pass (or later via --retranscribe-placeholders) and the VTT
+# is folded back in for speaker labels. Override the regex per deployment
+# with LFUCG_WHISPER_REQUIRED_BODIES (empty string disables).
+DEFAULT_WHISPER_REQUIRED_BODIES = (
+    r"urban county council|council work session|committee of the whole|planning commission"
+)
+
+
+def _whisper_required_re() -> Optional["re.Pattern[str]"]:
+    pattern = os.getenv("LFUCG_WHISPER_REQUIRED_BODIES", DEFAULT_WHISPER_REQUIRED_BODIES)
+    if not pattern.strip():
+        return None
+    try:
+        return re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        return re.compile(DEFAULT_WHISPER_REQUIRED_BODIES, re.IGNORECASE)
+
+
+def requires_whisper(title: Optional[str], meeting_body: Optional[str] = None,
+                     pattern: Optional[str] = None) -> bool:
+    """True when a clip's title/body names a body that must be Whispered
+    (see DEFAULT_WHISPER_REQUIRED_BODIES). ``pattern`` overrides the env."""
+    rx = re.compile(pattern, re.IGNORECASE) if pattern is not None else _whisper_required_re()
+    if rx is None:
+        return False
+    hay = f"{title or ''} {meeting_body or ''}"
+    return bool(rx.search(hay))
+
+
 def validate_transcript(text: Optional[str],
                         duration_seconds: Optional[float] = None) -> tuple[bool, str]:
     """Gate a transcript before it's accepted as final. Returns ``(ok, reason)``.
@@ -1843,6 +1878,243 @@ Guidelines:
         except (json.JSONDecodeError, OSError):
             return []
 
+    def _enrich_segments_with_captions(
+        self,
+        clip_id: int,
+        clip_dir: Path,
+        whisper_segments: List[dict],
+        segments_path: Path,
+    ) -> Optional[Dict[str, Any]]:
+        """Align VTT speaker labels onto fresh Whisper segments and rewrite the
+        segments JSON with them. Best-effort: returns None (leaving the plain
+        Whisper artifacts in place) on any failure."""
+        try:
+            enriched = self.apply_captions(clip_id, clip_dir, whisper_segments=whisper_segments)
+        except Exception as e:
+            self.log(f"Caption speaker enrichment failed for clip {clip_id}: {e}", "WARNING")
+            return None
+        if not enriched or not enriched.get("segments"):
+            return None
+        try:
+            with open(segments_path, "w", encoding="utf-8") as f:
+                json.dump(enriched["segments"], f, indent=2)
+        except OSError as e:
+            self.log(f"Could not write enriched segments for clip {clip_id}: {e}", "WARNING")
+            return None
+        self.log(
+            f"Folded Granicus captions into Whisper transcript: "
+            f"{len(enriched.get('speakers') or [])} speakers")
+        return enriched
+
+    def find_placeholder_clips(
+        self,
+        bodies: Optional[List[str]] = None,
+        since: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Clips still carrying a Granicus-VTT placeholder transcript for a
+        Whisper-required body (or the explicit ``bodies`` substrings), newest
+        first. Each entry: ``{clip_id, title, date, meeting_body, est_minutes}``
+        where est_minutes comes from the last caption cue (0 if unknown)."""
+        clips_dir = self.output_dir / "clips"
+        found: List[Dict[str, Any]] = []
+        if not clips_dir.exists():
+            return found
+        needles = [b.lower() for b in (bodies or []) if b and b.strip()]
+        for clip_dir in clips_dir.iterdir():
+            if not clip_dir.is_dir() or not clip_dir.name.isdigit():
+                continue
+            meta_path = clip_dir / "metadata.json"
+            try:
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            source = metadata.get("transcript_source") or ""
+            if source != "granicus_vtt" and not metadata.get("whisper_pending"):
+                continue
+            title = metadata.get("title") or ""
+            body = metadata.get("meeting_body") or ""
+            if needles:
+                hay = f"{title} {body}".lower()
+                if not any(n in hay for n in needles):
+                    continue
+            elif not requires_whisper(title, body):
+                continue
+            date = metadata.get("date") or ""
+            if since and (not date or date < since):
+                continue
+            est_minutes = 0.0
+            segf = (metadata.get("files") or {}).get("transcript_segments")
+            if segf and (clip_dir / segf).exists():
+                try:
+                    segs = json.loads((clip_dir / segf).read_text())
+                    est_minutes = max((float(s.get("end", 0) or 0) for s in segs), default=0.0) / 60.0
+                except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                    pass
+            found.append({
+                "clip_id": int(clip_dir.name), "title": title, "date": date,
+                "meeting_body": body, "est_minutes": round(est_minutes, 1),
+            })
+        found.sort(key=lambda c: (c["date"] or "", c["clip_id"]), reverse=True)
+        if limit:
+            found = found[:limit]
+        return found
+
+    # OpenAI whisper-1 list price, used only for the --dry-run cost estimate.
+    WHISPER_USD_PER_MINUTE = 0.006
+
+    def retranscribe_clip(self, clip_id: int) -> bool:
+        """Replace one clip's VTT placeholder transcript with Whisper (+ VTT
+        speaker labels). Keeps the same transcript filenames so every
+        downstream reference (index, search.db, clip.md) stays valid.
+
+        The placeholder files are backed up first and restored if Whisper
+        fails or its output fails the quality gate — a failed re-run must
+        never leave the page worse than the placeholder it had.
+        """
+        clip_dir = self.output_dir / "clips" / str(clip_id)
+        meta_path = clip_dir / "metadata.json"
+        try:
+            with open(meta_path) as f:
+                metadata = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            self.log(f"Clip {clip_id}: unreadable metadata ({e})", "ERROR")
+            return False
+        files = metadata.get("files") or {}
+        tfile = files.get("transcript")
+        if not tfile:
+            self.log(f"Clip {clip_id}: no transcript file recorded — skipping", "WARNING")
+            return False
+        transcript_path = clip_dir / tfile
+        segments_path = clip_dir / f"{transcript_path.stem}_segments.json"
+        title = metadata.get("title") or f"Clip {clip_id}"
+        meeting_date = metadata.get("date")
+
+        # Back up the placeholder so a failed Whisper pass can be rolled back.
+        backups = []
+        for src in (transcript_path, segments_path):
+            if src.exists():
+                bak = src.with_name(src.name + ".vtt-placeholder.bak")
+                shutil.copy2(src, bak)
+                backups.append((src, bak))
+
+        def _restore() -> None:
+            for src, bak in backups:
+                try:
+                    shutil.copy2(bak, src)
+                    bak.unlink()
+                except OSError:
+                    pass
+
+        def _discard_backups() -> None:
+            for _src, bak in backups:
+                try:
+                    bak.unlink()
+                except OSError:
+                    pass
+
+        audio_filename = self.source.download_audio(clip_id, clip_dir, title, date=meeting_date)
+        if not audio_filename:
+            _discard_backups()
+            self.log(f"Clip {clip_id}: audio download failed — placeholder kept", "ERROR")
+            self._record_failure(clip_id, "retranscribe:download_failed")
+            self.save_state()
+            return False
+        audio_path = clip_dir / audio_filename
+
+        old_force = self.force_reprocess
+        self.force_reprocess = True  # ignore the cached placeholder transcript
+        try:
+            result = self.transcribe_audio(audio_path, transcript_path)
+        finally:
+            self.force_reprocess = old_force
+
+        transcript = result.get("text") if isinstance(result, dict) else (result or "")
+        segments = result.get("segments") if isinstance(result, dict) else None
+        duration = self.get_audio_duration(audio_path)
+        if duration is None and segments:
+            duration = max((s.get("end", 0) for s in segments), default=0) or None
+        ok, reason = validate_transcript(transcript, duration) if transcript else (False, "empty")
+        if not ok:
+            _restore()
+            self.log(
+                f"Clip {clip_id}: Whisper output rejected ({reason}) — placeholder restored", "ERROR")
+            self._record_failure(clip_id, f"retranscribe:transcript_quality:{reason}")
+            self.save_state()
+            if not self.keep_audio and audio_path.exists():
+                audio_path.unlink()
+            return False
+        _discard_backups()
+
+        transcript_source = "elevenlabs_scribe" if self.transcriber == "elevenlabs" else "whisper-1"
+        speakers: List[str] = []
+        if segments:
+            files["transcript_segments"] = segments_path.name
+            enriched = self._enrich_segments_with_captions(clip_id, clip_dir, segments, segments_path)
+            if enriched:
+                speakers = enriched["speakers"]
+                transcript_source = enriched["source"]
+                files["captions_vtt"] = enriched["vtt_filename"]
+
+        if self.keep_audio:
+            files["audio"] = audio_filename
+        elif audio_path.exists():
+            audio_path.unlink()
+            files.pop("audio", None)
+
+        metadata["files"] = files
+        metadata["transcript_source"] = transcript_source
+        metadata["speakers"] = speakers
+        metadata["transcript_words"] = len(transcript.split())
+        metadata["audio_kept"] = self.keep_audio
+        metadata.setdefault("models", {})["transcribe"] = (
+            "elevenlabs_scribe" if self.transcriber == "elevenlabs" else self.transcribe_model)
+        metadata["retranscribed_at"] = datetime.now().isoformat()
+        metadata.pop("whisper_pending", None)
+        with open(meta_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        self._clear_failure(clip_id)
+        self.save_state()
+        self.log(
+            f"Clip {clip_id}: placeholder replaced with {transcript_source} "
+            f"({metadata['transcript_words']:,} words, {len(speakers)} speakers)")
+        return True
+
+    def reset_failed_attempts(self, clip_ids: List[int]) -> List[int]:
+        """Re-open the retry budget for specific failed clips.
+
+        Resets ``attempts`` to 0 and re-stamps first_ts/last_ts to now so BOTH
+        the inline --auto retry (recent last_ts, attempts < cap) and the weekly
+        --retry-failed-sweep (first_ts inside the 60-day window) pick the clip
+        up again. Clips that are already processed or not in the ledger are
+        reported back untouched. Persists state.
+        """
+        failed = _normalize_failed_clips(self.state.get("failed_clips"))
+        self.state["failed_clips"] = failed
+        processed = set(self.state.get("processed_clips", []))
+        ts = datetime.now().isoformat()
+        reset: List[int] = []
+        for cid in clip_ids:
+            key = str(cid)
+            if cid in processed:
+                self.log(f"Clip {cid}: already processed — nothing to reset", "WARNING")
+                continue
+            rec = failed.get(key)
+            if not isinstance(rec, dict):
+                # Not in the ledger (e.g. dropped by a prune): add a fresh
+                # zero-attempt row so the sweep can pick it up.
+                failed[key] = {"first_ts": ts, "last_ts": ts, "attempts": 0,
+                               "reason": "manual_retry"}
+            else:
+                rec["attempts"] = 0
+                rec["first_ts"] = ts
+                rec["last_ts"] = ts
+                rec["reason"] = f"manual_retry (was: {rec.get('reason', '?')})"
+            reset.append(cid)
+        self.save_state()
+        return reset
+
     def apply_captions(
         self,
         clip_id: int,
@@ -1999,10 +2271,18 @@ Guidelines:
                         f"({vtt_reason}) — falling through to Whisper instead of "
                         f"accepting garbage", "ERROR")
 
-            if vtt_ok:
-                # VTT path: Granicus stenographer captions are the
-                # canonical transcript. Audio download + Whisper are
-                # skipped entirely for this clip.
+            # Council / Work Session / Committee of the Whole / Planning
+            # Commission clips must be Whispered even when a VTT validates:
+            # the caption track is only a placeholder for them (see
+            # DEFAULT_WHISPER_REQUIRED_BODIES). If Whisper fails this run the
+            # placeholder is still written so the page goes live, and the clip
+            # is stamped whisper_pending for --retranscribe-placeholders.
+            whisper_required = vtt_ok and requires_whisper(
+                title, clip_metadata.get("meeting_body"))
+            whisper_pending = False
+
+            def _write_vtt_placeholder(why: str) -> None:
+                nonlocal transcript, transcript_segments, transcript_source, speakers, whisper_pending
                 transcript = caption_info["transcript_text"]
                 transcript_segments = caption_info["segments"]
                 transcript_source = caption_info["source"]  # "granicus_vtt"
@@ -2014,6 +2294,19 @@ Guidelines:
                     json.dump(transcript_segments, f, indent=2)
                 files["transcript"] = transcript_filename
                 files["transcript_segments"] = segments_filename
+                if why:
+                    whisper_pending = True
+                    self.log(
+                        f"Whisper {why} for clip {clip_id} — keeping the Granicus VTT "
+                        f"placeholder ({len(speakers)} speakers, "
+                        f"{len(transcript_segments)} cues) and marking whisper_pending",
+                        "WARNING")
+
+            if vtt_ok and not whisper_required:
+                # VTT path: Granicus stenographer captions are the
+                # canonical transcript. Audio download + Whisper are
+                # skipped entirely for this clip.
+                _write_vtt_placeholder("")
                 self.log(
                     f"Using Granicus VTT transcript ({len(speakers)} speakers, "
                     f"{len(transcript_segments)} cues) — skipping Whisper"
@@ -2079,63 +2372,98 @@ Guidelines:
                 files["transcript"] = transcript_filename
                 files["transcript_segments"] = segments_filename
             else:
-                # Whisper path: no captions track available, so we have
-                # to transcribe the audio ourselves.
+                # Whisper path: no usable captions track, OR a whisper-required
+                # body whose captions are only a placeholder. Every failure
+                # below falls back to the VTT placeholder when one validated
+                # (whisper_pending=True, retried later) instead of failing the
+                # clip outright.
+                if whisper_required:
+                    self.log(
+                        f"Clip {clip_id} is a Whisper-required body — captions kept "
+                        f"as placeholder only; transcribing audio")
                 audio_filename = self.source.download_audio(clip_id, clip_dir, title, date=meeting_date)
-                if not audio_filename:
+                whisper_ok = bool(audio_filename)
+                if not whisper_ok and not vtt_ok:
                     self._record_failure(clip_id, "download_failed")
                     self._advance_cursor(clip_id)
                     self.save_state()
                     return False
-                files["audio"] = audio_filename
-                audio_path = clip_dir / audio_filename
+                if not whisper_ok:
+                    _write_vtt_placeholder("audio download failed")
+                else:
+                    files["audio"] = audio_filename
+                    audio_path = clip_dir / audio_filename
 
-                transcript_result = self.transcribe_audio(audio_path, transcript_path)
-                if isinstance(transcript_result, dict):
-                    transcript = transcript_result["text"]
-                    transcript_segments = transcript_result.get("segments")
-                elif isinstance(transcript_result, str):
-                    transcript = transcript_result
+                    transcript_result = self.transcribe_audio(audio_path, transcript_path)
+                    if isinstance(transcript_result, dict):
+                        transcript = transcript_result["text"]
+                        transcript_segments = transcript_result.get("segments")
+                    elif isinstance(transcript_result, str):
+                        transcript = transcript_result
 
-                if not transcript:
-                    self._record_failure(clip_id, "transcription_failed")
-                    self._advance_cursor(clip_id)
-                    self.save_state()
-                    return False
+                    if not transcript:
+                        if vtt_ok:
+                            _write_vtt_placeholder("transcription failed")
+                            whisper_ok = False
+                        else:
+                            self._record_failure(clip_id, "transcription_failed")
+                            self._advance_cursor(clip_id)
+                            self.save_state()
+                            return False
 
-                # Quality-gate the Whisper output before accepting it. A
-                # repetition loop or a half-captured transcript (dropped chunk)
-                # must NOT be written as final — that marks the clip done
-                # forever. There's no other transcription path here, so we
-                # record a quality failure and let the retry/repair machinery
-                # re-attempt it (the garbage file stays on disk so
-                # --repair-short-transcripts can find it).
-                whisper_duration = self.get_audio_duration(audio_path)
-                if whisper_duration is None and transcript_segments:
-                    whisper_duration = max(
-                        (s.get("end", 0) for s in transcript_segments), default=0
-                    ) or None
-                ok, reason = validate_transcript(transcript, whisper_duration)
-                if not ok:
-                    self.log(
-                        f"REJECTED Whisper transcript for clip {clip_id} "
-                        f"({reason}) — not marking done; will retry", "ERROR")
-                    self._record_failure(clip_id, f"transcript_quality:{reason}")
-                    self._advance_cursor(clip_id)
-                    self.save_state()
-                    return False
+                if whisper_ok:
+                    # Quality-gate the Whisper output before accepting it. A
+                    # repetition loop or a half-captured transcript (dropped
+                    # chunk) must NOT be written as final — that marks the
+                    # clip done forever. Without a VTT there's no other
+                    # transcription path here, so we record a quality failure
+                    # and let the retry/repair machinery re-attempt it (the
+                    # garbage file stays on disk so --repair-short-transcripts
+                    # can find it).
+                    whisper_duration = self.get_audio_duration(audio_path)
+                    if whisper_duration is None and transcript_segments:
+                        whisper_duration = max(
+                            (s.get("end", 0) for s in transcript_segments), default=0
+                        ) or None
+                    ok, reason = validate_transcript(transcript, whisper_duration)
+                    if not ok:
+                        self.log(
+                            f"REJECTED Whisper transcript for clip {clip_id} "
+                            f"({reason})", "ERROR")
+                        if vtt_ok:
+                            _write_vtt_placeholder(f"rejected ({reason})")
+                            whisper_ok = False
+                        else:
+                            self.log("  — not marking done; will retry", "ERROR")
+                            self._record_failure(clip_id, f"transcript_quality:{reason}")
+                            self._advance_cursor(clip_id)
+                            self.save_state()
+                            return False
 
-                # transcribe_audio writes both transcript_path and the
-                # adjacent _segments.json file itself.
-                files["transcript"] = transcript_filename
-                if transcript_segments:
-                    files["transcript_segments"] = segments_filename
+                if whisper_ok:
+                    # transcribe_audio writes both transcript_path and the
+                    # adjacent _segments.json file itself.
+                    files["transcript"] = transcript_filename
+                    if transcript_segments:
+                        files["transcript_segments"] = segments_filename
 
-                # Record which engine produced this transcript (default above
-                # is "whisper-1"). Scribe transcripts are flagged so the
-                # frontend disclosure + RAG metadata can distinguish them.
-                if self.transcriber == "elevenlabs":
-                    transcript_source = "elevenlabs_scribe"
+                    # Record which engine produced this transcript (default above
+                    # is "whisper-1"). Scribe transcripts are flagged so the
+                    # frontend disclosure + RAG metadata can distinguish them.
+                    if self.transcriber == "elevenlabs":
+                        transcript_source = "elevenlabs_scribe"
+
+                    # Fold the (validated) caption track back in for speaker
+                    # labels — Whisper text stays canonical, VTT adds "who".
+                    if vtt_ok and transcript_segments:
+                        enriched = self._enrich_segments_with_captions(
+                            clip_id, clip_dir, transcript_segments,
+                            clip_dir / segments_filename)
+                        if enriched:
+                            transcript_segments = enriched["segments"]
+                            speakers = enriched["speakers"]
+                            transcript_source = enriched["source"]
+                            files["captions_vtt"] = enriched["vtt_filename"]
 
             # Step 6: Download and extract agenda (optional - don't fail if
             # unavailable). Falls back to the separate AgendaSource (WS4) only
@@ -2255,6 +2583,14 @@ Guidelines:
             for key, value in old_metadata.items():
                 if key not in metadata:
                     metadata[key] = value
+
+            # whisper_pending: VTT placeholder on a Whisper-required body whose
+            # Whisper pass failed this run. Set only when true (and cleared
+            # explicitly so a stale carry-over can't resurrect it).
+            if whisper_pending:
+                metadata["whisper_pending"] = True
+            else:
+                metadata.pop("whisper_pending", None)
 
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -2875,6 +3211,116 @@ def _pass1_attempts(clips_dir: Path, cid: int) -> int:
         return 0
 
 
+def upgrade_clip_summary_v2(pipeline, clip_id: int, anthropic_client,
+                            extraction_model: str, progress: str = "",
+                            log=print) -> Optional[bool]:
+    """Run the two-pass v2 summary (GPT-4o facts + Claude narrative) for one
+    clip and save extracted_facts.json + summary.txt + metadata in place.
+
+    Returns True on success, False on failure (with the persisted Pass-1
+    attempt counter bumped — see MAX_PASS1_ATTEMPTS), None when the clip has
+    no transcript to work from. Shared by --upgrade-summaries and
+    --retranscribe-placeholders.
+    """
+    from summary_v2 import NARRATION_MODEL, build_timestamped_transcript, generate_summary_v2
+
+    clip_dir = pipeline.output_dir / "clips" / str(clip_id)
+    meta_path = clip_dir / "metadata.json"
+    with open(meta_path) as f:
+        metadata = json.load(f)
+
+    files = metadata.get("files", {})
+    date = metadata.get("date", "Unknown")
+    meeting_body = metadata.get("meeting_body", "Unknown")
+
+    # Load transcript. Built from the segments JSON when available so
+    # real [H:MM:SS] markers are interleaved — Pass 1 must COPY its
+    # transcript_approx_time values from those markers instead of
+    # inventing them. Plain text has no markers → the prompt's
+    # "no markers → null" rule applies.
+    transcript = ""
+    seg_file = files.get("transcript_segments")
+    txt_file = files.get("transcript")
+    if seg_file and (clip_dir / seg_file).exists():
+        try:
+            with open(clip_dir / seg_file) as f:
+                segments = json.load(f)
+            transcript = build_timestamped_transcript(segments)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            segments = None
+    if not transcript and txt_file and (clip_dir / txt_file).exists():
+        transcript = (clip_dir / txt_file).read_text()
+
+    if not transcript:
+        log(f"{progress} Clip {clip_id}: no transcript, skipping")
+        return None
+
+    # Load agenda and minutes
+    agenda_text = None
+    if files.get("agenda_txt") and (clip_dir / files["agenda_txt"]).exists():
+        agenda_text = (clip_dir / files["agenda_txt"]).read_text()
+
+    minutes_text = None
+    if files.get("minutes_txt") and (clip_dir / files["minutes_txt"]).exists():
+        minutes_text = (clip_dir / files["minutes_txt"]).read_text()
+
+    log(f"{progress} Clip {clip_id} ({date} {meeting_body})")
+
+    try:
+        summary, facts = generate_summary_v2(
+            openai_client=pipeline.client,
+            anthropic_client=anthropic_client,
+            transcript=transcript,
+            agenda_text=agenda_text,
+            minutes_text=minutes_text,
+            meeting_body=meeting_body,
+            date=date,
+            extraction_model=extraction_model,
+            log_fn=lambda msg: log(f"  {msg}"),
+        )
+
+        if facts:
+            (clip_dir / "extracted_facts.json").write_text(
+                json.dumps(facts, indent=2, ensure_ascii=False)
+            )
+            metadata["files"]["extracted_facts"] = "extracted_facts.json"
+
+        if summary:
+            (clip_dir / "summary.txt").write_text(summary)
+            metadata["files"]["summary_txt"] = "summary.txt"
+            metadata.setdefault("models", {})["summary"] = f"{extraction_model}+{NARRATION_MODEL}"
+            metadata["summary_updated_at"] = datetime.now().isoformat()
+
+        # A successful extraction clears any prior Pass-1 failure count.
+        if facts:
+            metadata.pop("pass1_attempts", None)
+
+        # Save updated metadata
+        with open(meta_path, "w") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        log(f"  ERROR: {e}")
+        # Persist a Pass-1 attempt counter so a clip that keeps failing
+        # extraction is parked after MAX_PASS1_ATTEMPTS instead of
+        # re-billing GPT-4o every nightly summaries_cron run.
+        attempts = int(metadata.get("pass1_attempts", 0) or 0) + 1
+        metadata["pass1_attempts"] = attempts
+        metadata["pass1_last_error"] = str(e)[:300]
+        metadata["pass1_last_attempt_at"] = datetime.now().isoformat()
+        try:
+            with open(meta_path, "w") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        except OSError as werr:
+            log(f"  (could not persist pass1_attempts: {werr})")
+        if attempts >= MAX_PASS1_ATTEMPTS:
+            log(
+                f"  Clip {clip_id} has now failed Pass-1 {attempts}x — "
+                f"will be parked on future runs"
+            )
+        return False
+
+
 def filter_upgrade_candidates(clips_dir: Path, all_clip_ids: List[int],
                               max_clips: int, explicit: bool,
                               force: bool) -> tuple[List[int], int]:
@@ -2964,6 +3410,20 @@ Examples:
         "--build-search-db",
         action="store_true",
         help="Build the SQLite FTS5 search.db (server-side full-text search)"
+    )
+
+    parser.add_argument(
+        "--prerender",
+        action="store_true",
+        help="Regenerate the pre-rendered per-clip HTML pages (lfucg_output/prerender/"
+             "meeting/<id>) from index.json + the live SPA shell. Incremental by "
+             "default; add --full to re-render every page (e.g. after a bundle deploy). "
+             "Also runs automatically at the end of --generate-index / each batch."
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="With --prerender: re-render every clip page, ignoring the fingerprint state"
     )
 
     parser.add_argument(
@@ -3107,7 +3567,61 @@ Examples:
     parser.add_argument(
         "--upgrade-summaries",
         action="store_true",
-        help="Run two-pass summary (GPT-4o extraction + Claude Sonnet narration), saving in-place. With no clip IDs: runs on all clips, skipping ones that already have extracted_facts.json. With a single clip ID or start/end range: runs on those specific clips (reprocessed even if already done)."
+        help="Run two-pass summary (GPT-4o extraction + Claude narration), saving in-place. "
+             "With no clip IDs: runs on all clips that have a transcript, skipping ones that "
+             "already have extracted_facts.json. Granicus-VTT placeholder transcripts are NOT "
+             "skipped — facts/votes get extracted from the noisy caption track; run "
+             "--retranscribe-placeholders on Council/PC clips first if you want Whisper-grade "
+             "facts. With a single clip ID or start/end range: runs on those specific clips "
+             "(reprocessed even if already done)."
+    )
+
+    parser.add_argument(
+        "--retranscribe-placeholders",
+        action="store_true",
+        help="Find clips whose transcript is still the Granicus-VTT placeholder for a "
+             "Whisper-required body (Urban County Council, Council Work Session, Committee "
+             "of the Whole, Planning Commission — see LFUCG_WHISPER_REQUIRED_BODIES), run "
+             "Whisper (+ VTT speaker labels), regenerate facts + summary, re-ingest into RAG "
+             "and rebuild the index. Newest first. Combine with --bodies / --since / --limit / "
+             "--dry-run. Honors --no-audio."
+    )
+    parser.add_argument(
+        "--bodies",
+        nargs="+",
+        default=None,
+        metavar="SUBSTR",
+        help="With --retranscribe-placeholders: case-insensitive substrings matched against "
+             "the clip title/body, replacing the default Whisper-required set "
+             "(e.g. --bodies 'planning commission' 'work session')"
+    )
+    parser.add_argument(
+        "--since",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="With --retranscribe-placeholders: only clips dated on/after this date"
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="With --retranscribe-placeholders: cap the number of clips (newest first)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --retranscribe-placeholders: list candidates + estimated Whisper cost, change nothing"
+    )
+
+    parser.add_argument(
+        "--retry-failed",
+        nargs="+",
+        type=int,
+        default=None,
+        metavar="CLIP_ID",
+        help="Reset the retry counter for these failed clip IDs (attempts=0, first/last "
+             "failure re-stamped to now) so the next --auto run and the weekly sweep re-attempt "
+             "them. Does not process anything itself. Example: --retry-failed 6804 6816 6825"
     )
 
     parser.add_argument(
@@ -3460,102 +3974,14 @@ Examples:
         succeeded = 0
         failed_ids = []
         for i, clip_id in enumerate(clip_ids, 1):
-            clip_dir = clips_dir / str(clip_id)
-            meta_path = clip_dir / "metadata.json"
-
-            with open(meta_path) as f:
-                metadata = json.load(f)
-
-            files = metadata.get("files", {})
-            date = metadata.get("date", "Unknown")
-            meeting_body = metadata.get("meeting_body", "Unknown")
-
-            # Load transcript. Built from the segments JSON when available so
-            # real [H:MM:SS] markers are interleaved — Pass 1 must COPY its
-            # transcript_approx_time values from those markers instead of
-            # inventing them. Plain text has no markers → the prompt's
-            # "no markers → null" rule applies.
-            transcript = ""
-            seg_file = files.get("transcript_segments")
-            txt_file = files.get("transcript")
-            if seg_file and (clip_dir / seg_file).exists():
-                try:
-                    with open(clip_dir / seg_file) as f:
-                        segments = json.load(f)
-                    transcript = build_timestamped_transcript(segments)
-                except (json.JSONDecodeError, KeyError, TypeError):
-                    segments = None
-            if not transcript and txt_file and (clip_dir / txt_file).exists():
-                transcript = (clip_dir / txt_file).read_text()
-
-            if not transcript:
-                print(f"[{i}/{len(clip_ids)}] Clip {clip_id}: no transcript, skipping")
-                continue
-
-            # Load agenda and minutes
-            agenda_text = None
-            if files.get("agenda_txt") and (clip_dir / files["agenda_txt"]).exists():
-                agenda_text = (clip_dir / files["agenda_txt"]).read_text()
-
-            minutes_text = None
-            if files.get("minutes_txt") and (clip_dir / files["minutes_txt"]).exists():
-                minutes_text = (clip_dir / files["minutes_txt"]).read_text()
-
-            print(f"[{i}/{len(clip_ids)}] Clip {clip_id} ({date} {meeting_body})")
-
-            try:
-                summary, facts = generate_summary_v2(
-                    openai_client=pipeline.client,
-                    anthropic_client=anthropic_client,
-                    transcript=transcript,
-                    agenda_text=agenda_text,
-                    minutes_text=minutes_text,
-                    meeting_body=meeting_body,
-                    date=date,
-                    extraction_model=args.summary_model,
-                    log_fn=lambda msg: print(f"  {msg}"),
-                )
-
-                if facts:
-                    (clip_dir / "extracted_facts.json").write_text(
-                        json.dumps(facts, indent=2, ensure_ascii=False)
-                    )
-                    metadata["files"]["extracted_facts"] = "extracted_facts.json"
-
-                if summary:
-                    (clip_dir / "summary.txt").write_text(summary)
-                    metadata["files"]["summary_txt"] = "summary.txt"
-                    metadata.setdefault("models", {})["summary"] = f"{args.summary_model}+{NARRATION_MODEL}"
-
-                # A successful extraction clears any prior Pass-1 failure count.
-                if facts:
-                    metadata.pop("pass1_attempts", None)
-
-                # Save updated metadata
-                with open(meta_path, "w") as f:
-                    json.dump(metadata, f, indent=2, ensure_ascii=False)
-
+            outcome = upgrade_clip_summary_v2(
+                pipeline, clip_id, anthropic_client, args.summary_model,
+                progress=f"[{i}/{len(clip_ids)}]")
+            if outcome is True:
                 succeeded += 1
-            except Exception as e:
-                print(f"  ERROR: {e}")
-                # Persist a Pass-1 attempt counter so a clip that keeps failing
-                # extraction is parked after MAX_PASS1_ATTEMPTS instead of
-                # re-billing GPT-4o every nightly summaries_cron run.
-                attempts = int(metadata.get("pass1_attempts", 0) or 0) + 1
-                metadata["pass1_attempts"] = attempts
-                metadata["pass1_last_error"] = str(e)[:300]
-                metadata["pass1_last_attempt_at"] = datetime.now().isoformat()
-                try:
-                    with open(meta_path, "w") as f:
-                        json.dump(metadata, f, indent=2, ensure_ascii=False)
-                except OSError as werr:
-                    print(f"  (could not persist pass1_attempts: {werr})")
-                if attempts >= MAX_PASS1_ATTEMPTS:
-                    print(
-                        f"  Clip {clip_id} has now failed Pass-1 {attempts}x — "
-                        f"will be parked on future runs"
-                    )
+            elif outcome is False:
                 failed_ids.append(clip_id)
+            # None = skipped (no transcript)
 
         print(f"\nDone: {succeeded} upgraded, {len(failed_ids)} failed, {skipped} previously done")
         if failed_ids:
@@ -3618,6 +4044,84 @@ Examples:
         print(f"  Already done (skipped): {stats.get('skipped', 0)}")
         print(f"  No matching clip: {stats.get('no_match', 0)}")
         print(f"  Ambiguous (duplicate uploads): {stats.get('ambiguous', 0)}")
+        sys.exit(0)
+
+    # Handle --retry-failed: re-open the retry budget for specific clips
+    if args.retry_failed:
+        reset = pipeline.reset_failed_attempts(args.retry_failed)
+        print(f"Reset retry counters for {len(reset)} clip(s): {reset}")
+        untouched = [c for c in args.retry_failed if c not in reset]
+        if untouched:
+            print(f"Not reset (already processed): {untouched}")
+        print("Next --auto run (and the weekly --retry-failed-sweep) will re-attempt them.")
+        sys.exit(0)
+
+    # Handle --retranscribe-placeholders: Whisper the Council / PC clips that
+    # are still serving the Granicus caption track as their transcript.
+    if args.retranscribe_placeholders:
+        candidates = pipeline.find_placeholder_clips(
+            bodies=args.bodies, since=args.since, limit=args.limit)
+        total_min = sum(c["est_minutes"] for c in candidates)
+        est_cost = total_min * pipeline.WHISPER_USD_PER_MINUTE
+        print(f"\nPlaceholder clips to re-transcribe: {len(candidates)} "
+              f"(~{total_min:,.0f} audio-min, est. Whisper ~${est_cost:,.2f} "
+              f"+ facts/summary ~${0.12 * len(candidates):,.2f})")
+        for c in candidates:
+            print(f"  {c['clip_id']}  {c['date'] or '????-??-??'}  {c['est_minutes']:6.1f} min  {c['title']}")
+        if args.dry_run or not candidates:
+            sys.exit(0)
+
+        try:
+            from clients import get_anthropic, MissingAPIKey
+            anthropic_client = get_anthropic()
+        except ImportError:
+            print("Error: RAG dependencies not installed. Run: uv sync --extra rag")
+            sys.exit(1)
+        except MissingAPIKey as e:
+            print(f"Error (--retranscribe-placeholders): {e}")
+            sys.exit(1)
+
+        done, failed_ids = [], []
+        for i, c in enumerate(candidates, 1):
+            cid = c["clip_id"]
+            pipeline.log(f"\n{'=' * 70}")
+            pipeline.log(f"Re-transcribing clip {cid} ({c['title']}) - [{i}/{len(candidates)}]")
+            pipeline.log(f"{'=' * 70}")
+            if not pipeline.retranscribe_clip(cid):
+                failed_ids.append(cid)
+                continue
+            outcome = upgrade_clip_summary_v2(
+                pipeline, cid, anthropic_client, args.summary_model,
+                progress=f"[{i}/{len(candidates)}]")
+            if outcome is False:
+                pipeline.log(f"Clip {cid}: transcript replaced but facts/summary failed "
+                             f"(summaries_cron will retry)", "WARNING")
+            done.append(cid)
+
+        if done:
+            pipeline.log(f"Re-ingesting {len(done)} clip(s) into the vector store + rebuilding index")
+            pipeline._reingest_clips(done)
+            try:
+                pipeline.generate_search_index(build_search_db=True, seo=True)
+            except Exception as e:
+                pipeline.log(f"index/SEO/search.db rebuild error: {e}", "WARNING")
+        print(f"\nRe-transcribed: {len(done)} {done}")
+        if failed_ids:
+            print(f"Failed (placeholder kept): {len(failed_ids)} {failed_ids}")
+        print("Reminder: POST /admin/reload (or restart the RAG service) and run "
+              "deploy/lightsail/sync_data_s3.sh to publish.")
+        sys.exit(0 if not failed_ids else 1)
+
+    # Handle prerender mode (per-clip HTML pages for crawlers — see prerender.py)
+    if args.prerender:
+        from prerender import generate_prerendered_pages
+        entries = pipeline.load_index_clips()
+        if not entries:
+            print("No index.json (run --generate-index first)")
+            sys.exit(1)
+        stats = generate_prerendered_pages(
+            entries, pipeline.output_dir, full=args.full, log=pipeline.log)
+        print(f"Pre-render: {stats}")
         sys.exit(0)
 
     # Handle generate-index mode
