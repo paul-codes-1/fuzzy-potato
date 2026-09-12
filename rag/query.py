@@ -4,6 +4,7 @@ import argparse
 import calendar
 import json
 import logging
+import math
 import os
 import re
 from collections import defaultdict
@@ -57,10 +58,59 @@ SYNTHESIS_MAX_TOKENS = 2048
 # backends (Chroma hnsw:space=cosine, sqlite-vec distance_metric=cosine)
 # return 1 − cosine similarity for text-embedding-3-small vectors; relevant
 # chunks land well under this, blatant nearest-neighbor junk lands above it.
-# Calibrated 2026-06-11 on Chroma cosine distances at 1536 dims — re-validate
-# after any RAG_EMBED_DIMS change (see rag/vecstore.py docstring). Tunable
-# per deployment without a code change.
-MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", "0.75"))
+#
+# Calibration history:
+# - 2026-06-11: 0.75 on Chroma cosine distances at 1536 dims.
+# - 2026-09-12: re-measured on the prod sqlite-vec store at 512 dims
+#   (217k chunks) with 20 real user questions from telemetry, 5 borderline
+#   (weak-coverage / off-archive Kentucky) questions and 10 nonsense
+#   questions, retrieval-only, k=15:
+#       real       top-1 0.18–0.47   top-15 0.29–0.52
+#       borderline top-1 0.32–0.47   top-15 0.37–0.52
+#       nonsense   top-1 0.51–0.79   top-15 0.53–0.84
+#   At 0.75 seven of ten nonsense queries still pushed chunks to the LLM.
+#   0.55 keeps every real question's top-10 and blocks all nonsense except
+#   the top 1–3 hits of the three closest ones (0.51–0.54). Defaults to
+#   0.55 for the 512-dim prod store; a 1536-dim store sits lower on the
+#   scale and can tighten further via env. Tunable per deployment without
+#   a code change (RAG_MAX_DISTANCE).
+DEFAULT_MAX_DISTANCE = 0.55
+MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", str(DEFAULT_MAX_DISTANCE)))
+
+# Per-clip diversity cap for the retrieved context. Was 4; lowered to 3 so a
+# single meeting can't monopolise 4 of the ~15 context slots and crowd out
+# the newer / differently-sourced clips that usually hold the actual answer.
+MAX_CHUNKS_PER_CLIP = 3
+
+# Date-aware re-ranking (2026-09-12). Retrieval was date-blind: a snow-plan
+# question surfaced a 2015 chunk over the Aug 2026 report because cosine
+# similarity alone doesn't know the archive spans 15 years. Each hit's
+# similarity (1 − distance) is multiplied by a mild recency weight BEFORE
+# the top-k cap so newer-but-slightly-less-similar chunks win ties:
+#
+#   weight(age) = 1.0                                  for age <= grace
+#               = max(floor, 0.5 ** ((age − grace) / half_life))  otherwise
+#
+# Defaults: grace 365d (the last 12 months are untouched), half-life 6400d
+# (≈0.7 at 10 years, 0.5 at ~18.5 years), floor 0.5. All env-tunable;
+# RAG_RECENCY_HALF_LIFE_DAYS=0 disables the decay entirely. The decay is
+# ALSO skipped when the question names a specific year ("in 2019") or the
+# caller passed explicit date filters — the user is scoping the time
+# window themselves and must not be penalised for it.
+RECENCY_HALF_LIFE_DAYS = float(os.getenv("RAG_RECENCY_HALF_LIFE_DAYS", "6400"))
+RECENCY_GRACE_DAYS = float(os.getenv("RAG_RECENCY_GRACE_DAYS", "365"))
+RECENCY_FLOOR = float(os.getenv("RAG_RECENCY_FLOOR", "0.5"))
+# In addition to the decay, reserve a few of the top_k context slots for the
+# best chunks from the last RECENCY_RECENT_DAYS days (when any exist and pass
+# the distance gate) so a recent development is always represented even if
+# older chunks out-score it. Set RAG_RECENCY_RESERVED_SLOTS=0 to disable.
+RECENCY_RESERVED_SLOTS = int(os.getenv("RAG_RECENCY_RESERVED_SLOTS", "3"))
+RECENCY_RECENT_DAYS = int(os.getenv("RAG_RECENCY_RECENT_DAYS", "180"))
+
+# A bare 4-digit year in the question ("what happened in 2019?"). Same
+# lookarounds as extract_temporal_signals so "Resolution 2023-456" and
+# "0016-26" don't count as a year.
+_EXPLICIT_YEAR_RE = re.compile(r"(?<![\d-])\b(?:19|20)\d{2}\b(?![\d-])")
 
 NO_COVERAGE_ANSWER = (
     "The meeting archive's indexed excerpts don't appear to cover this topic. "
@@ -155,14 +205,118 @@ def extract_temporal_signals(question: str) -> dict:
     return signals
 
 
-def deduplicate_results(results: dict, max_per_clip: int = 4,
-                        max_per_source_per_clip: int = 2) -> dict:
+def question_names_year(question: str) -> bool:
+    """True when the question contains an explicit 4-digit year.
+
+    Used to bypass the recency decay: someone asking about 2019 has scoped
+    the time window themselves, so older chunks must not be down-weighted.
+    """
+    return bool(_EXPLICIT_YEAR_RE.search(question or ""))
+
+
+def _age_days(iso_date: str, today: date | None = None) -> float | None:
+    """Days between ``iso_date`` (YYYY-MM-DD) and today; None if unparseable."""
+    if not iso_date:
+        return None
+    try:
+        d = date.fromisoformat(str(iso_date)[:10])
+    except (TypeError, ValueError):
+        return None
+    return float(((today or date.today()) - d).days)
+
+
+def recency_weight(iso_date: str, today: date | None = None, *,
+                   half_life_days: float | None = None,
+                   grace_days: float | None = None,
+                   floor: float | None = None) -> float:
+    """Multiplicative recency weight in [floor, 1.0] for a chunk's meeting date.
+
+    1.0 inside the grace window (default: last 12 months), then an
+    exponential decay with the configured half-life, clamped at ``floor``.
+    Undated chunks and future-dated chunks get 1.0 (never penalise what we
+    can't date). A half-life of 0 disables the decay (always 1.0).
+    """
+    hl = RECENCY_HALF_LIFE_DAYS if half_life_days is None else half_life_days
+    grace = RECENCY_GRACE_DAYS if grace_days is None else grace_days
+    fl = RECENCY_FLOOR if floor is None else floor
+    if hl <= 0:
+        return 1.0
+    age = _age_days(iso_date, today)
+    if age is None or age <= grace:
+        return 1.0
+    return max(fl, 0.5 ** ((age - grace) / hl))
+
+
+def recency_rank_scores(metadatas: list[dict], distances: list[float],
+                        today: date | None = None) -> list[float]:
+    """Effective distance per hit after the recency weight: ``1 − sim·w``.
+
+    Lower is better, same orientation as the raw cosine distance, so it can
+    be fed straight into :func:`deduplicate_results` as ``rank_scores``.
+    Hits with an unknown distance keep ``inf`` so they sort last.
+    """
+    scores = []
+    for meta, dist in zip(metadatas, distances):
+        if dist is None:
+            scores.append(math.inf)
+            continue
+        sim = 1.0 - float(dist)
+        w = recency_weight((meta or {}).get("date", ""), today)
+        scores.append(1.0 - sim * w)
+    return scores
+
+
+def apply_reserved_recent_slots(deduped: dict, top_k: int,
+                                reserved: int | None = None,
+                                recent_days: int | None = None,
+                                today: date | None = None) -> dict:
+    """Cap ``deduped`` (already rank-ordered) to ``top_k`` while guaranteeing
+    up to ``reserved`` slots for chunks dated within ``recent_days``.
+
+    If the plain top-k already holds ``reserved`` recent chunks nothing
+    changes. Otherwise the best-ranked recent chunks beyond the cap replace
+    the worst-ranked NON-recent chunks inside it (never evicting a recent
+    one, never exceeding top_k). Order within the result stays rank order.
+    """
+    n_reserved = RECENCY_RESERVED_SLOTS if reserved is None else reserved
+    window = RECENCY_RECENT_DAYS if recent_days is None else recent_days
+    n = len(deduped["ids"])
+    if n <= top_k or n_reserved <= 0:
+        return {k: v[:top_k] for k, v in deduped.items()}
+
+    def _is_recent(meta: dict) -> bool:
+        age = _age_days((meta or {}).get("date", ""), today)
+        return age is not None and 0 <= age <= window
+
+    keep = list(range(top_k))
+    recent_in = sum(1 for i in keep if _is_recent(deduped["metadatas"][i]))
+    need = n_reserved - recent_in
+    if need > 0:
+        candidates = [i for i in range(top_k, n) if _is_recent(deduped["metadatas"][i])]
+        evictable = [i for i in reversed(keep) if not _is_recent(deduped["metadatas"][i])]
+        for cand in candidates[:need]:
+            if not evictable:
+                break
+            victim = evictable.pop(0)
+            keep[keep.index(victim)] = cand
+        keep.sort()
+    return {k: [v[i] for i in keep] for k, v in deduped.items()}
+
+
+def deduplicate_results(results: dict, max_per_clip: int = MAX_CHUNKS_PER_CLIP,
+                        max_per_source_per_clip: int = 2,
+                        rank_scores: list[float] | None = None) -> dict:
     """Deduplicate ChromaDB results: limit chunks per clip with source diversity.
 
     Keeps up to max_per_clip chunks per clip, but no more than
     max_per_source_per_clip from any single source type (summary, facts,
     minutes, agenda, transcript). This ensures retrieval surfaces a mix
-    of source types rather than e.g. 4 summary sections from one clip.
+    of source types rather than e.g. 3 summary sections from one clip.
+
+    ``rank_scores`` (optional, aligned with ``results["ids"][0]``, lower is
+    better) overrides the raw distance as the sort key — the recency
+    re-rank feeds its effective distances through here so the per-clip
+    cap keeps the best-ranked chunks, not merely the nearest.
     """
     if not results["ids"] or not results["ids"][0]:
         return {"ids": [], "documents": [], "metadatas": [], "distances": []}
@@ -171,17 +325,18 @@ def deduplicate_results(results: dict, max_per_clip: int = 4,
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
+    keys = rank_scores if rank_scores is not None else distances
 
-    # Zip and sort by distance (lower = better)
-    items = list(zip(ids, documents, metadatas, distances))
-    items.sort(key=lambda x: x[3])
+    # Zip and sort by rank key (lower = better)
+    items = list(zip(ids, documents, metadatas, distances, keys))
+    items.sort(key=lambda x: x[4])
 
     # Keep max_per_clip per clip_id, max_per_source_per_clip per source within each clip
     clip_counts = defaultdict(int)
     clip_source_counts = defaultdict(lambda: defaultdict(int))
     deduped = {"ids": [], "documents": [], "metadatas": [], "distances": []}
 
-    for id_, doc, meta, dist in items:
+    for id_, doc, meta, dist, _key in items:
         clip_id = meta.get("clip_id")
         source = meta.get("source", "")
 
@@ -351,15 +506,27 @@ def _retrieve_and_prepare(question: str, store, openai_client,
         "distances": [all_distances],
     }
 
-    # 5. Deduplicate
-    deduped = deduplicate_results(merged)
+    # 5. Date-aware re-rank, then deduplicate. The decay is skipped when the
+    # question names a year or the caller scoped the dates explicitly (the
+    # user chose the window; don't fight them). Applied BEFORE the per-clip
+    # cap and the top_k cap so recency can actually change what survives.
+    use_decay = not (question_names_year(question) or date_after or date_before)
+    rank_scores = (recency_rank_scores(all_metadatas, all_distances)
+                   if use_decay else None)
+    deduped = deduplicate_results(merged, rank_scores=rank_scores)
 
     # 5b. Final cap BEFORE any recency reorder: top_k is the contract for how
-    # much context reaches the LLM. Capping while still distance-sorted keeps
+    # much context reaches the LLM. Capping while still rank-sorted keeps
     # the most relevant chunks; capping after a date-desc reorder would let
-    # new-but-marginal chunks evict relevant ones.
+    # new-but-marginal chunks evict relevant ones. With the decay active we
+    # also hold a few slots for the newest material (see
+    # apply_reserved_recent_slots) so a recent development is never
+    # crowded out by a pile of older near-duplicates.
     if len(deduped["ids"]) > top_k:
-        deduped = {k: v[:top_k] for k, v in deduped.items()}
+        if use_decay:
+            deduped = apply_reserved_recent_slots(deduped, top_k)
+        else:
+            deduped = {k: v[:top_k] for k, v in deduped.items()}
 
     # 5c. Recency re-rank: for "last/recent/latest" queries, prefer newer clips
     # (dated chunks first, sorted by date desc; undated chunks trail in original order).
@@ -441,21 +608,43 @@ def _retrieve_and_prepare(question: str, store, openai_client,
     return synthesis_chunks, sources
 
 
-# Matches [Clip 6669], [Clip 6669, 12:34], and range forms like
-# [Clip 6669, 107:06-109:11].
-_CITATION_RE = re.compile(r"\[Clip\s+(\d+)[^\]]*\]")
+# One bracket citation: [Clip 6669], [Clip 6669, 12:34], the range form
+# [Clip 6669, 107:06-109:11], AND the multi-ID forms the model actually
+# emits — [Clip 6865, 5695, 6757], [Clips 6865 and 5695],
+# [Clip 6865; Clip 5695, 12:34]. The bracket body is parsed by
+# parse_citation_ids so every ID is verified, not just the first.
+_CITATION_RE = re.compile(r"\[Clips?\s+([^\]]*)\]")
+# Timestamp tokens inside a bracket (MM:SS, H:MM:SS, and ranges) — removed
+# before ID extraction so "107:06-109:11" can't shed a fake "107" / "109".
+_TIMESTAMP_TOKEN_RE = re.compile(r"\d+:\d{2}(?::\d{2})?(?:\s*[-–]\s*\d+:\d{2}(?::\d{2})?)?")
+_ID_TOKEN_RE = re.compile(r"(?<![\d:])\d{1,8}(?![\d:])")
+
+
+def _bracket_ids(body: str) -> list[str]:
+    """All clip IDs named inside one citation bracket body, in order."""
+    scrubbed = _TIMESTAMP_TOKEN_RE.sub(" ", body)
+    return _ID_TOKEN_RE.findall(scrubbed)
+
+
+def parse_citation_ids(answer: str) -> list[str]:
+    """Every clip ID cited anywhere in ``answer`` (duplicates kept, in order)."""
+    ids: list[str] = []
+    for m in _CITATION_RE.finditer(answer or ""):
+        ids.extend(_bracket_ids(m.group(1)))
+    return ids
 
 
 def verify_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
     """Post-hoc grounding check on the synthesized answer.
 
     - Strips bracket citations whose Clip ID was never retrieved (the model
-      invented them) and logs the event.
+      invented them) and logs the event. In a multi-ID bracket only the
+      invented IDs are removed; the bracket survives if any real ID remains.
     - Marks each source with ``cited: true/false`` and reorders cited
       sources first so the UI can collapse the uncited remainder.
     """
     retrieved_ids = {str(s.get("clip_id")) for s in sources}
-    cited_ids = set(_CITATION_RE.findall(answer))
+    cited_ids = set(parse_citation_ids(answer))
 
     invented = cited_ids - retrieved_ids
     if invented:
@@ -463,7 +652,24 @@ def verify_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]
                        sorted(invented))
 
         def _strip_invented(m: re.Match) -> str:
-            return "" if m.group(1) in invented else m.group(0)
+            body = m.group(1)
+            ids = _bracket_ids(body)
+            keep = [i for i in ids if i not in invented]
+            if not keep:
+                return ""
+            if len(keep) == len(ids):
+                return m.group(0)
+            # Drop each invented ID (with its own "Clip" label and any
+            # attached timestamp) from the bracket body, then tidy separators.
+            for bad in set(ids) - set(keep):
+                body = re.sub(
+                    r"(?:Clips?\s+)?(?<![\d:])" + re.escape(bad)
+                    + r"(?![\d:])(?:\s*,\s*" + _TIMESTAMP_TOKEN_RE.pattern + r")?",
+                    "", body)
+            body = re.sub(r"\s*(?:[,;]|\band\b)\s*(?=[,;]|$)", "", body)
+            body = re.sub(r"^\s*(?:[,;]|\band\b)\s*", "", body)
+            body = re.sub(r"\s{2,}", " ", body).strip(" ,;")
+            return f"[Clip {body}]"
 
         answer = _CITATION_RE.sub(_strip_invented, answer)
         cited_ids &= retrieved_ids

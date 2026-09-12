@@ -189,11 +189,11 @@ class TestSourceDiversityInRetrieval:
             ]],
             "distances": [[0.1, 0.15, 0.2, 0.25, 0.3]],
         }
-        deduped = deduplicate_results(results)  # max_per_clip=4
-        assert len(deduped["ids"]) == 4
+        deduped = deduplicate_results(results)  # max_per_clip=3 (was 4 until 2026-09-12)
+        assert len(deduped["ids"]) == 3
         sources = [m["source"] for m in deduped["metadatas"]]
-        # Should have 4 different sources (5th dropped by max_per_clip)
-        assert len(set(sources)) == 4
+        # Should have 3 different sources (4th/5th dropped by max_per_clip)
+        assert len(set(sources)) == 3
 
     def test_dedup_balances_across_multiple_clips(self):
         """Multiple clips should each get fair representation."""
@@ -215,7 +215,7 @@ class TestSourceDiversityInRetrieval:
         deduped = deduplicate_results(results)
         clip_100_count = sum(1 for m in deduped["metadatas"] if m["clip_id"] == 100)
         clip_200_count = sum(1 for m in deduped["metadatas"] if m["clip_id"] == 200)
-        assert clip_100_count <= 4
+        assert clip_100_count <= 3
         assert clip_200_count <= 4
         assert clip_200_count >= 1  # clip 200 should still be represented
 

@@ -158,7 +158,7 @@ class TestExtractTemporalSignals:
 # ============================================================
 
 class TestDeduplicate:
-    """Test deduplication: max 4 chunks per clip (default), max 2 per source, highest-scored first."""
+    """Test deduplication: max 3 chunks per clip (default), max 2 per source, highest-scored first."""
 
     def test_dedup_respects_max_per_clip(self):
         from rag.query import deduplicate_results
@@ -176,9 +176,9 @@ class TestDeduplicate:
             ]],
             "distances": [[0.1, 0.2, 0.3, 0.35, 0.4, 0.15]],
         }
-        deduped = deduplicate_results(results)  # default max_per_clip=4
+        deduped = deduplicate_results(results)  # default max_per_clip=3
         clip_6669_count = sum(1 for m in deduped["metadatas"] if m["clip_id"] == 6669)
-        assert clip_6669_count == 4  # keeps 4, drops the 5th
+        assert clip_6669_count == 3  # keeps 3, drops the 4th and 5th
 
     def test_dedup_limits_per_source_within_clip(self):
         from rag.query import deduplicate_results
