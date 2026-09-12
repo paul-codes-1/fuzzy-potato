@@ -416,3 +416,75 @@ def test_flatten_facts_contentious_legacy_key_fallback() -> None:
         "contentious_items": [{"description": "Legacy description text"}],
     })
     assert "Legacy description text" in text
+
+
+# --- stopwords + question routing (2026-09-12) --------------------------
+
+def test_query_tokens_strip_stopwords_and_punctuation() -> None:
+    assert search.query_tokens("What did the council say about parks?") == ["council", "parks"]
+    assert search.query_tokens("short-term (rental*) & $5,000") == ["short", "term", "rental", "5", "000"]
+
+
+def test_query_tokens_keep_all_stopword_queries_runnable() -> None:
+    # Stripping everything would silently return nothing; keep the raw tokens.
+    assert search.query_tokens("what is it") == ["what", "is", "it"]
+
+
+def test_query_tokens_lowercase_neutralises_fts_operators() -> None:
+    assert "OR" not in search.query_tokens("parks OR trails")
+    assert search._sanitize_query("parks OR trails") == "parks trails"
+
+
+@pytest.mark.parametrize("q, expected", [
+    ("What did the council say about parks?", True),
+    ("who voted against the TIF", True),
+    ("did council approve the budget", True),
+    ("short-term rentals", False),
+    ("Gorton", False),
+    ('"comprehensive plan"', False),
+    ("data center moratorium text amendment vote", False),          # 6 tokens
+    ("data center moratorium text amendment vote council", True),   # 7 tokens
+])
+def test_looks_like_question(q: str, expected: bool) -> None:
+    assert search.looks_like_question(q) is expected
+
+
+def test_question_with_stopwords_now_matches(search_db: Path) -> None:
+    """Under implicit-AND every word ("what", "did", "about") had to appear
+    in the clip; the topic words alone must decide the match."""
+    out_dir = str(search_db.parent)
+    results = search.search("What did the council say about short-term rentals?", out_dir)
+    assert results, "question-shaped query returned nothing"
+    assert results[0]["clip_id"] in {100, 102}
+
+
+def test_question_falls_back_to_or_recall(search_db: Path) -> None:
+    """No clip contains BOTH 'rezoning' and 'rentals'; a question mentioning
+    both should still return the clips that match either, all-term hits first."""
+    out_dir = str(search_db.parent)
+    # Keyword mode (no question shape): strict AND -> nothing.
+    assert search.search("rezoning rentals", out_dir) == []
+    # Question mode: OR fallback fills the result set.
+    results = search.search("what happened with rezoning and rentals?", out_dir)
+    ids = {r["clip_id"] for r in results}
+    assert 101 in ids and (100 in ids or 102 in ids)
+
+
+def test_question_all_term_hits_rank_before_partial_hits(search_db: Path) -> None:
+    out_dir = str(search_db.parent)
+    # Clip 100 has "short-term rentals" AND "zoning"; 101 has only "zoning"/"rezoning";
+    # 102 has only "short-term rentals".
+    results = search.search("what was said about short-term rentals and the zoning ordinance?", out_dir)
+    assert results[0]["clip_id"] == 100
+
+
+def test_quoted_phrase_never_routes_to_or_fallback(search_db: Path) -> None:
+    out_dir = str(search_db.parent)
+    results = search.search('"rezoning petition near"', out_dir)
+    assert [r["clip_id"] for r in results] == [101]
+
+
+def test_single_snippet_column_still_highlights(search_db: Path) -> None:
+    out_dir = str(search_db.parent)
+    results = search.search("Obligation Bonds", out_dir)
+    assert results and "<mark>" in results[0]["snippet"]

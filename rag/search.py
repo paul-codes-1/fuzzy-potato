@@ -40,10 +40,38 @@ logger = logging.getLogger(__name__)
 # scripts/build_search_db.py.
 BM25_WEIGHTS = (10.0, 1.0, 2.0, 1.5, 5.0, 3.0)
 
-# Snippet column priority for picking the "best" snippet to display.
-# Tries facts first (most precise), then transcript, agenda, minutes,
-# then title. Whatever has the first non-empty mark wins.
-_SNIPPET_COLS = ("snip_facts", "snip_transcript", "snip_agenda", "snip_minutes", "snip_title")
+# The UI renders exactly ONE snippet per result (MeetingList's
+# HighlightedSnippet). We used to compute five per-column snippet()
+# windows and pick the first with a highlight; now FTS5 picks the
+# best-matching column itself (column index -1) so only one window is
+# built per returned row.
+_SNIPPET_COL = "snip"
+
+# English stopwords stripped from bag-of-words queries. FTS5's implicit
+# AND meant "what did the council say about parks" required every clip to
+# contain "what", "did", "say", "about" — the stopwords, not the topic,
+# decided the result set. Kept small and conservative: only function
+# words that carry no retrieval signal in meeting text.
+_STOPWORDS = frozenset("""
+a an the and or but if then than so as of at by for from in into on onto to
+with without about over under between through during before after above below
+up down out off again further once here there when where why how all any both
+each few more most other some such no nor not only own same too very can will
+just should now is are was were be been being am do does did doing have has had
+having i me my myself we our ours you your yours he him his she her hers it its
+they them their theirs what which who whom this that these those would could
+might must shall may also ever every whatever whenever wherever whether while
+did does done get got getting give given goes going say said says tell told
+""".split())
+
+# Question-word openers. A query that starts with one of these (or that runs
+# longer than _QUESTION_MIN_TOKENS tokens) is natural language, not a
+# keyword list, and gets the AND-first / OR-fallback treatment.
+_QUESTION_OPENERS = frozenset(
+    "who what when where why how did does do is are was were which can could "
+    "should has have had will would".split()
+)
+_QUESTION_MIN_TOKENS = 6
 
 # Sentinel markers passed to FTS5 snippet() so we can recognize the
 # highlight boundaries after html-escaping the source text. Picked to
@@ -100,27 +128,68 @@ def close_connections() -> None:
         _connections.clear()
 
 
+def _is_quoted_phrase(q: str) -> bool:
+    q = q.strip()
+    return len(q) > 2 and q.startswith('"') and q.endswith('"')
+
+
+def query_tokens(q: str) -> list[str]:
+    """Bareword tokens for the bag-of-words path: punctuation → boundary,
+    lowercased (FTS5 keywords AND/OR/NOT are only operators in UPPERCASE,
+    so lowercasing also neutralises a user-typed "OR"), punctuation-only
+    tokens dropped, then English stopwords removed. If stripping stopwords
+    would leave nothing ("what is it"), the original tokens are kept so
+    the query still runs instead of silently returning nothing.
+    """
+    cleaned = _FTS_NON_BAREWORD.sub(" ", q or "")
+    tokens = [t.lower() for t in cleaned.split() if t and any(ch.isalnum() for ch in t)]
+    content = [t for t in tokens if t not in _STOPWORDS]
+    return content or tokens
+
+
+def looks_like_question(q: str) -> bool:
+    """Natural-language question vs keyword list.
+
+    True when the raw query ends with "?", opens with a question word, or
+    runs longer than _QUESTION_MIN_TOKENS raw tokens. Quoted phrases are
+    never questions (the user asked for exact wording).
+    """
+    raw = (q or "").strip()
+    if not raw or _is_quoted_phrase(raw):
+        return False
+    if raw.endswith("?"):
+        return True
+    raw_tokens = [t.lower() for t in _FTS_NON_BAREWORD.sub(" ", raw).split() if t]
+    if not raw_tokens:
+        return False
+    if raw_tokens[0] in _QUESTION_OPENERS:
+        return True
+    return len(raw_tokens) > _QUESTION_MIN_TOKENS
+
+
 def _sanitize_query(q: str) -> str:
     """Strip FTS5 syntax characters that would crash the query.
 
     Users type natural-language phrases. Quoted-phrase support is
     re-added downstream by detecting "..." wrapping; everything else
-    is treated as bag-of-words AND search.
+    is treated as bag-of-words AND search over the content tokens
+    (stopwords + punctuation-only tokens removed — see query_tokens).
     """
     q = q.strip()
     if not q:
         return ""
     # If the user wrapped the whole thing in quotes, treat it as a
     # phrase query (FTS5's native quoted-phrase syntax).
-    if len(q) > 2 and q.startswith('"') and q.endswith('"'):
+    if _is_quoted_phrase(q):
         inner = q[1:-1].replace('"', "")
         return f'"{inner}"'
-    # Otherwise keep ONLY barewords (word chars + whitespace) and treat as
-    # bag-of-words AND. Punctuation that FTS5 would choke on ( , . ' & $ … )
-    # becomes a token boundary instead of a syntax error.
-    cleaned = _FTS_NON_BAREWORD.sub(" ", q)
-    tokens = [t for t in cleaned.split() if t]
-    return " ".join(tokens)
+    return " ".join(query_tokens(q))
+
+
+def _or_query(q: str) -> str:
+    """OR-joined form of the same content tokens (the recall fallback)."""
+    tokens = query_tokens(q)
+    return " OR ".join(tokens) if len(tokens) > 1 else " ".join(tokens)
 
 
 def _safe_snippet(raw: str) -> str:
@@ -138,21 +207,15 @@ def _safe_snippet(raw: str) -> str:
 
 
 def _pick_snippet(row: sqlite3.Row) -> str:
-    """Pick the first column-snippet containing a highlight marker.
+    """The single FTS5-chosen best-column snippet, HTML-safe.
 
-    Falls back to the first non-empty snippet if none have a mark
-    (rare — match was in an UNINDEXED filter column or stemming
-    expansion put the match boundary just outside the window).
+    FTS5's snippet(..., -1, ...) selects the column with the most phrase
+    matches itself, so there is only one window to consider. It may lack
+    a highlight marker when the match sat in an UNINDEXED filter column
+    or stemming put the boundary just outside the window — still
+    returned so the card shows context.
     """
-    for col in _SNIPPET_COLS:
-        snip = row[col] or ""
-        if _MARK_OPEN in snip:
-            return _safe_snippet(snip)
-    for col in _SNIPPET_COLS:
-        snip = row[col] or ""
-        if snip:
-            return _safe_snippet(snip)
-    return ""
+    return _safe_snippet(row[_SNIPPET_COL] or "")
 
 
 def search(
@@ -180,66 +243,28 @@ def search(
     if not fts_query:
         return []
 
-    weights = ", ".join(str(w) for w in BM25_WEIGHTS)
-    # NOTE on snippet() perf: FTS5 does NOT compute the five snippet() windows
-    # for every matching row. With `ORDER BY bm25(...) LIMIT N`, SQLite's sorter
-    # keeps only the ranking key + rowid and evaluates the auxiliary snippet()
-    # columns lazily for just the top-N returned rows (measured on the uv-bundled
-    # SQLite this serves under: ~9 ms for LIMIT 25 vs ~516 ms to snippet all
-    # ~4k matches — a 57x gap that proves the deferral). An earlier "rank in a
-    # subquery, snippet only the survivors" rewrite measured ~54% SLOWER here
-    # because it adds a second MATCH scan + a rowid-IN materialization for no
-    # gain — so this single-pass shape is deliberately kept.
-    sql = f"""
-        SELECT
-            clip_id,
-            date,
-            meeting_body,
-            speakers_csv,
-            transcript_words,
-            transcript_source,
-            title AS title_text,
-            snippet(clips_fts, 0, ?, ?, '…', 12) AS snip_title,
-            snippet(clips_fts, 1, ?, ?, '…', 24) AS snip_transcript,
-            snippet(clips_fts, 2, ?, ?, '…', 24) AS snip_agenda,
-            snippet(clips_fts, 3, ?, ?, '…', 24) AS snip_minutes,
-            snippet(clips_fts, 4, ?, ?, '…', 16) AS snip_facts,
-            bm25(clips_fts, {weights}) AS score
-        FROM clips_fts
-        WHERE clips_fts MATCH ?
-    """
-    params: list[object] = []
-    for _ in _SNIPPET_COLS:
-        params.extend([_MARK_OPEN, _MARK_CLOSE])
-    params.append(fts_query)
-    if meeting_body:
-        sql += " AND meeting_body = ?"
-        params.append(meeting_body)
-    if speaker:
-        # Wrap in commas so "Hale" doesn't accidentally match
-        # "Hale-Smith" but does match "Councilmember Hale".
-        sql += " AND ',' || speakers_csv || ',' LIKE ?"
-        params.append(f"%,{speaker},%")
-    if date_after:
-        sql += " AND date >= ?"
-        params.append(date_after)
-    if date_before:
-        sql += " AND date <= ?"
-        params.append(date_before)
+    def _run(match_expr: str, exclude_ids: set[int], n: int) -> list[sqlite3.Row]:
+        return _run_fts(conn, match_expr, query, meeting_body=meeting_body,
+                        speaker=speaker, date_after=date_after,
+                        date_before=date_before, limit=n,
+                        exclude_ids=exclude_ids)
 
-    sql += " ORDER BY score LIMIT ?"
-    params.append(int(limit))
+    # Precision pass: every content token must be present (or the exact
+    # phrase, for quoted queries). This is the whole answer for short
+    # keyword queries.
+    rows = list(_run(fts_query, set(), int(limit)))
 
-    try:
-        rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError as e:
-        # A malformed query made it past sanitization. Don't stay silent —
-        # a zero-result return here is indistinguishable from a real
-        # coverage gap in telemetry. Log it and re-raise so the caller
-        # records status="error" (server + MCP tool both catch and tag it).
-        logger.error("FTS query failed after sanitization: %r -> %r: %s",
-                     query, fts_query, e)
-        raise
+    # Recall fallback for natural-language questions / long queries: rows
+    # that carry ALL the terms rank first (that IS the "phrase bonus"), then
+    # BM25-ranked rows matching ANY content term fill the remaining slots.
+    # Under the old implicit-AND a 12-word question needed a clip to contain
+    # all 12 words, which is why questions typed into the search box mostly
+    # returned nothing.
+    if len(rows) < int(limit) and looks_like_question(query):
+        or_query = _or_query(query)
+        if or_query and or_query != fts_query:
+            have = {int(r["clip_id"]) for r in rows}
+            rows += list(_run(or_query, have, int(limit) - len(rows)))
 
     return [
         {
@@ -255,6 +280,79 @@ def search(
         }
         for r in rows
     ]
+
+
+def _run_fts(
+    conn: sqlite3.Connection,
+    match_expr: str,
+    raw_query: str,
+    *,
+    meeting_body: Optional[str],
+    speaker: Optional[str],
+    date_after: Optional[str],
+    date_before: Optional[str],
+    limit: int,
+    exclude_ids: set[int],
+) -> list[sqlite3.Row]:
+    """One BM25-ranked FTS5 MATCH with the filter WHERE clauses applied."""
+    weights = ", ".join(str(w) for w in BM25_WEIGHTS)
+    # NOTE on snippet() perf: FTS5 does NOT compute the snippet() window for
+    # every matching row. With `ORDER BY bm25(...) LIMIT N`, SQLite's sorter
+    # keeps only the ranking key + rowid and evaluates the auxiliary snippet()
+    # column lazily for just the top-N returned rows (measured on the uv-bundled
+    # SQLite this serves under: ~9 ms for LIMIT 25 vs ~516 ms to snippet all
+    # ~4k matches — a 57x gap that proves the deferral). An earlier "rank in a
+    # subquery, snippet only the survivors" rewrite measured ~54% SLOWER here
+    # because it adds a second MATCH scan + a rowid-IN materialization for no
+    # gain — so this single-pass shape is deliberately kept. Column -1 lets
+    # FTS5 choose the best-matching column (we used to build five windows).
+    sql = f"""
+        SELECT
+            clip_id,
+            date,
+            meeting_body,
+            speakers_csv,
+            transcript_words,
+            transcript_source,
+            title AS title_text,
+            snippet(clips_fts, -1, ?, ?, '…', 24) AS {_SNIPPET_COL},
+            bm25(clips_fts, {weights}) AS score
+        FROM clips_fts
+        WHERE clips_fts MATCH ?
+    """
+    params: list[object] = [_MARK_OPEN, _MARK_CLOSE, match_expr]
+    if meeting_body:
+        sql += " AND meeting_body = ?"
+        params.append(meeting_body)
+    if speaker:
+        # Wrap in commas so "Hale" doesn't accidentally match
+        # "Hale-Smith" but does match "Councilmember Hale".
+        sql += " AND ',' || speakers_csv || ',' LIKE ?"
+        params.append(f"%,{speaker},%")
+    if date_after:
+        sql += " AND date >= ?"
+        params.append(date_after)
+    if date_before:
+        sql += " AND date <= ?"
+        params.append(date_before)
+    if exclude_ids:
+        placeholders = ", ".join("?" for _ in exclude_ids)
+        sql += f" AND clip_id NOT IN ({placeholders})"
+        params.extend(int(i) for i in exclude_ids)
+
+    sql += " ORDER BY score LIMIT ?"
+    params.append(int(limit))
+
+    try:
+        return conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as e:
+        # A malformed query made it past sanitization. Don't stay silent —
+        # a zero-result return here is indistinguishable from a real
+        # coverage gap in telemetry. Log it and re-raise so the caller
+        # records status="error" (server + MCP tool both catch and tag it).
+        logger.error("FTS query failed after sanitization: %r -> %r: %s",
+                     raw_query, match_expr, e)
+        raise
 
 
 def suggest(prefix: str, output_dir: str, *, limit: int = 10) -> list[dict]:
