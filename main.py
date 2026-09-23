@@ -31,7 +31,7 @@ from collections import Counter
 from dotenv import load_dotenv
 import httpx
 
-from config import get_config
+from config import classify_meeting_body, get_config
 from sources import MeetingRef, make_agenda_source, make_source
 from granicus_captions import (
     align_speakers_to_segments,
@@ -955,22 +955,9 @@ class LFUCGPipeline:
             if listing_date:
                 metadata["date"] = listing_date
 
-        # Extract meeting body - common abbreviations and names (search title first)
-        body_patterns = [
-            rf'\b({"|".join(self.cfg.body_patterns)})\b',
-            r'(Task Force)',
-            r'(Work Session|Regular Session|Special Session|Budget Hearing)',
-        ]
-
-        search_text = title or ""
-        for pattern in body_patterns:
-            match = re.search(pattern, search_text, re.IGNORECASE)
-            if match:
-                # Normalize casing: keep acronyms uppercase, title-case regular words
-                body = match.group(1)
-                acronyms = set(self.cfg.body_acronyms)
-                metadata["meeting_body"] = body.upper() if body.upper() in acronyms else body.title()
-                break
+        # Extract meeting body from the title via the jurisdiction taxonomy
+        # (shared with seo.py's llms.txt body counts — see config.classify_meeting_body).
+        metadata["meeting_body"] = classify_meeting_body(title, self.cfg)
 
         return metadata
 

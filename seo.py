@@ -14,10 +14,11 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections import Counter
 from typing import Any, Callable, Dict, List, Optional
 from xml.sax.saxutils import escape
 
-from config import get_config
+from config import classify_meeting_body, get_config
 
 # Granicus appends a part-number suffix like " (1)" to every clip title.
 # Strip it for SEO so titles read naturally on Google / social cards.
@@ -694,7 +695,16 @@ def generate_seo_artifacts(
 
     # ---- llms.txt — site-level index in markdown for AI agents (llmstxt.org).
     recent = valid_clips[:50]
-    bodies = sorted({e.get("meeting_body") for e in valid_clips if e.get("meeting_body")})
+    # Body counts for "Meeting bodies covered". Older clips' metadata predates
+    # the meeting_body label (~2/3 of the LFUCG archive), so fall back to the
+    # same title classifier the pipeline uses; anything still unmatched is
+    # counted as "Other / unclassified" so the section sums to the total.
+    body_counts = Counter(
+        e.get("meeting_body") or classify_meeting_body(e.get("title"), cfg)
+        for e in valid_clips
+    )
+    unclassified = body_counts.pop(None, 0)
+    bodies = sorted(body_counts)
     llms_lines = [
         f"# {cfg.publication_name}",
         "",
@@ -862,9 +872,13 @@ def generate_seo_artifacts(
         "## Meeting bodies covered",
         "",
     ]
+    def _meetings(n: int) -> str:
+        return f"{n:,} meeting" + ("" if n == 1 else "s")
+
     for body in bodies:
-        count = sum(1 for e in valid_clips if e.get("meeting_body") == body)
-        llms_lines.append(f"- {body} ({count} meetings)")
+        llms_lines.append(f"- {body} ({_meetings(body_counts[body])})")
+    if unclassified:
+        llms_lines.append(f"- Other / unclassified ({_meetings(unclassified)})")
     llms_lines += [
         "",
         "## Attribution",

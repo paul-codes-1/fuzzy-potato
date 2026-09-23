@@ -22,6 +22,7 @@ process with ``JURISDICTION=<slug>``. No code fork.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -255,6 +256,32 @@ def get_config() -> Jurisdiction:
         frontend_overrides=dict(base.get("_frontend", {})),
         output_dir=output_dir,
     )
+
+
+def classify_meeting_body(title: "str | None", cfg: "Jurisdiction") -> "str | None":
+    """Derive a meeting body label from a clip title via the jurisdiction's
+    ``[taxonomy]`` (``body_patterns`` / ``body_acronyms``).
+
+    The single title→body classifier: the pipeline stamps its result into each
+    clip's ``metadata.json`` (``LFUCGPipeline.scrape_clip_metadata``), and
+    ``seo.py`` re-applies it to index entries whose ``meeting_body`` is missing
+    (older clips were processed before the label existed). Returns ``None``
+    when nothing matches. Acronyms stay uppercase; other words title-case.
+    """
+    if not title:
+        return None
+    body_patterns = [
+        rf'\b({"|".join(cfg.body_patterns)})\b',
+        r"(Task Force)",
+        r"(Work Session|Regular Session|Special Session|Budget Hearing)",
+    ]
+    acronyms = set(cfg.body_acronyms)
+    for pattern in body_patterns:
+        match = re.search(pattern, title, re.IGNORECASE)
+        if match:
+            body = match.group(1)
+            return body.upper() if body.upper() in acronyms else body.title()
+    return None
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

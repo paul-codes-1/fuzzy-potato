@@ -251,3 +251,94 @@ class TestBuildClipMarkdown:
         assert "https://meetings.lexingtonky.news/meeting/6757" in md
         assert "## Full transcript" not in md  # no transcript file -> section absent
         assert "## Decisions" not in md
+
+
+@pytest.fixture
+def lfucg_cfg(monkeypatch):
+    from config import get_config
+
+    get_config.cache_clear()
+    monkeypatch.setenv("JURISDICTION", "lfucg")
+    get_config.cache_clear()
+    yield get_config()
+    get_config.cache_clear()
+
+
+class TestClassifyMeetingBody:
+    """config.classify_meeting_body is the one title→body classifier shared by
+    the pipeline (scrape_clip_metadata) and llms.txt's body counts."""
+
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("Urban County Council (1)", "Council"),
+            ("Council Work Session (3)", "Council"),
+            ("Planning Commission Zoning Public Hearing (1)", "Commission"),
+            ("Board of Adjustment Meeting (1)", "Board"),
+            ("Environmental Quality and Public Works Committee (1)", "Committee"),
+            ("January 8 2026 WQFB meeting", "WQFB"),
+            ("Mayor's Task Force on Housing (1)", "Task Force"),
+            ("Budget COW (1)", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_titles(self, lfucg_cfg, title, expected):
+        from config import classify_meeting_body
+
+        assert classify_meeting_body(title, lfucg_cfg) == expected
+
+    def test_pipeline_uses_shared_classifier(self, lfucg_cfg):
+        from main import LFUCGPipeline
+
+        pipe = LFUCGPipeline.__new__(LFUCGPipeline)
+        pipe.cfg = lfucg_cfg
+        meta = pipe.scrape_clip_metadata(1, title="Board of Architectural Review January 8, 2026")
+        assert meta["meeting_body"] == "Board"
+
+
+class TestLlmsMeetingBodies:
+    def _bodies_section(self, public_dir) -> list:
+        text = (public_dir / "llms.txt").read_text(encoding="utf-8")
+        section = text.split("## Meeting bodies covered\n\n", 1)[1].split("\n\n", 1)[0]
+        return section.splitlines()
+
+    def test_unlabelled_clips_classified_from_title_and_totals_sum(self, lfucg_cfg, tmp_path):
+        import re
+
+        import seo
+
+        output_dir = tmp_path / "out"
+        (output_dir / "clips").mkdir(parents=True)
+        public_dir = tmp_path / "public"
+        public_dir.mkdir()
+        entries = [
+            {"clip_id": 1, "date": "2026-09-01", "meeting_body": "Council", "title": "Urban County Council (1)"},
+            {"clip_id": 2, "date": "2026-09-02", "meeting_body": None, "title": "Council Work Session (1)"},
+            {"clip_id": 3, "date": "2026-09-03", "title": "Planning Commission Subdivision Items (1)"},
+            {"clip_id": 4, "date": "2026-09-04", "meeting_body": "", "title": "Board of Adjustment (1)"},
+            {"clip_id": 5, "date": "2026-09-05", "meeting_body": None, "title": "Budget COW (1)"},
+            {"clip_id": 6, "date": "2026-09-06", "meeting_body": None, "title": "Lexington Now (1)"},
+        ]
+        seo.generate_seo_artifacts(entries, output_dir, public_dir=public_dir, log=lambda *a, **k: None)
+
+        lines = self._bodies_section(public_dir)
+        assert lines == [
+            "- Board (1 meeting)",
+            "- Commission (1 meeting)",
+            "- Council (2 meetings)",
+            "- Other / unclassified (2 meetings)",
+        ]
+        total = sum(int(re.search(r"\(([\d,]+) meetings?\)", ln).group(1).replace(",", "")) for ln in lines)
+        assert total == len(entries)
+
+    def test_no_other_line_when_everything_classifies(self, lfucg_cfg, tmp_path):
+        import seo
+
+        output_dir = tmp_path / "out"
+        (output_dir / "clips").mkdir(parents=True)
+        public_dir = tmp_path / "public"
+        public_dir.mkdir()
+        entries = [{"clip_id": 1, "date": "2026-09-01", "meeting_body": None, "title": "Urban County Council (1)"}]
+        seo.generate_seo_artifacts(entries, output_dir, public_dir=public_dir, log=lambda *a, **k: None)
+        assert self._bodies_section(public_dir) == ["- Council (1 meeting)"]
