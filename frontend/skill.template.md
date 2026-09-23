@@ -55,6 +55,15 @@ Two native [Model Context Protocol](https://modelcontextprotocol.io) servers. Bo
   - `list_recent(limit?, source?)` — the most recent articles, optionally filtered by source.
   - `list_sources()` — the distinct sources currently covered.
   - `ask_lexington(question)` — a synthesized answer over the whole news archive, with citations.
+  - **Precinct Election Atlas** (Fayette County precinct-level results):
+    - `list_elections()` — the elections in the atlas (2022 General, 2024 General, 2026 Primary) with each contest's title, party, candidate count, votes, and precinct coverage, plus the Gorton 2022→2026 swing dataset.
+    - `get_contest_results(election, contest, precinct?)` — candidate vote totals for one contest (`election` = `g2022` / `g2024` / `p2026`; `contest` = a key or title fragment); pass a `precinct` code (e.g. `A101`) for a single precinct.
+    - `get_precinct_swing(precinct?)` — the Gorton 2022→2026 vote-share swing per precinct, with summary stats; pass a `precinct` for one precinct.
+  - **Historical county results** (Fayette County, 2002–2022 — county-level totals):
+    - `get_election_history(date?, race?, candidate?)` — no args lists all 37 elections with dates/race counts/turnout; `date` (YYYY-MM-DD) returns that election's races; `race` and/or `candidate` substring-filter across all years (e.g. `race:"mayor"` returns every mayoral result 2002–2022). Caveats: 2011-05-17 has no parsed races; some pre-2008 names have line-wrap artifacts; precinct-level results for 2022/2024/2026 are in `get_contest_results`.
+  - **Campaign contributions** (Lexington/LFUCG KREF filings — 2022 and 2024 cycles, plus the 2026 cycle's May primary and Nov. 3 general, refreshed from the live donor dashboard at app.lexingtonky.news):
+    - `search_contributions(query, limit?)` — find contributions by candidate, contributor, or employer.
+    - `contribution_totals(candidate?, by)` — aggregate dollar totals grouped `by` `contributor`, `employer`, or `date`, optionally scoped to one candidate.
 
 ### 2b. LFUCG Meetings — government meeting archive
 
