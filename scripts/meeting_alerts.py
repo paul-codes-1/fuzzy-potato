@@ -60,7 +60,7 @@ ALERT_SES_REGION = os.getenv("ALERT_SES_REGION", "us-east-1")
 RECENT_DAYS = int(os.getenv("ALERT_RECENT_DAYS", "14"))
 # Runaway guard: excess clips stay unseen and roll to the next cron run.
 MAX_CLIPS_PER_RUN = int(os.getenv("ALERT_MAX_CLIPS_PER_RUN", "15"))
-LEADS_MODEL = os.getenv("ALERT_LEADS_MODEL", "claude-haiku-4-5")
+LEADS_MODEL = os.getenv("ALERT_LEADS_MODEL", "claude-haiku-5-5")
 LEADS_MAX_TRANSCRIPT_CHARS = 120_000
 
 LEADS_SYSTEM_PROMPT = """\
@@ -170,8 +170,7 @@ def generate_leads(clip_dir: Path, meta: dict) -> str | None:
         client = anthropic.Anthropic()
         resp = client.messages.create(
             model=LEADS_MODEL,
-            max_tokens=1000,
-            temperature=0.2,
+            max_tokens=2000,  # Haiku 5.5 thinks by default; no temperature (400 on 5.5)
             system=LEADS_SYSTEM_PROMPT,
             messages=[{"role": "user", "content":
                        f"Meeting: {meta.get('title')} ({meta.get('date')})\n\n{transcript}"}],

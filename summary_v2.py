@@ -1,7 +1,7 @@
 """Two-pass summary generation: structured extraction + narrative synthesis.
 
 Pass 1 (GPT-4o): Extract structured facts (votes, amounts, names, timestamps) into JSON.
-Pass 2 (Claude, default Haiku 4.5 — LFUCG_NARRATION_MODEL env override): Generate
+Pass 2 (Claude, default Haiku 5.5 — LFUCG_NARRATION_MODEL env override): Generate
 section-by-section narrative from extracted facts.
 """
 
@@ -280,7 +280,7 @@ def extract_meeting_facts(openai_client, transcript: str, agenda_text: Optional[
 # Haiku-tier work at ~1/3 the token price of Sonnet. Pass 1 (GPT-4o) still
 # does the precision-sensitive extraction from full transcripts. Override
 # via env to trial a bigger model without a code change.
-NARRATION_MODEL = os.getenv("LFUCG_NARRATION_MODEL", "claude-haiku-4-5")
+NARRATION_MODEL = os.getenv("LFUCG_NARRATION_MODEL", "claude-haiku-5-5")
 
 NARRATION_SYSTEM_PROMPT = (
     "You are a government meeting analyst writing a public-facing summary. "
@@ -416,21 +416,29 @@ def generate_section(anthropic_client, section_name: str, instruction: str,
             max_tokens=max_tokens,
             system=NARRATION_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            temperature=0.3,
+            # No temperature: Haiku 5.5 rejects non-default sampling params
+            # (400), and it runs adaptive thinking by default — thinking
+            # tokens count toward max_tokens, hence the larger caps.
         )
 
-    response = _create(1000)
+    response = _create(2000)
     # Truncated mid-sentence (hit the max_tokens cap rather than ending the
     # turn)? Retry once with more headroom before giving up on a clean end.
     if getattr(response, "stop_reason", None) == "max_tokens":
-        logger.warning('Section "%s" hit max_tokens — retrying with max_tokens=2000', section_name)
-        response = _create(2000)
+        logger.warning('Section "%s" hit max_tokens — retrying with max_tokens=4000', section_name)
+        response = _create(4000)
         if getattr(response, "stop_reason", None) == "max_tokens":
             logger.warning(
-                'Section "%s" still truncated at max_tokens=2000 — '
+                'Section "%s" still truncated at max_tokens=4000 — '
                 "keeping the truncated text (may end mid-sentence)", section_name)
 
-    text = response.content[0].text.strip()
+    # Read text blocks by type — Haiku 5.5 responses can open with a
+    # `thinking` block, so content[0] is no longer guaranteed to be text.
+    text = "".join(
+        getattr(b, "text", "") or ""
+        for b in response.content
+        if getattr(b, "type", None) == "text"
+    ).strip()
     # Ensure it starts with the ## header
     if not text.startswith("## "):
         text = f"## {section_name}\n{text}"

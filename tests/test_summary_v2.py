@@ -418,7 +418,7 @@ class TestGenerateSection:
     def test_returns_section_with_header(self):
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = [MagicMock()]
+        mock_response.content = [MagicMock(type="text")]
         mock_response.content[0].text = "## Meeting Overview\nThe council met on Jan 22."
         mock_client.messages.create.return_value = mock_response
 
@@ -431,7 +431,7 @@ class TestGenerateSection:
     def test_adds_header_if_missing(self):
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = [MagicMock()]
+        mock_response.content = [MagicMock(type="text")]
         mock_response.content[0].text = "The council met on Jan 22."
         mock_client.messages.create.return_value = mock_response
 
@@ -444,7 +444,7 @@ class TestGenerateSection:
     def test_uses_correct_model(self):
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = [MagicMock()]
+        mock_response.content = [MagicMock(type="text")]
         mock_response.content[0].text = "## Test\nContent"
         mock_client.messages.create.return_value = mock_response
 
@@ -454,14 +454,30 @@ class TestGenerateSection:
         )
         call_kwargs = mock_client.messages.create.call_args[1]
         assert call_kwargs["model"] == "claude-sonnet-4-6"
-        assert call_kwargs["temperature"] == 0.3
+        # Haiku 5.5 400s on non-default sampling params — never send one.
+        assert "temperature" not in call_kwargs
 
     def _response(self, text, stop_reason="end_turn"):
         resp = MagicMock()
-        resp.content = [MagicMock()]
+        resp.content = [MagicMock(type="text")]
         resp.content[0].text = text
         resp.stop_reason = stop_reason
         return resp
+
+    def test_skips_leading_thinking_block(self):
+        """Haiku 5.5 can open a response with a thinking block; only text counts."""
+        mock_client = MagicMock()
+        resp = MagicMock()
+        thinking = MagicMock(type="thinking"); thinking.text = "SHOULD NOT APPEAR"
+        text = MagicMock(type="text"); text.text = "## Test\nBody."
+        resp.content = [thinking, text]
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        result = generate_section(
+            mock_client, "Test", "instruction", "{}", "Council", "2026-01-22",
+        )
+        assert result == "## Test\nBody."
 
     def test_no_retry_when_end_turn(self):
         mock_client = MagicMock()
@@ -485,8 +501,8 @@ class TestGenerateSection:
         assert result == "## Test\nComplete text."
         assert mock_client.messages.create.call_count == 2
         first, second = mock_client.messages.create.call_args_list
-        assert first[1]["max_tokens"] == 1000
-        assert second[1]["max_tokens"] == 2000
+        assert first[1]["max_tokens"] == 2000
+        assert second[1]["max_tokens"] == 4000
 
     def test_keeps_truncated_text_when_retry_also_truncates(self, caplog):
         import logging
@@ -528,7 +544,7 @@ class TestGenerateSummaryV2:
             # Extract section name from user message
             user_msg = kwargs["messages"][0]["content"]
             resp = MagicMock()
-            resp.content = [MagicMock()]
+            resp.content = [MagicMock(type="text")]
             resp.content[0].text = f"## Section\nGenerated content for this section."
             return resp
 

@@ -87,7 +87,7 @@ uv run python main.py 6669 --quiet                       # Reduce output
 
 # Two-pass summary generation (v2)
 # Pass 1: GPT-4o extracts structured facts (votes, amounts, names, timestamps) into JSON
-# Pass 2: Claude (Haiku 4.5 by default; LFUCG_NARRATION_MODEL to override) generates section-by-section narrative from extracted facts
+# Pass 2: Claude (Haiku 5.5 by default; LFUCG_NARRATION_MODEL to override) generates section-by-section narrative from extracted facts
 # Requires ANTHROPIC_API_KEY in .env
 uv run python main.py --upgrade-summaries --max 9999     # Upgrade all clips (skips already done)
 uv run python main.py --upgrade-summaries                # Upgrade 10 clips (default --max)
@@ -162,7 +162,7 @@ cd frontend && npm test                                   # Frontend tests
 Set in `.env` file:
 - `OPENAI_API_KEY` - OpenAI API key for transcription/summarization/embeddings
 - `ANTHROPIC_API_KEY` - Anthropic API key for Claude (v2 summary narration)
-- `LFUCG_NARRATION_MODEL` - Claude model for Pass-2 narration (default: `claude-haiku-4-5`)
+- `LFUCG_NARRATION_MODEL` - Claude model for Pass-2 narration (default: `claude-haiku-5-5`)
 - `LFUCG_ANTHROPIC_MODEL` - Claude model for the opt-in RAG chat provider (default: `claude-sonnet-4-6`)
 - `FIRST_CLIP_ID` - Starting clip ID for auto-processing (default: 6669)
 - `LFUCG_OUTPUT_DIR` - Output directory for RAG server (default: ./lfucg_output)
@@ -259,13 +259,13 @@ Pipeline integration (`main.py`):
 Replaces the old single-pass GPT-4o summary with a two-pass approach:
 
 - **Pass 1 (GPT-4o)**: Structured JSON extraction — votes with roll calls, financial items with dollar amounts, attendance, agenda items, public comments, appointments, contentious items. Saved as `extracted_facts.json` per clip. Uses `response_format=json_object` and temperature 0.1 for precision.
-- **Pass 2 (Claude — Haiku 4.5 default, `LFUCG_NARRATION_MODEL` override)**: Section-by-section narrative from extracted facts. Only generates sections when data exists (no more "None discussed"). Each section is self-contained with `[timestamp: MM:SS]` markers for video deep-linking. ~100-400 words per section.
+- **Pass 2 (Claude — Haiku 5.5 default, `LFUCG_NARRATION_MODEL` override)**: Section-by-section narrative from extracted facts. Only generates sections when data exists (no more "None discussed"). Each section is self-contained with `[timestamp: MM:SS]` markers for video deep-linking. ~100-400 words per section.
 
 Key design decisions:
 - Sections are conditional — skips empty sections, generates dynamic agenda item sections for significant items
 - `extracted_facts.json` is the primary structured data source for the frontend Overview tab
 - `summary.txt` (v2) is the narrative version, chunked by `## ` headers for RAG ingestion
-- Cost: ~$0.15/clip on the original gpt-4o+Sonnet pairing; narration moved to Haiku 4.5 (2026-07) cutting the Claude share ~3x. Negligible for incremental processing.
+- Cost: ~$0.15/clip on the original gpt-4o+Sonnet pairing; narration moved to Haiku 5.5 (2026-07) cutting the Claude share ~3x. Negligible for incremental processing.
 
 CLI workflow for upgrading existing clips:
 ```bash
@@ -502,7 +502,7 @@ deploy/lightsail/                         # Co-located Lightsail deploy (current
   "speakers": ["Mayor Gorton", "Councilmember Hale"],
   "models": {
     "transcribe": "whisper-1",
-    "summary": "gpt-4o+claude-haiku-4-5",
+    "summary": "gpt-4o+claude-haiku-5-5",
     "topics": "gpt-4o-mini"
   }
 }
